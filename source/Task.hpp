@@ -4,19 +4,21 @@
 
 namespace KV
 {
-    enum class TaskType
-    {
-        kExists,
-        kGet,
-        kSet,
-        kDelete,
-        kUpdate
-    };
 
-    struct Task
-    {
-        TaskType type;
-        std::string key;
-        std::string value;
-    };
+enum class TaskType
+{
+	kExists,
+	kGet,
+	kSet,
+	kDelete,
+	kUpdate
+};
+
+enum class Status
+{
+	kPending,
+	kSuccess,
+	kError
+};
+
 };
