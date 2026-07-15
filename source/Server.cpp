@@ -1,4 +1,8 @@
 #include "Server.hpp"
+
+#include <format>
+#include <iostream>
+
 #include <liburing/io_uring.h>
 
 namespace KV
@@ -17,6 +21,8 @@ Server::Server()
     {
         throw std::runtime_error(std::format("failed to set SO_REUSEADDR, errno: {}", errno));
     }
+
+	RegisterHandlers();
 }
 
 void Server::Bind(std::uint16_t port)
@@ -118,17 +124,30 @@ void Server::HandleTaskCompletion(io_uring_cqe& cqe)
 				std::cout << "[RECEIVED " << cqe.res << " BYTES] "
 							<< std::string_view(task.read_buffer.data(), static_cast<std::size_t>(cqe.res)) << '\n';
 
-				std::size_t newline_pos = task.recv_buffer.find('\n');
-				while (newline_pos != std::string::npos)
+				while (!task.recv_buffer.empty())
 				{
-					std::string line = task.recv_buffer.substr(0, newline_pos);
-					if (!line.empty() && line.back() == '\r')
+					auto parsed = parser_.Parse(task.recv_buffer);
+					if (parsed.status == ParseStatus::kIncomplete)
 					{
-						line.pop_back();
+						break;
 					}
-					command_designator_.Start(ExecuteCommandTask(task, std::move(line)));
-					task.recv_buffer.erase(0, newline_pos + 1);
-					newline_pos = task.recv_buffer.find('\n');
+
+					if (parsed.status == ParseStatus::kProtocolError)
+					{
+						task.pending_responses.push_back(std::format("ERR protocol error: {}\n", parsed.error_message));
+						if (parsed.consumed_bytes > 0 && parsed.consumed_bytes <= task.recv_buffer.size())
+						{
+							task.recv_buffer.erase(0, parsed.consumed_bytes);
+						}
+						else
+						{
+							task.recv_buffer.clear();
+						}
+						continue;
+					}
+
+					command_designator_.Start(ExecuteCommandTask(task, std::move(parsed.request)));
+					task.recv_buffer.erase(0, parsed.consumed_bytes);
 				}
 
 				// Keep the scheduler progression explicit for future awaitable I/O coroutines.
@@ -221,125 +240,78 @@ void Server::HandleTaskCompletion(io_uring_cqe& cqe)
 	}
 }
 
-std::string Server::Execute(std::string request)
+std::string Server::Execute(const Request& request)
 {
-	// Parse a single line command: CMD key [value...]
-	auto newline = request.find_first_of("\r\n");
-	if (newline != std::string::npos)
+	auto it = handlers_.find(request.command);
+	if (it == handlers_.end())
 	{
-		request.resize(newline);
+		return "ERR unknown command\n";
 	}
+	return it->second(request);
+}
 
-	auto trim_front = request.find_first_not_of(" \t");
-	if (trim_front == std::string::npos)
+void Server::RegisterHandlers()
+{
+	handlers_["GET"] = [this](const Request& request) -> std::string
 	{
-		return "ERR empty command\n";
-	}
-	request.erase(0, trim_front);
-
-	auto cmd_end = request.find(' ');
-	std::string cmd = request.substr(0, cmd_end);
-	std::transform(cmd.begin(), cmd.end(), cmd.begin(), [](unsigned char c) {
-		return static_cast<char>(std::toupper(c));
-	});
-
-	std::string tail;
-	if (cmd_end != std::string::npos)
-	{
-		tail = request.substr(cmd_end + 1);
-		auto arg_start = tail.find_first_not_of(" \t");
-		if (arg_start != std::string::npos)
-		{
-			tail.erase(0, arg_start);
-		}
-		else
-		{
-			tail.clear();
-		}
-	}
-
-	auto split_key_value = [](const std::string& text) -> std::pair<std::string, std::string>
-	{
-		auto sep = text.find(' ');
-		if (sep == std::string::npos)
-		{
-			return {text, {}};
-		}
-		auto key = text.substr(0, sep);
-		auto value = text.substr(sep + 1);
-		auto value_start = value.find_first_not_of(" \t");
-		if (value_start == std::string::npos)
-		{
-			value.clear();
-		}
-		else
-		{
-			value.erase(0, value_start);
-		}
-		return {key, value};
-	};
-
-	if (cmd == "GET")
-	{
-		if (tail.empty())
+		if (request.arguments.size() != 1)
 		{
 			return "ERR usage: GET key\n";
 		}
-		auto it = kv_.find(tail);
+		auto it = kv_.find(request.arguments[0]);
 		if (it == kv_.end())
 		{
 			return "NOT_FOUND\n";
 		}
 		return std::format("OK {}\n", it->second);
-	}
+	};
 
-	if (cmd == "SET")
+	handlers_["SET"] = [this](const Request& request) -> std::string
 	{
-		auto [key, value] = split_key_value(tail);
-		if (key.empty() || value.empty())
+		if (request.arguments.size() != 2)
 		{
 			return "ERR usage: SET key value\n";
 		}
-		kv_[key] = value;
+		kv_[request.arguments[0]] = request.arguments[1];
 		return "OK\n";
-	}
+	};
 
-	if (cmd == "DELETE")
+	handlers_["DELETE"] = [this](const Request& request) -> std::string
 	{
-		if (tail.empty())
+		if (request.arguments.size() != 1)
 		{
 			return "ERR usage: DELETE key\n";
 		}
-		auto erased = kv_.erase(tail);
+		auto erased = kv_.erase(request.arguments[0]);
 		return erased > 0 ? "OK\n" : "NOT_FOUND\n";
-	}
+	};
 
-	if (cmd == "UPDATE")
+	handlers_["UPDATE"] = [this](const Request& request) -> std::string
 	{
-		auto [key, value] = split_key_value(tail);
-		if (key.empty() || value.empty())
+		if (request.arguments.size() != 2)
 		{
 			return "ERR usage: UPDATE key value\n";
 		}
-		auto it = kv_.find(key);
+		auto it = kv_.find(request.arguments[0]);
 		if (it == kv_.end())
 		{
 			return "NOT_FOUND\n";
 		}
-		it->second = value;
+		it->second = request.arguments[1];
 		return "OK\n";
-	}
+	};
 
-	if (cmd == "EXIST")
+	auto exists_handler = [this](const Request& request) -> std::string
 	{
-		if (tail.empty())
+		if (request.arguments.size() != 1)
 		{
-			return "ERR usage: EXIST key\n";
+			return "ERR usage: EXISTS key\n";
 		}
-		return kv_.contains(tail) ? "YES\n" : "NO\n";
-	}
+		return kv_.contains(request.arguments[0]) ? "YES\n" : "NO\n";
+	};
 
-	return "ERR unknown command\n";
+	handlers_["EXISTS"] = exists_handler;
+	handlers_["EXIST"] = exists_handler;
 }
 
 void Server::Run()

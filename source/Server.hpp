@@ -1,21 +1,17 @@
 #pragma once
 
 #include <unistd.h>
-#include <stdexcept>
-#include <format>
+#include <cstdint>
 #include <array>
 #include <deque>
+#include <functional>
 #include <unordered_map>
-#include <algorithm>
-#include <cctype>
-#include <cerrno>
-#include <cstring>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <liburing.h>
-#include <iostream>
 
 #include "CoroutineDesignator.hpp"
+#include "Parser.hpp"
 
 enum class TaskType
 {
@@ -76,20 +72,26 @@ private:
 
     void HandleTaskCompletion(io_uring_cqe& cqe);
 
-    std::string Execute(std::string request);
+    std::string Execute(const Request& request);
 
-    coro::NetworkTask ExecuteCommandTask(Task& task, std::string line)
+    void RegisterHandlers();
+
+    coro::NetworkTask ExecuteCommandTask(Task& task, Request request)
     {
-        task.pending_responses.push_back(Execute(std::move(line)));
+        task.pending_responses.push_back(Execute(request));
         co_return;
     }
 private:
+    using CommandHandler = std::function<std::string(const Request&)>;
+
     int server_fd_ = -1;
     std::uint16_t port_ = 0;
     bool bound_ = false;
     std::array<Task, 32> inprogress_;
     std::deque<std::size_t> defer_;
     coro::TaskDesignator command_designator_;
+    Parser parser_;
+    std::unordered_map<std::string, CommandHandler> handlers_;
     std::unordered_map<std::string, std::string> kv_;
     io_uring ring_;
 };
