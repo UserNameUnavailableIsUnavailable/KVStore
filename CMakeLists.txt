@@ -12,6 +12,7 @@ pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
 
 add_executable(
 	KVStore
+	source/Parser.cpp
 	source/Server.cpp
 	source/main.cpp
 )
