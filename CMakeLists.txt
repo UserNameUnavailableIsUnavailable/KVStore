@@ -10,15 +10,36 @@ find_package(PkgConfig REQUIRED)
 # Search for liburing on the system
 pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
 
+include_directories(
+	include
+)
+
+add_library(
+	Utility
+	source/Utility/Token.cpp
+)
+
 add_executable(
-	KVStore
-	source/Parser.cpp
-	source/Server.cpp
-	source/main.cpp
+	KVServer
+	source/Server/main.cpp
+	source/Server/Server.cpp
+	source/Server/Parser.cpp
 )
 
 target_link_libraries(
-	KVStore
+	KVServer
 	PRIVATE
 	PkgConfig::liburing
+)
+
+add_executable(
+	KVClient
+	source/Client/main.cpp
+	source/Client/Client.cpp
+)
+
+target_link_libraries(
+	KVClient
+	PRIVATE
+	Utility
 )

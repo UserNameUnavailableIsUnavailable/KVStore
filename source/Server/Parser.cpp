@@ -4,17 +4,13 @@
 #include <cctype>
 #include <optional>
 
-namespace KV
-{
-namespace
-{
 struct LineRead
 {
     std::string_view line;
     std::size_t consumed = 0;
 };
 
-std::optional<LineRead> ReadLine(std::string_view input, std::size_t start)
+static std::optional<LineRead> ReadLine(std::string_view input, std::size_t start)
 {
     if (start >= input.size())
     {
@@ -39,7 +35,7 @@ std::optional<LineRead> ReadLine(std::string_view input, std::size_t start)
     };
 }
 
-bool ParseNonNegativeInteger(std::string_view text, std::size_t& out)
+static bool ParseNonNegativeInteger(std::string_view text, std::size_t& out)
 {
     if (text.empty())
     {
@@ -67,7 +63,7 @@ bool ParseNonNegativeInteger(std::string_view text, std::size_t& out)
     return true;
 }
 
-bool ConsumeLineEnding(std::string_view input, std::size_t& cursor)
+static bool ConsumeLineEnding(std::string_view input, std::size_t& cursor)
 {
     if (cursor >= input.size())
     {
@@ -97,7 +93,7 @@ bool ConsumeLineEnding(std::string_view input, std::size_t& cursor)
     return false;
 }
 
-std::string ToUpper(std::string s)
+static std::string ToUpper(std::string s)
 {
     for (char& c : s)
     {
@@ -105,8 +101,9 @@ std::string ToUpper(std::string s)
     }
     return s;
 }
-} // namespace
 
+namespace KV
+{
 ParseResult Parser::Parse(std::string_view input) const
 {
     ParseResult result;
@@ -198,5 +195,4 @@ ParseResult Parser::Parse(std::string_view input) const
     result.request.arguments.assign(tokens.begin() + 1, tokens.end());
     return result;
 }
-
 } // namespace KV

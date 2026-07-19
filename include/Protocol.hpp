@@ -6,16 +6,14 @@
 namespace KV
 {
 
-class Request
+struct Request
 {
-public:
     std::string command;
     std::vector<std::string> arguments;
 };
 
-class Response
+struct Response
 {
-public:
     std::string message;
 };
 

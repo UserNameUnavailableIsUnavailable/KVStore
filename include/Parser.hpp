@@ -32,5 +32,4 @@ class Parser
 public:
 	ParseResult Parse(std::string_view input) const;
 };
-
 } // namespace KV
