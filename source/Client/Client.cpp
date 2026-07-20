@@ -1,13 +1,18 @@
 #include "Client.hpp"
 
 #include <bit>
-#include <cstring>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <unordered_map>
+#include <format>
+
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "Token.hpp"
 
@@ -27,6 +32,37 @@ Client::Client()
 
 }
 
+Client::~Client()
+{
+    if (client_fd_ >= 0)
+    {
+        close(client_fd_);
+    }
+}
+
+void Client::Connect(const char* host, std::uint16_t port)
+{
+    sockaddr_in addr {
+        .sin_family = AF_INET,
+        .sin_port = htons(port),
+        .sin_addr = {},
+        .sin_zero = {}
+    };
+    if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0)
+    {
+        throw std::runtime_error(std::format("invalid address: {}", host));
+    }
+    client_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd_ < 0)
+    {
+        throw std::runtime_error("failed to create socket");
+    }
+    if (connect(client_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    {
+        throw std::runtime_error(std::format("failed to connect to {}:{}", host, port));
+    }
+}
+
 std::optional<KV::Command> Client::ResolveTokens(const std::vector<std::string>& tokens)
 {
     if (tokens.empty())
@@ -38,6 +74,10 @@ std::optional<KV::Command> Client::ResolveTokens(const std::vector<std::string>&
 
 void Client::Run()
 {
+    if (client_fd_ < 0)
+    {
+        throw std::runtime_error("client is not connected to a server");
+    }
     std::cout << prompt_;
     std::string line;
     std::vector<std::string> tokens;
@@ -139,6 +179,26 @@ void Client::Run()
                 bye = true;
                 std::cout << "Bye!" << std::endl;
                 break;
+            }
+            else
+            {
+                std::string serialized = cmd->Serialize();
+                ssize_t sent = send(client_fd_, serialized.data(), serialized.size(), 0);
+                if (sent < 0)
+                {
+                    std::cerr << "Failed to send command to server." << std::endl;
+                    continue;
+                }
+                char buffer[1024];
+                // TODO: handle partial responses and multiple responses
+                ssize_t received = recv(client_fd_, buffer, sizeof(buffer) - 1, 0);
+                if (received < 0)
+                {
+                    std::cerr << "Failed to receive response from server." << std::endl;
+                    continue;
+                }
+                buffer[received] = '\0';
+                std::cout << "Server response: " << buffer << std::endl;
             }
         }
         std::cout << prompt_;
