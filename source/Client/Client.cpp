@@ -3,6 +3,7 @@
 #include <bit>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,23 +27,13 @@ Client::Client()
 
 }
 
-void Client::ResolveTokens(const std::vector<std::string>& tokens)
+std::optional<KV::Command> Client::ResolveTokens(const std::vector<std::string>& tokens)
 {
     if (tokens.empty())
     {
-        return;
+        return std::nullopt;
     }
-    if (tokens.size() == 1 && tokens[0] == "exit")
-    {
-        // TODO: notify the caller that we should exit
-        std::exit(0);
-    }
-    std::cout << "Tokens: ";
-    for (const auto& token : tokens)
-    {
-        std::cout << "[" << token << "] ";
-    }
-    std::cout << std::endl; // flush the output
+    return KV::Command(tokens[0], std::vector<std::string>(tokens.begin() + 1, tokens.end()));
 }
 
 void Client::Run()
@@ -51,6 +42,7 @@ void Client::Run()
     std::string line;
     std::vector<std::string> tokens;
     tokens.reserve(12);
+    bool bye = false;
     do
     {
         std::string token; // current token parsed
@@ -139,9 +131,18 @@ void Client::Run()
         {
             tokens.push_back(std::move(token));
         }
-        ResolveTokens(tokens);
+        auto cmd = ResolveTokens(tokens);
+        if (cmd.has_value())
+        {
+            if (cmd->GetName() == "exit")
+            {
+                bye = true;
+                std::cout << "Bye!" << std::endl;
+                break;
+            }
+        }
         std::cout << prompt_;
         tokens.clear();
-    } while (true);
+    } while (!bye);
 }
 }
