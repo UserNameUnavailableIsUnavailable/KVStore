@@ -73,9 +73,12 @@ private:
     std::chrono::duration<Rep> time_to_live_;
 };
 
-template <typename V>
+template <typename V, typename Rep = std::chrono::milliseconds>
 class LRUCache
 {
+	using RecordType = Record<V, Rep>;
+	using ListType = std::list<RecordType>;
+	using ListNode = ListType::iterator;
 public:
     LRUCache(std::size_t capacity) : capacity_(capacity)
     {
@@ -84,12 +87,8 @@ public:
     std::optional<V> Get(const std::string_view key);
     LRUCacheStatus Set(const std::string_view key, std::optional<V> value);
 private:
-	// TODO: simplify moving with the two methods
-	void MoveToBegin();
-	void MoveToEnd();
-private:
     std::size_t capacity_;
-    std::list<V> records_; // doubly linked list to maintain the order of usage
-    std::unordered_map<std::string, typename std::list<V>::iterator> map_;
+    ListType records_; // doubly linked list to maintain the order of usage
+    std::unordered_map<std::string, ListNode> map_;
 };
 }

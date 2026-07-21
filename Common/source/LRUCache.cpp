@@ -3,8 +3,8 @@
 
 namespace KV
 {
-template <typename V>
-bool LRUCache<V>::Exists(std::string_view key)
+template <typename V, typename Rep>
+bool LRUCache<V, Rep>::Exists(std::string_view key)
 {
 	if (!map_.contains(key))
 	{
@@ -21,8 +21,8 @@ bool LRUCache<V>::Exists(std::string_view key)
 	return true;
 }
 
-template <typename V>
-std::optional<V> LRUCache<V>::Get(std::string_view key)
+template <typename V, typename Rep>
+std::optional<V> LRUCache<V, Rep>::Get(std::string_view key)
 {
 	if (!map_.contains(key))
 	{
@@ -39,8 +39,8 @@ std::optional<V> LRUCache<V>::Get(std::string_view key)
 	return node->GetValue();
 }
 
-template <typename V>
-LRUCacheStatus LRUCache<V>::Set(std::string_view key, std::optional<V> value)
+template <typename V, typename Rep>
+LRUCacheStatus LRUCache<V, Rep>::Set(std::string_view key, std::optional<V> value)
 {
 	auto status = LRUCacheStatus::kOk;
 	if (map_.contains(key)) // modify
