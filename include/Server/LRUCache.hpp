@@ -23,7 +23,7 @@ public:
     LRUCache(std::size_t capacity) : capacity_(capacity)
     {
     }
-    V Get(const std::string_view key);
+    std::optional<V> Get(const std::string_view key);
     void Set(const std::string_view key, V&& value);
 
 private:

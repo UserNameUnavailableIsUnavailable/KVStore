@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-#include "Protocol.hpp"
+#include "Common/Protocol.hpp"
 
 namespace KV
 {

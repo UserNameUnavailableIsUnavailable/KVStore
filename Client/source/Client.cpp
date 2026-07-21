@@ -1,4 +1,4 @@
-#include "Client.hpp"
+#include "Client/Client.hpp"
 
 #include <bit>
 #include <iostream>
@@ -14,7 +14,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "Token.hpp"
+#include "Common/Token.hpp"
 
 static std::unordered_map<std::uint32_t, std::uint32_t> escape_char = {
     {'r', '\r'},

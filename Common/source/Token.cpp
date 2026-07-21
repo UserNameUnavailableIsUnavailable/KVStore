@@ -1,4 +1,4 @@
-#include "Token.hpp"
+#include "Common/Token.hpp"
 #include <optional>
 
 static inline bool is_continuation_byte(std::uint8_t byte)
