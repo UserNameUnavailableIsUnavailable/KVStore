@@ -15,6 +15,7 @@
 #include <arpa/inet.h>
 
 #include "Common/Token.hpp"
+#include "Common/Result.hpp"
 
 static std::unordered_map<std::uint32_t, std::uint32_t> escape_char = {
     {'r', '\r'},
@@ -197,8 +198,19 @@ void Client::Run()
                     std::cerr << "Failed to receive response from server." << std::endl;
                     continue;
                 }
-                buffer[received] = '\0';
-                std::cout << "Server response: " << buffer << std::endl;
+                if (received == 0)
+                {
+                    std::cerr << "Server closed the connection." << std::endl;
+                    break;
+                }
+                KV::Result response;
+                response.Deserialize(std::string(buffer, static_cast<std::size_t>(received)));
+                std::cout << "Server response: " << response.GetMessage();
+                if (!response.GetResult().empty())
+                {
+                    std::cout << "\n" << response.GetResult();
+                }
+                std::cout << std::endl;
             }
         }
         std::cout << prompt_;

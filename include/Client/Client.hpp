@@ -1,48 +1,14 @@
 #pragma once
 
 #include <cstdint>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <optional>
 
+#include "Common/Command.hpp"
+
 namespace KV
 {
-class Command
-{
-public:
-    Command(std::string name, std::vector<std::string> args) :
-        name_(std::move(name)),
-        arguments_(std::move(args))
-    {
-    }
-public:
-    const std::string& GetName() const
-    {
-        return name_;
-    }
-    const std::vector<std::string>& GetArguments() const
-    {
-        return arguments_;
-    }
-    std::string Serialize() const
-    {
-        std::stringstream ss;
-        // RESP-like serialization
-        ss << arguments_.size() + 1 << "\r\n"; // number of tokens (command + arguments)
-        ss << name_.length() << "\r\n"; // length of command
-        ss << name_ << "\r\n";
-        for (const auto& arg : arguments_)
-        {
-            ss << arg.length() << "\r\n";
-            ss << arg << "\r\n";
-        }
-        return ss.str();
-    }
-private:
-    std::string name_;
-    std::vector<std::string> arguments_;
-};
 
 class Client
 {

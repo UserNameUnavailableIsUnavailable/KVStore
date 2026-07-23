@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <list>
@@ -16,7 +17,7 @@ enum class LRUCacheStatus
 	kInvalidArgument
 };
 
-template <typename V, typename Rep = std::chrono::milliseconds>
+template <typename V>
 class Record
 {
 public:
@@ -44,7 +45,7 @@ public:
 	}
 	void Update(V value)
 	{
-		value_ = std::move(value_);
+		value_ = std::move(value);
 		Reinstate();
 	}
 	void Update(std::string key, V value)
@@ -70,25 +71,112 @@ private:
 	bool kicked_out_ = false;
 	// TODO: enable TTL
     std::chrono::steady_clock::time_point last_accessed_;
-    std::chrono::duration<Rep> time_to_live_;
+	std::chrono::time_point<std::chrono::system_clock> expires_at_;
 };
 
-template <typename V, typename Rep = std::chrono::milliseconds>
+template <typename V>
 class LRUCache
 {
-	using RecordType = Record<V, Rep>;
+	using RecordType = Record<V>;
 	using ListType = std::list<RecordType>;
 	using ListNode = ListType::iterator;
 public:
     LRUCache(std::size_t capacity) : capacity_(capacity)
     {
     }
-    bool Exists(const std::string_view key);
-    std::optional<V> Get(const std::string_view key);
-    LRUCacheStatus Set(const std::string_view key, std::optional<V> value);
+    bool Exists(std::string key);
+    std::optional<V> Get(std::string key);
+    LRUCacheStatus Set(std::string key, std::optional<V> value);
 private:
     std::size_t capacity_;
     ListType records_; // doubly linked list to maintain the order of usage
     std::unordered_map<std::string, ListNode> map_;
 };
+
+template <typename V>
+bool LRUCache<V>::Exists(std::string key)
+{
+	if (!map_.contains(key))
+	{
+		return false;
+	}
+	auto node = map_[key];
+	if (!node->IsValid())
+	{
+		map_.erase(key);
+		records_.splice(records_.end(), records_, node);
+		return false;
+	}
+	records_.splice(records_.begin(), records_, node);
+	return true;
+}
+
+template <typename V>
+std::optional<V> LRUCache<V>::Get(std::string key)
+{
+	if (!map_.contains(key))
+	{
+		return std::nullopt;
+	}
+	auto node = map_[key];
+	if (!node->IsValid())
+	{
+		map_.erase(key);
+		records_.splice(records_.end(), records_, node);
+		return std::nullopt;
+	}
+	records_.splice(records_.begin(), records_, node);
+	return node->GetValue();
+}
+
+template <typename V>
+LRUCacheStatus LRUCache<V>::Set(std::string key, std::optional<V> value)
+{
+	auto status = LRUCacheStatus::kOk;
+	if (map_.contains(key)) // modify
+	{
+		auto node = map_[key];
+		if (!value.has_value()) // delete
+		{
+			// erase the key in map
+			map_.erase(key);
+			// move node to the end of the list
+			records_.splice(records_.end(), records_, node);
+		}
+		else // modify
+		{
+			node->Update(value.value());
+			// move node to the begin of the list
+			records_.splice(records_.begin(), records_, node);
+		}
+	}
+	else // create
+	{
+		if (!value.has_value()) [[unlikely]] // assign null
+		{
+			return LRUCacheStatus::kInvalidArgument;
+		}
+		if (records_.empty()) [[unlikely]]
+		{
+			records_.emplace_front(key, value.value());
+			map_[key] = records_.begin();
+			return LRUCacheStatus::kOk;
+		}
+		auto back = records_.end();
+		std::advance(back, -1);
+		// the last element is invalid
+		if (!back->IsValid() || records_.size() == capacity_)
+		{
+			// if the last element is invalid, replace it
+			map_.erase(key);
+			back->Update(key, value.value());
+			map_[key] = back;
+		}
+		else
+		{
+			records_.emplace_back(key, value.value());
+		}
+	}
+	return status;
+}
 }

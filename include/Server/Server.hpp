@@ -5,13 +5,16 @@
 #include <array>
 #include <deque>
 #include <functional>
+#include <string>
 #include <unordered_map>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <liburing.h>
 
 #include "CoroutineDesignator.hpp"
-#include "Common/Parser.hpp"
+#include "Common/Command.hpp"
+#include "Common/LRUCache.hpp"
+#include "Common/Result.hpp"
 
 enum class TaskType
 {
@@ -72,17 +75,17 @@ private:
 
     void HandleTaskCompletion(io_uring_cqe& cqe);
 
-    std::string Execute(const Request& request);
+    Result Execute(const Command& command);
 
     void RegisterHandlers();
 
-    coro::NetworkTask ExecuteCommandTask(Task& task, Request request)
+    coro::NetworkTask ExecuteCommandTask(Task& task, Command command)
     {
-        task.pending_responses.push_back(Execute(request));
+        task.pending_responses.push_back(Execute(command).Serialize());
         co_return;
     }
 private:
-    using CommandHandler = std::function<std::string(const Request&)>;
+    using CommandHandler = std::function<Result(const Command&)>;
 
     int server_fd_ = -1;
     std::uint16_t port_ = 0;
@@ -90,9 +93,8 @@ private:
     std::array<Task, 32> inprogress_;
     std::deque<std::size_t> defer_;
     coro::TaskDesignator command_designator_;
-    Parser parser_;
     std::unordered_map<std::string, CommandHandler> handlers_;
-    std::unordered_map<std::string, std::string> kv_;
+	LRUCache<std::string> lru_cache_;
     io_uring ring_;
 };
 } // namespace KV

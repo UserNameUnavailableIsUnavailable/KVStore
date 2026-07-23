@@ -2,13 +2,17 @@
 
 #include <format>
 #include <iostream>
+#include <optional>
+#include <sstream>
+#include "Common/LRUCache.hpp"
 
 #include <liburing/io_uring.h>
 
 namespace KV
 {
 
-Server::Server()
+Server::Server() :
+	lru_cache_(32)
 {
     server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd_ < 0)
@@ -126,15 +130,17 @@ void Server::HandleTaskCompletion(io_uring_cqe& cqe)
 
 				while (!task.recv_buffer.empty())
 				{
-					auto parsed = parser_.Parse(task.recv_buffer);
-					if (parsed.status == ParseStatus::kIncomplete)
+					Command command;
+					auto parsed = command.Deserialize(task.recv_buffer);
+					if (parsed.status == CommandParseStatus::kIncomplete)
 					{
 						break;
 					}
 
-					if (parsed.status == ParseStatus::kProtocolError)
+					if (parsed.status == CommandParseStatus::kProtocolError)
 					{
-						task.pending_responses.push_back(std::format("ERR protocol error: {}\n", parsed.error_message));
+						task.pending_responses.push_back(Result(false,
+							std::format("ERR protocol error: {}", parsed.error_message), "").Serialize());
 						if (parsed.consumed_bytes > 0 && parsed.consumed_bytes <= task.recv_buffer.size())
 						{
 							task.recv_buffer.erase(0, parsed.consumed_bytes);
@@ -146,7 +152,7 @@ void Server::HandleTaskCompletion(io_uring_cqe& cqe)
 						continue;
 					}
 
-					command_designator_.Start(ExecuteCommandTask(task, std::move(parsed.request)));
+					command_designator_.Start(ExecuteCommandTask(task, std::move(command)));
 					task.recv_buffer.erase(0, parsed.consumed_bytes);
 				}
 
@@ -240,78 +246,70 @@ void Server::HandleTaskCompletion(io_uring_cqe& cqe)
 	}
 }
 
-std::string Server::Execute(const Request& request)
+Result Server::Execute(const Command& command)
 {
-	auto it = handlers_.find(request.command);
+	auto it = handlers_.find(command.GetName());
 	if (it == handlers_.end())
 	{
-		return "ERR unknown command\n";
+		return Result(false, "ERR unknown command", "");
 	}
-	return it->second(request);
+	return it->second(command);
 }
 
 void Server::RegisterHandlers()
 {
-	handlers_["GET"] = [this](const Request& request) -> std::string
+	handlers_["GET"] = [this](const Command& command) -> Result
 	{
-		if (request.arguments.size() != 1)
+		if (command.GetArguments().size() != 1)
 		{
-			return "ERR usage: GET key\n";
+			return Result(false, "ERR usage: GET key", "");
 		}
-		auto it = kv_.find(request.arguments[0]);
-		if (it == kv_.end())
+		auto value = lru_cache_.Get(command.GetArguments()[0]);
+		if (!value.has_value())
 		{
-			return "NOT_FOUND\n";
+			return Result(false, "ERR key not found", "");
 		}
-		return std::format("OK {}\n", it->second);
+		return Result(true, "OK", *value);
 	};
 
-	handlers_["SET"] = [this](const Request& request) -> std::string
+	handlers_["SET"] = [this](const Command& command) -> Result
 	{
-		if (request.arguments.size() != 2)
+		if (command.GetArguments().size() != 2)
 		{
-			return "ERR usage: SET key value\n";
+			return Result(false, "ERR usage: SET key value", "");
 		}
-		kv_[request.arguments[0]] = request.arguments[1];
-		return "OK\n";
+		lru_cache_.Set(command.GetArguments()[0], command.GetArguments()[1]);
+		return Result(true, "OK", "");
 	};
 
-	handlers_["DELETE"] = [this](const Request& request) -> std::string
+	handlers_["DELETE"] = [this](const Command& command) -> Result
 	{
-		if (request.arguments.size() != 1)
+		if (command.GetArguments().size() != 1)
 		{
-			return "ERR usage: DELETE key\n";
+			return Result(false, "ERR usage: DELETE key", "");
 		}
-		auto erased = kv_.erase(request.arguments[0]);
-		return erased > 0 ? "OK\n" : "NOT_FOUND\n";
+		auto status = lru_cache_.Set(command.GetArguments()[0], std::nullopt);
+		switch (status)
+		{
+			case KV::LRUCacheStatus::kOk:
+				return Result(true, "OK", "");
+			case KV::LRUCacheStatus::kInvalidArgument:
+				return Result(false, "ERR key not found", "");
+			case KV::LRUCacheStatus::kNonexistent:
+				return Result(false, "ERR key not found", "");
+			default:
+				return Result(false, "ERR unknown error", "");
+		};
 	};
 
-	handlers_["UPDATE"] = [this](const Request& request) -> std::string
+	handlers_["EXISTS"] = [this](const Command& command) -> Result
 	{
-		if (request.arguments.size() != 2)
+		if (command.GetArguments().size() != 1)
 		{
-			return "ERR usage: UPDATE key value\n";
+			return Result(false, "ERR usage: EXISTS key", "");
 		}
-		auto it = kv_.find(request.arguments[0]);
-		if (it == kv_.end())
-		{
-			return "NOT_FOUND\n";
-		}
-		it->second = request.arguments[1];
-		return "OK\n";
+		return Result(true, "OK", lru_cache_.Exists(command.GetArguments()[0]) ? "YES" : "NO");
 	};
-
-	auto exists_handler = [this](const Request& request) -> std::string
-	{
-		if (request.arguments.size() != 1)
-		{
-			return "ERR usage: EXISTS key\n";
-		}
-		return kv_.contains(request.arguments[0]) ? "YES\n" : "NO\n";
-	};
-
-	handlers_["EXISTS"] = exists_handler;
-	handlers_["EXIST"] = exists_handler;
 }
 
 void Server::Run()
