@@ -48,12 +48,8 @@ public:
 		value_ = std::move(value);
 		Reinstate();
 	}
-	void Update(std::string key, V value)
+	void Replace(std::string key, V value)
 	{
-		if (IsValid())
-		{
-			throw std::runtime_error("cannot overwrite a valid record");
-		}
 		key_ = std::move(key);
 		value_ = std::move(value);
 		Reinstate();
@@ -167,15 +163,17 @@ LRUCacheStatus LRUCache<V>::Set(std::string key, std::optional<V> value)
 		if (!back->IsValid() || records_.size() == capacity_)
 		{
 			// if the last element is invalid, replace it
-			map_.erase(key);
-			back->Update(key, value.value());
+			map_.erase(back->GetKey());
+			back->Replace(key, value.value());
 			map_[key] = back;
+			records_.splice(records_.begin(), records_, back);
 		}
 		else
 		{
-			records_.emplace_back(key, value.value());
+			records_.emplace_front(key, value.value());
+			map_[key] = records_.begin();
 		}
 	}
 	return status;
 }
-}
+} // namespace KV
