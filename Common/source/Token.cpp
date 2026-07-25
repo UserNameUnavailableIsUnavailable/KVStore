@@ -1,4 +1,5 @@
-#include "Token.hpp"
+#include "Common/Token.hpp"
+
 #include <optional>
 
 static inline bool is_continuation_byte(std::uint8_t byte)
@@ -23,7 +24,7 @@ std::optional<CodePoint> ResolveNextCodePoint(std::string_view s)
         cp.representation = {
             static_cast<std::uint8_t>(first_byte), 0, 0, 0
         };
-    }    
+    }
     else if ((0b1110'0000 & first_byte) == 0b1100'0000) // 2-byte sequence
     {
         if (s.size() < 2)
@@ -88,7 +89,7 @@ std::optional<CodePoint> ResolveNextCodePoint(std::string_view s)
     {
         return std::nullopt; // invalid first byte for UTF-8
     }
-    
+
     return cp;
 }
 }

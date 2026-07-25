@@ -1,0 +1,6 @@
+{
+	"dependencies": [
+		"cli11",
+		"gtest"
+	]
+}

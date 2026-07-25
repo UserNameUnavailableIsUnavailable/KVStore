@@ -1,14 +1,21 @@
-#include "Client.hpp"
+#include "Client/Client.hpp"
 
 #include <bit>
-#include <cstring>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <unordered_map>
+#include <format>
 
-#include "Token.hpp"
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#include "Common/Token.hpp"
+#include "Common/Result.hpp"
 
 static std::unordered_map<std::uint32_t, std::uint32_t> escape_char = {
     {'r', '\r'},
@@ -26,31 +33,57 @@ Client::Client()
 
 }
 
-void Client::ResolveTokens(const std::vector<std::string>& tokens)
+Client::~Client()
+{
+    if (client_fd_ >= 0)
+    {
+        close(client_fd_);
+    }
+}
+
+void Client::Connect(const char* host, std::uint16_t port)
+{
+    sockaddr_in addr {
+        .sin_family = AF_INET,
+        .sin_port = htons(port),
+        .sin_addr = {},
+        .sin_zero = {}
+    };
+    if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0)
+    {
+        throw std::runtime_error(std::format("invalid address: {}", host));
+    }
+    client_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd_ < 0)
+    {
+        throw std::runtime_error("failed to create socket");
+    }
+    if (connect(client_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    {
+        throw std::runtime_error(std::format("failed to connect to {}:{}", host, port));
+    }
+}
+
+std::optional<KV::Command> Client::ResolveTokens(const std::vector<std::string>& tokens)
 {
     if (tokens.empty())
     {
-        return;
+        return std::nullopt;
     }
-    if (tokens.size() == 1 && tokens[0] == "exit")
-    {
-        // TODO: notify the caller that we should exit
-        std::exit(0);
-    }
-    std::cout << "Tokens: ";
-    for (const auto& token : tokens)
-    {
-        std::cout << "[" << token << "] ";
-    }
-    std::cout << std::endl; // flush the output
+    return KV::Command(tokens[0], std::vector<std::string>(tokens.begin() + 1, tokens.end()));
 }
 
 void Client::Run()
 {
+    if (client_fd_ < 0)
+    {
+        throw std::runtime_error("client is not connected to a server");
+    }
     std::cout << prompt_;
     std::string line;
     std::vector<std::string> tokens;
     tokens.reserve(12);
+    bool bye = false;
     do
     {
         std::string token; // current token parsed
@@ -139,9 +172,49 @@ void Client::Run()
         {
             tokens.push_back(std::move(token));
         }
-        ResolveTokens(tokens);
+        auto cmd = ResolveTokens(tokens);
+        if (cmd.has_value())
+        {
+            if (cmd->GetName() == "exit")
+            {
+                bye = true;
+                std::cout << "Bye!" << std::endl;
+                break;
+            }
+            else
+            {
+                std::string serialized = cmd->Serialize();
+                ssize_t sent = send(client_fd_, serialized.data(), serialized.size(), 0);
+                if (sent < 0)
+                {
+                    std::cerr << "Failed to send command to server." << std::endl;
+                    continue;
+                }
+                char buffer[1024];
+                // TODO: handle partial responses and multiple responses
+                ssize_t received = recv(client_fd_, buffer, sizeof(buffer) - 1, 0);
+                if (received < 0)
+                {
+                    std::cerr << "Failed to receive response from server." << std::endl;
+                    continue;
+                }
+                if (received == 0)
+                {
+                    std::cerr << "Server closed the connection." << std::endl;
+                    break;
+                }
+                KV::Result response;
+                response.Deserialize(std::string(buffer, static_cast<std::size_t>(received)));
+                std::cout << (response.Ok() ? "OK" : "ERR") << " " << response.GetMessage();
+                if (!response.GetResult().empty())
+                {
+                    std::cout << "\n" << response.GetResult();
+                }
+                std::cout << std::endl;
+            }
+        }
         std::cout << prompt_;
         tokens.clear();
-    } while (true);
+    } while (!bye);
 }
 }
