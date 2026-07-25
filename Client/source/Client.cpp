@@ -205,7 +205,7 @@ void Client::Run()
                 }
                 KV::Result response;
                 response.Deserialize(std::string(buffer, static_cast<std::size_t>(received)));
-                std::cout << "Server response: " << response.GetMessage();
+                std::cout << (response.Ok() ? "OK" : "ERR") << " " << response.GetMessage();
                 if (!response.GetResult().empty())
                 {
                     std::cout << "\n" << response.GetResult();

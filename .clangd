@@ -3,5 +3,5 @@ CompileFlags:
     - -std=c++20
     - -Iinclude
     - -Ivcpkg_installed/arm64-linux/include
-    - -Ivcpkg_installed/amd64-linux/include
+    - -Ivcpkg_installed/x64-linux/include
 

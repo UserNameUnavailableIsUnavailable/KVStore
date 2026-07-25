@@ -11,47 +11,11 @@
 #include <sys/socket.h>
 #include <liburing.h>
 
+#include "Common/Task.hpp"
 #include "CoroutineDesignator.hpp"
 #include "Common/Command.hpp"
 #include "Common/LRUCache.hpp"
 #include "Common/Result.hpp"
-
-enum class TaskType
-{
-    kNone,
-    kAccept,
-    kRead,
-    kWrite
-};
-
-struct Task
-{
-    TaskType type = TaskType::kNone;
-    sockaddr_storage address;
-    socklen_t address_length = sizeof(sockaddr_storage);
-    int fd = -1;
-    std::array<char, 4096> read_buffer{};
-    std::string recv_buffer;
-    std::deque<std::string> pending_responses;
-    std::string send_buffer;
-    std::size_t write_offset = 0;
-
-    void reset()
-    {
-        type = TaskType::kNone;
-        address_length = sizeof(address);
-        if (fd >= 0)
-        {
-            close(fd);
-        }
-        fd = -1;
-        recv_buffer.clear();
-        pending_responses.clear();
-        send_buffer.clear();
-        write_offset = 0;
-    }
-};
-
 
 namespace KV
 {
@@ -61,40 +25,36 @@ public:
     Server();
     void Bind(std::uint16_t port);
     void Run();
-    ~Server() noexcept
-    {
-        if (server_fd_ > 0)
-        {
-            close(server_fd_);
-        }
-    }
+    ~Server() noexcept;
 private:
-    bool Prepare(Task& task);
-
-    void Submit();
-
+    /// Prepares a task's current I/O operation for submission. Returns false when the submission queue is full and the task is deferred.
+    bool PrepareTask(IOTask& task);
+    void SubmitTasks();
     void HandleTaskCompletion(io_uring_cqe& cqe);
-
     Result Execute(const Command& command);
-
+    void RegisterCommaandHandler(std::string command_name, std::function<Result (const Command& command, LRUCache<std::string>& cache)> handler);
     void RegisterHandlers();
-
-    coro::NetworkTask ExecuteCommandTask(Task& task, Command command)
+    coro::NetworkTask ExecuteCommandTask(IOTask& task, Command command)
     {
-        task.pending_responses.push_back(Execute(command).Serialize());
+        const auto response = Execute(command).Serialize();
+        task.WithMutableWriteBuffer([&response](auto& buffer) {
+            buffer.assign(response.begin(), response.end());
+        });
         co_return;
     }
 private:
     using CommandHandler = std::function<Result(const Command&)>;
-
+    void InitializeSubmissionQueue();
     int server_fd_ = -1;
     std::uint16_t port_ = 0;
-    bool bound_ = false;
-    std::array<Task, 32> inprogress_;
+    std::array<IOTask, 1024> io_tasks_;
     std::deque<std::size_t> defer_;
     coro::TaskDesignator command_designator_;
     std::unordered_map<std::string, CommandHandler> handlers_;
 	LRUCache<std::string> lru_cache_;
     io_uring ring_;
+    bool ring_initialized_ = false;
+    std::size_t submission_queue_capacity_ = 1024; // max number of entries in the submission queue
+    std::size_t completion_queue_capacity_ = 2048; // max number of entries in the completion queue (2 times the submission queue capacity)
 };
 } // namespace KV

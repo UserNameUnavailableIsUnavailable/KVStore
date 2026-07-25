@@ -32,7 +32,7 @@ public:
 	}
 	bool IsValid()
 	{
-		return kicked_out_;
+		return !kicked_out_;
 	}
 	const std::string& GetKey()
 	{
@@ -162,8 +162,7 @@ LRUCacheStatus LRUCache<V>::Set(std::string key, std::optional<V> value)
 			map_[key] = records_.begin();
 			return LRUCacheStatus::kOk;
 		}
-		auto back = records_.end();
-		std::advance(back, -1);
+		auto back = std::prev(records_.end());
 		// the last element is invalid
 		if (!back->IsValid() || records_.size() == capacity_)
 		{

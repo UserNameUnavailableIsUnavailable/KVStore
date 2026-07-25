@@ -1,12 +1,15 @@
 #include "Server/Server.hpp"
 
+#include <cerrno>
 #include <format>
 #include <iostream>
-#include <optional>
-#include <sstream>
-#include "Common/LRUCache.hpp"
+#include <stdexcept>
 
 #include <liburing/io_uring.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include "Common/LRUCache.hpp"
+#include "Common/Task.hpp"
 
 namespace KV
 {
@@ -14,14 +17,14 @@ namespace KV
 Server::Server() :
 	lru_cache_(32)
 {
-    server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+    server_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd_ < 0)
     {
         throw std::runtime_error(std::format("failed to create socket, errno: {}", errno));
     }
 
     int yes = 1;
-    if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0)
+    if (::setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0)
     {
         throw std::runtime_error(std::format("failed to set SO_REUSEADDR, errno: {}", errno));
     }
@@ -31,7 +34,11 @@ Server::Server() :
 
 void Server::Bind(std::uint16_t port)
 {
-    sockaddr_in addr {
+	if (port_ != 0)
+	{
+		throw std::runtime_error(std::format("server already bound to port {}", port_));
+	}
+    ::sockaddr_in addr {
         .sin_family = AF_INET,
         .sin_port = htons(port),
         .sin_addr = {
@@ -39,210 +46,202 @@ void Server::Bind(std::uint16_t port)
         },
         .sin_zero = {}
     };
-    int ret = bind(server_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    int ret = ::bind(server_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
     if (ret < 0)
     {
         throw std::runtime_error((std::format("failed to bind to port {}, errno: {}", port, errno)));
     }
     port_ = port;
-    bound_ = true;
 }
 
-bool Server::Prepare(Task& task)
+Server::~Server() noexcept
 {
-	auto sqe_ptr = io_uring_get_sqe(&ring_);
-	if (!sqe_ptr)
+	if (ring_initialized_)
 	{
-		std::size_t index = std::distance(inprogress_.begin(), &task);
-		defer_.push_back(index);
-		return false;
+		::io_uring_queue_exit(&ring_);
 	}
-	sqe_ptr->user_data = reinterpret_cast<std::uint64_t>(&task);
-	switch (task.type)
+	if (server_fd_ >= 0)
 	{
-		case TaskType::kAccept:
-		{
-			io_uring_prep_accept(sqe_ptr, server_fd_, reinterpret_cast<sockaddr*>(&task.address), &task.address_length, 0);
-			break;
-		}
-		case TaskType::kRead:
-		{
-			io_uring_prep_read(sqe_ptr, task.fd, task.read_buffer.data(), task.read_buffer.size(), 0);
-			break;
-		}
-		case TaskType::kWrite:
-		{
-			const char* data = task.send_buffer.data() + task.write_offset;
-			const std::size_t remaining = task.send_buffer.size() - task.write_offset;
-			io_uring_prep_write(sqe_ptr, task.fd, data, remaining, 0);
-			break;
-		}
-		case TaskType::kNone:
-		{
-			std::cerr << "unexpected kNone" << '\n';
-			break;
-		}
+		::close(server_fd_);
 	}
+}
+
+bool Server::PrepareTask(IOTask& task)
+{
+    if (task.GetType() == IOTaskType::kNone)
+    {
+        return false;
+    }
+    if (task.IsMultishot())
+    {
+        throw std::runtime_error("multishot tasks are not supported in this implementation");
+    }
+
+    auto* sqe = ::io_uring_get_sqe(&ring_);
+    if (sqe == nullptr)
+    {
+		defer_.push_back(static_cast<std::size_t>(&task - io_tasks_.data()));
+        return false;
+    }
+
+	::io_uring_sqe_set_data(sqe, &task);
+    switch (task.GetType())
+    {
+        case IOTaskType::kAccept:
+            task.WithMutableAcceptContext([sqe, server_fd = server_fd_](sockaddr_storage* address, socklen_t* address_length) {
+                ::io_uring_prep_accept(sqe, server_fd, reinterpret_cast<sockaddr*>(address), address_length,
+                    SOCK_CLOEXEC | SOCK_NONBLOCK);
+            });
+            break;
+        case IOTaskType::kRecv:
+				task.WithReceiveContext([sqe](int fd, char* data, std::size_t size) {
+				::io_uring_prep_recv(sqe, fd, data, size, 0);
+            });
+            break;
+        case IOTaskType::kSend:
+		{
+			task.WithSendContext([sqe](int fd, const char* data, std::size_t size) {
+				::io_uring_prep_send(sqe, fd, data, size, 0);
+			});
+            break;
+		}
+        case IOTaskType::kNone:
+            return false;
+    }
 	return true;
 }
 
-void Server::Submit()
+void Server::SubmitTasks()
 {
 	while (!defer_.empty())
 	{
 		auto index = defer_.front();
 		defer_.pop_front();
-		if (!Prepare(inprogress_[index]))
+		if (!PrepareTask(io_tasks_[index]))
 		{
 			break;
 		}
 	}
-	io_uring_submit(&ring_);
+	const int result = ::io_uring_submit(&ring_);
+	if (result < 0)
+	{
+		throw std::runtime_error(std::format("io_uring submission failed: {}", -result));
+	}
 }
 
 void Server::HandleTaskCompletion(io_uring_cqe& cqe)
 {
-	auto& task = *reinterpret_cast<Task*>(cqe.user_data);
+	auto& task = *static_cast<IOTask*>(::io_uring_cqe_get_data(&cqe));
 
 	// finish task
-	switch (task.type)
+	switch (task.GetType())
 	{
-		case TaskType::kAccept:
+		case IOTaskType::kAccept:
 		{
-			task.fd = cqe.res;
-			if (task.fd < 0)
+			if (cqe.res < 0)
 			{
-				task.type = TaskType::kNone;
+				task.SetType(IOTaskType::kAccept);
 			}
 			else
 			{
-				task.type = TaskType::kRead;
+				task.SetFileDescriptor(cqe.res);
+				task.SetType(IOTaskType::kRecv);
 			}
 			break;
 		}
-		case TaskType::kRead:
+		case IOTaskType::kRecv:
 		{
+			task.CompleteReceive(cqe.res);
 			if (cqe.res > 0)
 			{
-				task.recv_buffer.append(task.read_buffer.data(), static_cast<std::size_t>(cqe.res));
-				std::cout << "[RECEIVED " << cqe.res << " BYTES] "
-							<< std::string_view(task.read_buffer.data(), static_cast<std::size_t>(cqe.res)) << '\n';
-
-				while (!task.recv_buffer.empty())
+				Command command;
+				auto parsed = task.WithConstReadBuffer([&command](const auto& buffer) {
+					return command.Deserialize(std::string_view(buffer.data(), buffer.size()));
+				});
+				if (parsed.status == CommandParseStatus::kIncomplete)
 				{
-					Command command;
-					auto parsed = command.Deserialize(task.recv_buffer);
-					if (parsed.status == CommandParseStatus::kIncomplete)
-					{
-						break;
-					}
-
-					if (parsed.status == CommandParseStatus::kProtocolError)
-					{
-						task.pending_responses.push_back(Result(false,
-							std::format("ERR protocol error: {}", parsed.error_message), "").Serialize());
-						if (parsed.consumed_bytes > 0 && parsed.consumed_bytes <= task.recv_buffer.size())
-						{
-							task.recv_buffer.erase(0, parsed.consumed_bytes);
-						}
-						else
-						{
-							task.recv_buffer.clear();
-						}
-						continue;
-					}
-
-					command_designator_.Start(ExecuteCommandTask(task, std::move(command)));
-					task.recv_buffer.erase(0, parsed.consumed_bytes);
+					task.SetType(IOTaskType::kRecv);
+					break;
 				}
 
-				// Keep the scheduler progression explicit for future awaitable I/O coroutines.
-				command_designator_.ResumeAll();
-
-				if (!task.pending_responses.empty())
+				if (parsed.status == CommandParseStatus::kProtocolError)
 				{
-					task.send_buffer = std::move(task.pending_responses.front());
-					task.pending_responses.pop_front();
-					task.write_offset = 0;
-					task.type = TaskType::kWrite;
+					const auto response = Result(false,
+						std::format("protocol error: {}", parsed.error_message), "").Serialize();
+					task.WithMutableWriteBuffer([&response](auto& buffer) {
+						buffer.assign(response.begin(), response.end());
+					});
+					task.WithMutableReadBuffer([](auto& buffer) { buffer.clear(); });
+					task.SetType(IOTaskType::kSend);
 				}
 				else
 				{
-					task.type = TaskType::kRead;
+					const bool has_extra_data = task.WithMutableReadBuffer([consumed = parsed.consumed_bytes](auto& buffer) {
+						buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(consumed));
+						return !buffer.empty();
+					});
+					if (has_extra_data)
+					{
+						const auto response = Result(false, "pipelined commands are not supported", "").Serialize();
+						task.WithMutableWriteBuffer([&response](auto& buffer) {
+							buffer.assign(response.begin(), response.end());
+						});
+						task.WithMutableReadBuffer([](auto& buffer) { buffer.clear(); });
+						task.SetType(IOTaskType::kSend);
+					}
+					else
+					{
+						command_designator_.Start(ExecuteCommandTask(task, std::move(command)));
+						command_designator_.ResumeAll();
+						task.SetType(IOTaskType::kSend);
+					}
 				}
 			}
 			else if (cqe.res == 0)
 			{
 				// connection closed by peer
-				task.type = TaskType::kNone; // close fd
+				task.SetType(IOTaskType::kNone);
 			}
 			else
 			{
-				// -EAGAIN, -EWOULDBLOCK, -ECONNRESET
-				task.type = TaskType::kRead; // try again
+				task.SetType(cqe.res == -EAGAIN || cqe.res == -EINTR ? IOTaskType::kRecv : IOTaskType::kNone);
 			}
 			break;
 		}
-		case TaskType::kWrite:
+		case IOTaskType::kSend:
 		{
 			if (cqe.res > 0)
 			{
-				task.write_offset += static_cast<std::size_t>(cqe.res);
-				if (task.write_offset >= task.send_buffer.size())
+				if (task.CompleteSend(cqe.res))
 				{
-					std::cout << "[SEND " << task.send_buffer.size() << " BYTES] " << task.send_buffer;
-					if (!task.pending_responses.empty())
-					{
-						task.send_buffer = std::move(task.pending_responses.front());
-						task.pending_responses.pop_front();
-						task.write_offset = 0;
-						task.type = TaskType::kWrite;
-					}
-					else
-					{
-						task.type = TaskType::kRead;
-					}
+					task.WithConstWriteBuffer([](const auto& buffer) {
+						std::cout << "[SEND " << buffer.size() << " BYTES] "
+							<< std::string_view(buffer.data(), buffer.size());
+					});
+					task.SetType(IOTaskType::kRecv);
 				}
 				else
 				{
-					task.type = TaskType::kWrite;
+					task.SetType(IOTaskType::kSend);
 				}
 			}
 			else
 			{
 				// -ECONNRESET
-				task.type = TaskType::kNone;
+				task.SetType(IOTaskType::kNone);
 			}
 			break;
 		}
-		case TaskType::kNone:
+		case IOTaskType::kNone:
 		{
 			std::cerr << "unexpected kNone" << '\n';
 		}
 	}
 
-	// prepare task
-	switch (task.type)
+	if (task.GetType() == IOTaskType::kNone)
 	{
-		case TaskType::kNone:
-		{
-			task.reset();
-			task.type = TaskType::kAccept;
-			// fall through
-		}
-		case TaskType::kAccept:
-		{
-			break;
-		}
-		case TaskType::kRead:
-		{
-			task.write_offset = 0;
-			break;
-		}
-		case TaskType::kWrite:
-		{
-			break;
-		}
+		task.Reset();
+		task.SetType(IOTaskType::kAccept);
 	}
 }
 
@@ -251,7 +250,7 @@ Result Server::Execute(const Command& command)
 	auto it = handlers_.find(command.GetName());
 	if (it == handlers_.end())
 	{
-		return Result(false, "ERR unknown command", "");
+		return Result(false, "unknown command", "");
 	}
 	return it->second(command);
 }
@@ -262,43 +261,43 @@ void Server::RegisterHandlers()
 	{
 		if (command.GetArguments().size() != 1)
 		{
-			return Result(false, "ERR usage: GET key", "");
+			return Result(false, "usage: GET key", "");
 		}
 		auto value = lru_cache_.Get(command.GetArguments()[0]);
 		if (!value.has_value())
 		{
-			return Result(false, "ERR key not found", "");
+			return Result(false, "key not found", "");
 		}
-		return Result(true, "OK", *value);
+		return Result(true, "", *value);
 	};
 
 	handlers_["SET"] = [this](const Command& command) -> Result
 	{
 		if (command.GetArguments().size() != 2)
 		{
-			return Result(false, "ERR usage: SET key value", "");
+			return Result(false, "usage: SET key value", "");
 		}
 		lru_cache_.Set(command.GetArguments()[0], command.GetArguments()[1]);
-		return Result(true, "OK", "");
+		return Result(true, "", "");
 	};
 
 	handlers_["DELETE"] = [this](const Command& command) -> Result
 	{
 		if (command.GetArguments().size() != 1)
 		{
-			return Result(false, "ERR usage: DELETE key", "");
+			return Result(false, "usage: DELETE key", "");
 		}
 		auto status = lru_cache_.Set(command.GetArguments()[0], std::nullopt);
 		switch (status)
 		{
-			case KV::LRUCacheStatus::kOk:
-				return Result(true, "OK", "");
-			case KV::LRUCacheStatus::kInvalidArgument:
-				return Result(false, "ERR key not found", "");
-			case KV::LRUCacheStatus::kNonexistent:
-				return Result(false, "ERR key not found", "");
+			case LRUCacheStatus::kOk:
+				return Result(true, "", "");
+			case LRUCacheStatus::kInvalidArgument:
+				return Result(false, "key not found", "");
+			case LRUCacheStatus::kNonexistent:
+				return Result(false, "key not found", "");
 			default:
-				return Result(false, "ERR unknown error", "");
+				return Result(false, "unknown error", "");
 		};
 	};
 
@@ -306,60 +305,76 @@ void Server::RegisterHandlers()
 	{
 		if (command.GetArguments().size() != 1)
 		{
-			return Result(false, "ERR usage: EXISTS key", "");
+			return Result(false, "usage: EXISTS key", "");
 		}
-		return Result(true, "OK", lru_cache_.Exists(command.GetArguments()[0]) ? "YES" : "NO");
+		return Result(true, "", lru_cache_.Exists(command.GetArguments()[0]) ? "YES" : "NO");
 	};
 }
 
 void Server::Run()
 {
-	if (!bound_)
+	if (port_ == 0)
 	{
 		throw std::runtime_error("server hasn't bound to a port");
 	}
+
 	if (listen(server_fd_, SOMAXCONN) < 0)
 	{
 		throw std::runtime_error(std::format("failed to listen on localhost:{}, errorno: {}", port_, errno));
 	}
-	io_uring_params params{};
-	io_uring_queue_init_params(1024, &ring_, &params);
+	
+	InitializeSubmissionQueue();
 
-	/* prepare to accept `backlog_` requests */
-	for (std::size_t i = 0; i < inprogress_.size(); i++)
+	for (std::size_t i = 0; i < io_tasks_.size(); i++)
 	{
 		/* get an SQE (Submission Queue Entry) */
-		auto& task = inprogress_[i];
-		task.type = TaskType::kAccept;
-		Prepare(task);
+		auto& task = io_tasks_[i];
+		task.SetType(IOTaskType::kAccept);
+		PrepareTask(task);
 	}
 
 	/* submit accepts */
-	Submit();
+	SubmitTasks();
 
 	while (true)
 	{
 		std::array<io_uring_cqe*, 32> cqes; // the kernel may generate multiple CQEs for one SQE
-		std::size_t nready = io_uring_peek_batch_cqe(&ring_, cqes.data(), cqes.size());
+		std::size_t nready = ::io_uring_peek_batch_cqe(&ring_, cqes.data(), cqes.size());
 		if (nready == 0)
 		{
-			auto err = io_uring_wait_cqe(&ring_, &cqes[0]);
+			auto err = ::io_uring_wait_cqe(&ring_, &cqes[0]);
 			if (err < 0)
 			{
-				// error handling, e.g., -EAGAIN
-				continue;
+				if (err == -EINTR)
+				{
+					continue;
+				}
+				throw std::runtime_error(std::format("io_uring completion wait failed: {}", -err));
 			}
 			nready = 1;
 		}
 		for (std::size_t i = 0; i < nready; i++)
 		{
-			auto& task = *reinterpret_cast<Task*>(cqes[i]->user_data);
 			HandleTaskCompletion(*cqes[i]);
-			Prepare(task);
+			auto& task = *static_cast<IOTask*>(::io_uring_cqe_get_data(cqes[i]));
+			PrepareTask(task);
 		}
-		io_uring_cq_advance(&ring_, nready);
-		Submit();
+		::io_uring_cq_advance(&ring_, nready);
+		SubmitTasks();
 	}
+}
+
+void Server::InitializeSubmissionQueue()
+{
+	::io_uring_params params{};
+	params.flags = IORING_SETUP_CQSIZE;
+	params.cq_entries = completion_queue_capacity_;
+	const int result = ::io_uring_queue_init_params(submission_queue_capacity_, &ring_, &params);
+	if (result < 0)
+	{
+		throw std::runtime_error(std::format("io_uring initialization failed: {}", -result));
+	}
+	ring_initialized_ = true;
 }
 
 } // namespace KV

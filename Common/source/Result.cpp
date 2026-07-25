@@ -35,7 +35,13 @@ Result::Result(bool ok, std::string message, std::string result) :
 
 std::string Result::Serialize() const
 {
-	return std::string(1, ok_ ? '+' : '-') + message_ + "\r\n$" +
+	std::string status = ok_ ? "+OK" : "-ERR";
+	if (!message_.empty())
+	{
+		status += ' ';
+		status += message_;
+	}
+	return status + "\r\n$" +
 		std::to_string(result_.size()) + "\r\n" + result_ + "\r\n";
 }
 
@@ -43,8 +49,19 @@ void Result::Deserialize(const std::string& serialized)
 {
 	const std::string_view input(serialized);
 	const std::size_t status_end = input.find("\r\n");
-	if (status_end == std::string_view::npos || status_end == 0 ||
-		(input.front() != '+' && input.front() != '-'))
+	if (status_end == std::string_view::npos || status_end == 0)
+	{
+		ok_ = false;
+		message_ = "protocol error";
+		result_.clear();
+		return;
+	}
+
+	const bool success = input.substr(0, 3) == "+OK";
+	const bool failure = input.substr(0, 4) == "-ERR";
+	const std::size_t prefix_length = success ? 3 : 4;
+	if ((!success && !failure) ||
+		(status_end > prefix_length && input[prefix_length] != ' '))
 	{
 		ok_ = false;
 		message_ = "protocol error";
@@ -84,8 +101,9 @@ void Result::Deserialize(const std::string& serialized)
 		return;
 	}
 
-	ok_ = input.front() == '+';
-	message_ = std::string(input.substr(1, status_end - 1));
+	ok_ = success;
+	const std::size_t message_start = status_end == prefix_length ? status_end : prefix_length + 1;
+	message_ = std::string(input.substr(message_start, status_end - message_start));
 	result_ = std::string(input.substr(result_start, result_length));
 }
 

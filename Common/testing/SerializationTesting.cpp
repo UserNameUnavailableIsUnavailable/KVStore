@@ -4,7 +4,7 @@
 
 TEST(ResultTesting, SerializesAndDeserializesBulkString)
 {
-	const KV::Result expected(true, "OK", "value\r\nwith newline");
+	const KV::Result expected(true, "", "value\r\nwith newline");
 	const std::string serialized = expected.Serialize();
 
 	EXPECT_EQ(serialized, "+OK\r\n$19\r\nvalue\r\nwith newline\r\n");
@@ -12,13 +12,13 @@ TEST(ResultTesting, SerializesAndDeserializesBulkString)
 	KV::Result actual;
 	actual.Deserialize(serialized);
 	EXPECT_TRUE(actual.Ok());
-	EXPECT_EQ(actual.GetMessage(), "OK");
+	EXPECT_TRUE(actual.GetMessage().empty());
 	EXPECT_EQ(actual.GetResult(), "value\r\nwith newline");
 }
 
 TEST(ResultTesting, SerializesErrorResponsesAndRejectsMalformedInput)
 {
-	EXPECT_EQ(KV::SerializeResult(false, "ERR missing key", ""),
+	EXPECT_EQ(KV::SerializeResult(false, "missing key", ""),
 		"-ERR missing key\r\n$0\r\n\r\n");
 
 	KV::Result result;
