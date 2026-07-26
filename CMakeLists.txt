@@ -17,8 +17,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(PkgConfig REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 
-# Search for liburing on the system
-pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
+set(KV_SERVER_BACKEND "io_uring" CACHE STRING "Server backend: io_uring or epoll")
+set_property(CACHE KV_SERVER_BACKEND PROPERTY STRINGS io_uring epoll)
+
+if(KV_SERVER_BACKEND STREQUAL "io_uring")
+	pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
+elseif(NOT KV_SERVER_BACKEND STREQUAL "epoll")
+	message(FATAL_ERROR "KV_SERVER_BACKEND must be io_uring or epoll, got: ${KV_SERVER_BACKEND}")
+endif()
 
 include_directories(
 	${CMAKE_SOURCE_DIR}/include
