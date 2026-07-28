@@ -4,19 +4,22 @@
 #include <cerrno>
 #include <cstdint>
 #include <format>
+#include <optional>
 #include <stdexcept>
 
 #include <liburing/io_uring.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include "Common/LRUCache.hpp"
 
 namespace KV
 {
 
-Server::Server() :
-	lru_cache_(32)
+Server::Server()
 {
+	// Default cache: hash-indexed with LRU eviction. The storage structure and
+	// eviction strategy can later be selected from the command line.
+	storage_ = MakeStorage(StorageStructure::kHash, EvictionStrategy::kLru, 32, memory_resource_);
+
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
     {
@@ -92,7 +95,7 @@ void Server::RegisterHandlers()
         {
             return Result(false, "usage: GET key", "");
         }
-        auto value = lru_cache_.Get(command.GetArguments()[0]);
+        auto value = storage_->Get(command.GetArguments()[0]);
         if (!value.has_value())
         {
             return Result(false, "key not found", "");
@@ -106,7 +109,7 @@ void Server::RegisterHandlers()
         {
             return Result(false, "usage: SET key value", "");
         }
-        lru_cache_.Set(command.GetArguments()[0], command.GetArguments()[1]);
+        storage_->Set(command.GetArguments()[0], command.GetArguments()[1]);
         return Result(true, "", "");
     };
 
@@ -116,17 +119,13 @@ void Server::RegisterHandlers()
         {
             return Result(false, "usage: DELETE key", "");
         }
-        auto status = lru_cache_.Set(command.GetArguments()[0], std::nullopt);
-        switch (status)
+        const std::string& key = command.GetArguments()[0];
+        if (!storage_->Exists(key))
         {
-            case LRUCacheStatus::kOk:
-                return Result(true, "", "");
-            case LRUCacheStatus::kInvalidArgument:
-            case LRUCacheStatus::kNonexistent:
-                return Result(false, "key not found", "");
-            default:
-                return Result(false, "unknown error", "");
-        };
+            return Result(false, "key not found", "");
+        }
+        storage_->Set(key, std::nullopt);
+        return Result(true, "", "");
     };
 
     handlers_["EXISTS"] = [this](const Command& command) -> Result
@@ -135,7 +134,7 @@ void Server::RegisterHandlers()
         {
             return Result(false, "usage: EXISTS key", "");
         }
-        return Result(true, "", lru_cache_.Exists(command.GetArguments()[0]) ? "YES" : "NO");
+        return Result(true, "", storage_->Exists(command.GetArguments()[0]) ? "YES" : "NO");
     };
 }
 

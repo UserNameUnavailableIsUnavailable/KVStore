@@ -16,6 +16,7 @@
 
 #include "Common/Token.hpp"
 #include "Common/Result.hpp"
+#include "Common/Parser.hpp"
 
 static std::unordered_map<std::uint32_t, std::uint32_t> escape_char = {
     {'r', '\r'},
@@ -83,6 +84,7 @@ void Client::Run()
     std::string line;
     std::vector<std::string> tokens;
     tokens.reserve(12);
+    KV::Parser parser;
     bool bye = false;
     do
     {
@@ -183,7 +185,7 @@ void Client::Run()
             }
             else
             {
-                std::string serialized = cmd->Serialize();
+                std::string serialized = parser.SerializeRequest(*cmd);
                 ssize_t sent = send(client_fd_, serialized.data(), serialized.size(), 0);
                 if (sent < 0)
                 {
@@ -203,8 +205,8 @@ void Client::Run()
                     std::cerr << "Server closed the connection." << std::endl;
                     break;
                 }
-                KV::Result response;
-                response.Deserialize(std::string(buffer, static_cast<std::size_t>(received)));
+                const KV::Result response =
+                    parser.ParseResponse(std::string_view(buffer, static_cast<std::size_t>(received))).result;
                 std::cout << (response.Ok() ? "OK" : "ERR") << " " << response.GetMessage();
                 if (!response.GetResult().empty())
                 {

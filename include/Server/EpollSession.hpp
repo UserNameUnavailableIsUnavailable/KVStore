@@ -32,7 +32,7 @@ public:
 
     using Handle = std::coroutine_handle<promise_type>;
 
-    EpollSession() = default;
+    EpollSession() : Session(NetworkingModel::kReactor) {}
     EpollSession(const EpollSession&) = delete;
     EpollSession& operator=(const EpollSession&) = delete;
     EpollSession(EpollSession&& other) noexcept :
@@ -41,16 +41,10 @@ public:
     {
     }
 
-    EpollSession& operator=(EpollSession&& other) noexcept
-    {
-        if (this != &other)
-        {
-            Reset();
-            Session::operator=(std::move(other));
-            handle_ = std::exchange(other.handle_, nullptr);
-        }
-        return *this;
-    }
+    // Session (the base) disables move assignment, so EpollSession is
+    // move-constructible but not move-assignable. Coroutine ownership is
+    // transferred explicitly via AdoptCoroutine instead.
+    EpollSession& operator=(EpollSession&&) = delete;
 
     ~EpollSession() noexcept
     {
@@ -98,7 +92,10 @@ public:
     }
 
 private:
-    explicit EpollSession(Handle handle) noexcept : handle_(handle) {}
+    explicit EpollSession(Handle handle) noexcept :
+        Session(NetworkingModel::kReactor), handle_(handle)
+    {
+    }
 
     Handle handle_ = nullptr;
 };

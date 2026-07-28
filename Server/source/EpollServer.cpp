@@ -151,11 +151,8 @@ EpollSession EpollServer::ServeSession(EpollSession& session)
 {
     while (true)
     {
-        Command command;
-        const auto parsed = session.WithReadBuffer([&command](const auto& buffer) {
-            return command.Deserialize(std::string_view(buffer.data(), buffer.size()));
-        });
-        if (parsed.status == CommandParseStatus::kIncomplete)
+        ResolvedRequest request = session.ConsumeRequest();
+        if (request.status == RequestStatus::kNeedMore)
         {
             const ssize_t received = co_await ReceiveAwaiter(*this, session);
             if (received == 0)
@@ -173,29 +170,11 @@ EpollSession EpollServer::ServeSession(EpollSession& session)
             continue;
         }
 
-        std::string response;
-        if (parsed.status == CommandParseStatus::kProtocolError)
-        {
-            response = Result(false, std::format("protocol error: {}", parsed.error_message), "").Serialize();
-            session.ClearReadBuffer();
-        }
-        else
-        {
-            const bool has_extra_data = session.ConsumeReadBuffer(parsed.consumed_bytes);
-            if (has_extra_data)
-            {
-                response = Result(false, "pipelined commands are not supported", "").Serialize();
-                session.ClearReadBuffer();
-            }
-            else
-            {
-                response = Execute(command).Serialize();
-            }
-        }
+        const Result result = request.status == RequestStatus::kProtocolError
+            ? Result(false, std::format("protocol error: {}", request.error_message), "")
+            : Execute(request.command);
 
-        session.WithWriteBuffer([&response](auto& buffer) {
-            buffer.assign(response.begin(), response.end());
-        });
+        session.PrepareResponse(result);
         bool send_complete = false;
         while (!send_complete)
         {
@@ -265,6 +244,7 @@ void EpollServer::StartClient(int fd)
         CloseClient(fd);
         return;
     }
+    session->second.UseMemoryResource(GetMemoryResource());
     session->second.GetConnection().SetFileDescriptor(fd);
     session->second.AdoptCoroutine(ServeSession(session->second));
     session->second.Resume();

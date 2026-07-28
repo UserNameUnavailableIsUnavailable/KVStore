@@ -8,4 +8,6 @@ add_library(
 	Token.cpp
 	Command.cpp
 	Result.cpp
+	Parser.cpp
+	Storage.cpp
 )

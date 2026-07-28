@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.20)
 add_executable(
 	KVCommonTesting
 
-	LRUCacheTesting.cpp
 	SerializationTesting.cpp
+	ParserTesting.cpp
 )
 
 find_package(GTest REQUIRED)

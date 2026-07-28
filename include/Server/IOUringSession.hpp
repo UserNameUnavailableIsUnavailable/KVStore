@@ -15,6 +15,8 @@ enum class IOUringSessionState
 class IOUringSession final : public Session
 {
 public:
+    IOUringSession() : Session(NetworkingModel::kProactor) {}
+
     IOUringSessionState GetState() const
     {
         return state_;

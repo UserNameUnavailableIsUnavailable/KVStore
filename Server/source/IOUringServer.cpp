@@ -98,47 +98,18 @@ void IOUringServer::HandleTaskCompletion(io_uring_cqe& cqe)
 			session.CompleteReceive(cqe.res);
 			if (cqe.res > 0)
 			{
-				Command command;
-				auto parsed = session.WithReadBuffer([&command](const auto& buffer) {
-					return command.Deserialize(std::string_view(buffer.data(), buffer.size()));
-				});
-				if (parsed.status == CommandParseStatus::kIncomplete)
+				ResolvedRequest request = session.ConsumeRequest();
+				if (request.status == RequestStatus::kNeedMore)
 				{
 					session.SetState(IOUringSessionState::kReceiving);
 					break;
 				}
 
-				if (parsed.status == CommandParseStatus::kProtocolError)
-				{
-					const auto response = Result(false,
-						std::format("protocol error: {}", parsed.error_message), "").Serialize();
-					session.WithWriteBuffer([&response](auto& buffer) {
-						buffer.assign(response.begin(), response.end());
-					});
-					session.ClearReadBuffer();
-					session.SetState(IOUringSessionState::kSending);
-				}
-				else
-				{
-					const bool has_extra_data = session.ConsumeReadBuffer(parsed.consumed_bytes);
-					if (has_extra_data)
-					{
-						const auto response = Result(false, "pipelined commands are not supported", "").Serialize();
-						session.WithWriteBuffer([&response](auto& buffer) {
-							buffer.assign(response.begin(), response.end());
-						});
-						session.ClearReadBuffer();
-						session.SetState(IOUringSessionState::kSending);
-					}
-					else
-					{
-						const auto response = Execute(command).Serialize();
-						session.WithWriteBuffer([&response](auto& buffer) {
-							buffer.assign(response.begin(), response.end());
-						});
-						session.SetState(IOUringSessionState::kSending);
-					}
-				}
+				const Result result = request.status == RequestStatus::kProtocolError
+					? Result(false, std::format("protocol error: {}", request.error_message), "")
+					: Execute(request.command);
+				session.PrepareResponse(result);
+				session.SetState(IOUringSessionState::kSending);
 			}
 			else if (cqe.res == 0)
 			{
@@ -206,6 +177,7 @@ void IOUringServer::Run()
 	{
 		/* get an SQE (Submission Queue Entry) */
 		auto& session = sessions_[i];
+		session.UseMemoryResource(GetMemoryResource());
 		session.SetState(IOUringSessionState::kAccepting);
 		PrepareTask(session);
 	}
