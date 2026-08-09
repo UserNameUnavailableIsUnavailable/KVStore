@@ -11,7 +11,6 @@ KVStore is a lightweight RESP-compatible key/value server written in C++. It pro
 - Two networking backends: epoll and io_uring
 - Optional persistence with snapshots and append-only logs
 - Basic replication via SLAVEOF and PSYNC
-- Benchmarking utilities for comparing performance
 
 ## Build
 
