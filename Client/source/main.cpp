@@ -1,5 +1,6 @@
 #include "Client/Client.hpp"
 
+#include <exception>
 #include <iostream>
 
 int main(int argc, char* argv[])
@@ -11,7 +12,15 @@ int main(int argc, char* argv[])
         return 1;
     }
     const char* host = argv[1];
-    std::uint16_t port = static_cast<std::uint16_t>(std::stoi(argv[2]));
-    client.Connect(host, port);
-    client.Run();
+    try
+    {
+        std::uint16_t port = static_cast<std::uint16_t>(std::stoi(argv[2]));
+        client.Connect(host, port);
+        client.Run();
+    }
+    catch (std::exception& e)
+    {
+        std::cout << "[PANIC] " << e.what() << std::endl;
+        return -1;
+    }
 }

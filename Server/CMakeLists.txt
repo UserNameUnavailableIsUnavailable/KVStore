@@ -5,20 +5,9 @@ project(KVServer)
 set(KV_SERVER_SOURCES
 	source/Server.cpp
 	source/main.cpp
+	source/EpollServer.cpp
+	source/IOUringServer.cpp
 )
-
-if(KV_SERVER_BACKEND STREQUAL "io_uring")
-	list(APPEND KV_SERVER_SOURCES
-		source/IOUringServer.cpp
-	)
-	set(KV_SERVER_BACKEND_LIBRARIES PkgConfig::liburing)
-	set(KV_SERVER_BACKEND_DEFINITION KV_BACKEND_IO_URING)
-elseif(KV_SERVER_BACKEND STREQUAL "epoll")
-	list(APPEND KV_SERVER_SOURCES
-		source/EpollServer.cpp
-	)
-	set(KV_SERVER_BACKEND_DEFINITION KV_BACKEND_EPOLL)
-endif()
 
 add_executable(
 	KVServer
@@ -28,13 +17,12 @@ add_executable(
 target_link_libraries(
 	KVServer
 	PRIVATE
-	${KV_SERVER_BACKEND_LIBRARIES}
+	PkgConfig::liburing
+	CLI11::CLI11
 	KVCommon
 )
 
-target_compile_definitions(
-	KVServer
-	PRIVATE
-	${KV_SERVER_BACKEND_DEFINITION}
-)
+if(BUILD_TESTING)
+	add_subdirectory(testing)
+endif()
 

@@ -7,7 +7,7 @@ static inline bool is_continuation_byte(std::uint8_t byte)
     return (byte & 0b1100'0000) == 0b1000'0000;
 }
 
-namespace Macrohard
+namespace KV
 {
 std::optional<CodePoint> ResolveNextCodePoint(std::string_view s)
 {

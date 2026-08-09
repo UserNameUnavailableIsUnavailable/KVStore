@@ -2,4 +2,8 @@ Thumbs.db
 .DS_Store
 
 build/
+.venv/
+.cache/
+__pycache__/
 vcpkg_installed/
+.VSCodeCounter/

@@ -7,16 +7,14 @@
 #include <string_view>
 #include <vector>
 #include <unordered_map>
-#include <format>
+#include <stdexcept>
 
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-
 #include "Common/Token.hpp"
 #include "Common/Result.hpp"
-#include "Common/Parser.hpp"
+#include "Common/Protocol.hpp"
 
 static std::unordered_map<std::uint32_t, std::uint32_t> escape_char = {
     {'r', '\r'},
@@ -29,40 +27,11 @@ static std::unordered_map<std::uint32_t, std::uint32_t> escape_char = {
 
 namespace KV
 {
-Client::Client()
-{
-
-}
-
-Client::~Client()
-{
-    if (client_fd_ >= 0)
-    {
-        close(client_fd_);
-    }
-}
-
 void Client::Connect(const char* host, std::uint16_t port)
 {
-    sockaddr_in addr {
-        .sin_family = AF_INET,
-        .sin_port = htons(port),
-        .sin_addr = {},
-        .sin_zero = {}
-    };
-    if (inet_pton(AF_INET, host, &addr.sin_addr) <= 0)
-    {
-        throw std::runtime_error(std::format("invalid address: {}", host));
-    }
-    client_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_fd_ < 0)
-    {
-        throw std::runtime_error("failed to create socket");
-    }
-    if (connect(client_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
-    {
-        throw std::runtime_error(std::format("failed to connect to {}:{}", host, port));
-    }
+    Socket socket(SocketProtocol::kTcp);
+    socket.Connect(host, port);
+    socket_ = std::move(socket);
 }
 
 std::optional<KV::Command> Client::ResolveTokens(const std::vector<std::string>& tokens)
@@ -71,12 +40,18 @@ std::optional<KV::Command> Client::ResolveTokens(const std::vector<std::string>&
     {
         return std::nullopt;
     }
-    return KV::Command(tokens[0], std::vector<std::string>(tokens.begin() + 1, tokens.end()));
+    Command command {.name = std::pmr::string(tokens[0]), .arguments = {}};
+    command.arguments.reserve(tokens.size() - 1);
+    for (auto it = tokens.begin() + 1; it != tokens.end(); ++it)
+    {
+        command.arguments.emplace_back(*it);
+    }
+    return command;
 }
 
 void Client::Run()
 {
-    if (client_fd_ < 0)
+    if (!socket_.IsOpen())
     {
         throw std::runtime_error("client is not connected to a server");
     }
@@ -84,7 +59,7 @@ void Client::Run()
     std::string line;
     std::vector<std::string> tokens;
     tokens.reserve(12);
-    KV::Parser parser;
+    Protocol protocol;
     bool bye = false;
     do
     {
@@ -100,7 +75,7 @@ void Client::Run()
         for (auto it = line.begin(); it != line.end();)
         {
             std::string_view sv(it, line.end());
-            auto cp = Macrohard::ResolveNextCodePoint(sv);
+            auto cp = KV::ResolveNextCodePoint(sv);
             if (!cp.has_value())
             {
                 std::cerr << "Invalid UTF-8 sequence" << std::endl;
@@ -177,7 +152,7 @@ void Client::Run()
         auto cmd = ResolveTokens(tokens);
         if (cmd.has_value())
         {
-            if (cmd->GetName() == "exit")
+            if (cmd->name == "exit" || cmd->name == "EXIT")
             {
                 bye = true;
                 std::cout << "Bye!" << std::endl;
@@ -185,8 +160,8 @@ void Client::Run()
             }
             else
             {
-                std::string serialized = parser.SerializeRequest(*cmd);
-                ssize_t sent = send(client_fd_, serialized.data(), serialized.size(), 0);
+                const std::pmr::string serialized = protocol.EncodeRequest(*cmd);
+                std::ptrdiff_t sent = send(socket_.GetNativeHandle(), serialized.data(), serialized.size(), 0);
                 if (sent < 0)
                 {
                     std::cerr << "Failed to send command to server." << std::endl;
@@ -194,7 +169,7 @@ void Client::Run()
                 }
                 char buffer[1024];
                 // TODO: handle partial responses and multiple responses
-                ssize_t received = recv(client_fd_, buffer, sizeof(buffer) - 1, 0);
+                std::ptrdiff_t received = recv(socket_.GetNativeHandle(), buffer, sizeof(buffer) - 1, 0);
                 if (received < 0)
                 {
                     std::cerr << "Failed to receive response from server." << std::endl;
@@ -205,13 +180,30 @@ void Client::Run()
                     std::cerr << "Server closed the connection." << std::endl;
                     break;
                 }
-                const KV::Result response =
-                    parser.ParseResponse(std::string_view(buffer, static_cast<std::size_t>(received))).result;
-                std::cout << (response.Ok() ? "OK" : "ERR") << " " << response.GetMessage();
-                if (!response.GetResult().empty())
+                const ResponseDecode parsed =
+                    protocol.DecodeResponse(std::string_view(buffer, static_cast<std::size_t>(received)));
+                if (parsed.status != DecodeStatus::kComplete)
                 {
-                    std::cout << "\n" << response.GetResult();
+                    const std::string reason =
+                        parsed.error.empty() ? "incomplete response" : std::string(parsed.error);
+                    std::cerr << "Malformed response from server: " << reason << std::endl;
+                    continue;
                 }
+
+                const auto print_result = [&](const auto& self, const Result& response) -> void
+                {
+                    if (response.type == ResultType::kArray)
+                    {
+                        for (const Result& element : response.elements)
+                        {
+                            self(self, element);
+                            std::cout << '\n';
+                        }
+                        return;
+                    }
+                    std::cout << (response.type == ResultType::kError ? "ERR " : "") << response.value;
+                };
+                print_result(print_result, parsed.result);
                 std::cout << std::endl;
             }
         }

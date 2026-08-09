@@ -5,7 +5,7 @@
 #include <string_view>
 #include <array>
 
-namespace Macrohard
+namespace KV
 {
 // UTF-8 knowledge
 // A code point is a Unicode character represented as a 32-bit integer.
