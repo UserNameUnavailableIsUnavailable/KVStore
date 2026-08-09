@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "Common/Command.hpp"
+#include "Common/Socket.hpp"
 
 namespace KV
 {
@@ -13,8 +14,8 @@ namespace KV
 class Client
 {
 public:
-    Client();
-    ~Client();
+    Client() = default;
+    ~Client() = default;
     void SetPrompt(std::string prompt)
     {
         prompt_ = std::move(prompt);
@@ -29,6 +30,6 @@ private:
     std::optional<KV::Command> ResolveTokens(const std::vector<std::string>& tokens);
 
     std::string prompt_ = "KV> ";
-    int client_fd_ = -1;
+    Socket socket_;
 };
 } // namespace KV

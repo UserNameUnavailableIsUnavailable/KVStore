@@ -1,16 +1,23 @@
 #pragma once
 
+#include <memory_resource>
 #include <algorithm>
+#include <array>
+#include <bitset>
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <memory_resource>
+#include <list>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "Common/Connection.hpp"
-#include "Common/Parser.hpp"
+#include "Common/Address.hpp"
+#include "Common/Protocol.hpp"
+#include "Common/Socket.hpp"
 
 namespace KV
 {
@@ -38,34 +45,22 @@ enum class RequestStatus
 struct ResolvedRequest
 {
     RequestStatus status = RequestStatus::kNeedMore;
-    Command command; // populated when status == kReady
-    std::string error_message; // populated when status == kProtocolError
+    Command command;
+    std::pmr::string error;
 };
 
-// A Session manages the lifetime of a single client conversation. It is the
-// hub of the Session Layer described in DESIGN.md and provides:
-//   - connection control (via the owned Connection),
-//   - networking-model selection (Reactor / Proactor),
-//   - protocol resolution (via the owned Parser).
-//
-// Every byte the session buffers is allocated through a pluggable
-// std::pmr::memory_resource. This realises the Memory Pooling Layer from
-// DESIGN.md: swapping the resource (new/delete, monotonic buffer, pool, or a
-// custom allocator) lets us compare memory-pool implementations without
-// touching any of the I/O or protocol code. The resource is owned by the
-// caller and must outlive the session.
 class Session
 {
 public:
+	struct HandleType
+	{
+		std::uint32_t slot;
+		std::uint32_t generation;
+	};
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
     Session(Session&&) noexcept = default;
-    // Session is an abstract, polymorphic base. Assigning one session over
-    // another risks slicing, and because networking_model_ is const a move
-    // assignment cannot be defaulted anyway, so assignment is disabled.
     Session& operator=(Session&&) = delete;
-    // Pure virtual destructor makes Session abstract: it can only be created
-    // through a concrete derived session, which fixes the networking model.
     virtual ~Session() = 0;
 
     NetworkingModel GetNetworkingModel() const
@@ -73,17 +68,11 @@ public:
         return networking_model_;
     }
 
-    // Memory pooling --------------------------------------------------------
-
     std::pmr::memory_resource* GetMemoryResource() const
     {
         return resource_;
     }
 
-    // Rebind the session onto a different memory resource. A pmr allocator is
-    // fixed at construction, so the buffers are reconstructed in place; this is
-    // only valid before the session starts buffering (buffers must be empty),
-    // which is why it is called once when a session is (re)started.
     void UseMemoryResource(std::pmr::memory_resource* resource)
     {
         resource_ = resource;
@@ -91,46 +80,85 @@ public:
         std::construct_at(&read_buffer_, resource_);
         std::destroy_at(&write_buffer_);
         std::construct_at(&write_buffer_, resource_);
-        receive_offset_ = 0;
+        std::destroy_at(&transaction_);
+        std::construct_at(&transaction_, resource_);
+        std::destroy_at(&protocol_);
+        std::construct_at(&protocol_, resource_);
+        read_offset_ = 0;
         write_offset_ = 0;
     }
 
-    // Connection control ----------------------------------------------------
-
-    Connection& GetConnection()
+    Socket& GetSocket()
     {
-        return connection_;
+        return socket_;
     }
 
-    const Connection& GetConnection() const
+    const Socket& GetSocket() const
     {
-        return connection_;
+        return socket_;
+    }
+
+    void AttachSocket(Socket::HandleType h)
+    {
+        if (socket_.GetNativeHandle() == h)
+        {
+            return;
+        }
+        socket_ = Socket::Adopt(h);
+    }
+
+    void AttachSocket(Socket&& socket) noexcept
+    {
+        std::swap(socket_, socket);
+    }
+
+    std::string GetPeerIP() const
+    {
+        return peer_address_.GetIP();
+    }
+
+    std::uint16_t GetPeerPort() const
+    {
+        return peer_address_.GetPort();
+    }
+
+    void SetTimeout(std::chrono::milliseconds timeout)
+    {
+        timeout_ = timeout;
+    }
+
+    std::chrono::milliseconds GetTimeout() const
+    {
+        return timeout_;
+    }
+
+    // The accept path needs a mutable Address to populate the peer endpoint.
+    template <typename F>
+    auto WithMutableAcceptContext(F&& f)
+    {
+        peer_address_.Reset();
+        return f(peer_address_);
     }
 
     // Protocol resolution ---------------------------------------------------
 
-    const Parser& GetParser() const
-    {
-        return parser_;
-    }
-
     // Drive the protocol state machine against the bytes currently buffered.
-    // The networking model only has to feed bytes in (WithReceiveContext /
+    // The networking model only has to feed bytes in (PrepareReceive /
     // CompleteReceive) and then ask the session what to do next:
     //   - kNeedMore      : keep receiving; the read buffer is left intact.
     //   - kReady         : execute ResolvedRequest::command, then PrepareResponse.
     //   - kProtocolError : reply with the error; the read buffer has been drained.
     ResolvedRequest ConsumeRequest()
     {
-        RequestParse parsed = ResolveRequest();
+        RequestDecode parsed = ResolveRequest();
         switch (parsed.status)
         {
-            case ProtocolStatus::kIncomplete:
-                return {.status = RequestStatus::kNeedMore};
-            case ProtocolStatus::kProtocolError:
+            case DecodeStatus::kIncomplete:
+                return {.status = RequestStatus::kNeedMore, .command = {}, .error = std::pmr::string(resource_)};
+            case DecodeStatus::kProtocolError:
                 ClearReadBuffer();
-                return {.status = RequestStatus::kProtocolError, .error_message = std::move(parsed.error_message)};
-            case ProtocolStatus::kOk:
+                return {.status = RequestStatus::kProtocolError, .command = {}, .error = std::move(parsed.error)};
+            case DecodeStatus::kComplete:
                 break;
         }
 
@@ -141,13 +169,60 @@ public:
             // client gets a deterministic error instead of a desynchronised stream.
             ClearReadBuffer();
             return {.status = RequestStatus::kProtocolError,
-                .error_message = "pipelined commands are not supported"};
+                .command = {},
+                .error = std::pmr::string("pipelined commands are not supported", resource_)};
         }
 
         ResolvedRequest resolved;
         resolved.status = RequestStatus::kReady;
         resolved.command = std::move(parsed.command);
         return resolved;
+    }
+
+    template <typename Execute>
+    Result Process(Command command, Execute&& execute)
+    {
+        if (command.name == "MULTI")
+        {
+            if (in_transaction_)
+            {
+                return MakeError("MULTI calls can not be nested");
+            }
+            if (!command.arguments.empty())
+            {
+                return MakeError("MULTI takes no arguments");
+            }
+            in_transaction_ = true;
+            return MakeSimple("OK");
+        }
+
+        if (!in_transaction_)
+        {
+            return execute(command);
+        }
+
+        if (command.name != "EXEC")
+        {
+            transaction_.push_back(std::move(command));
+            return MakeSimple("QUEUED");
+        }
+
+        if (!command.arguments.empty())
+        {
+            return MakeError("EXEC takes no arguments");
+        }
+
+        Result response {.type = ResultType::kArray,
+            .value = std::pmr::string(resource_),
+            .elements = std::pmr::vector<Result>(resource_)};
+        response.elements.reserve(transaction_.size());
+        for (const Command& queued : transaction_)
+        {
+            response.elements.push_back(execute(queued));
+        }
+        transaction_.clear();
+        in_transaction_ = false;
+        return response;
     }
 
     template <typename F>
@@ -160,37 +235,41 @@ public:
     // Encode a response into the write buffer, ready for the model to flush.
     void PrepareResponse(const Result& result)
     {
-        const std::string encoded = parser_.SerializeResponse(result);
+        const std::pmr::string encoded = protocol_.EncodeResponse(result);
         WithWriteBuffer([&encoded](std::pmr::vector<char>& buffer) {
             buffer.assign(encoded.begin(), encoded.end());
         });
     }
 
-    // Receive seam ----------------------------------------------------------
-    // The networking model provides a destination for the next chunk of bytes
-    // and, once the OS reports how many were read, hands the count back.
-
-    template <typename F>
-    auto WithReceiveContext(F&& f)
+    std::span<char> PrepareReceive()
     {
-        receive_offset_ = read_buffer_.size();
-        read_buffer_.resize(receive_offset_ + receive_chunk_size_);
-        return f(connection_.GetFileDescriptor(), read_buffer_.data() + receive_offset_, receive_chunk_size_);
+        read_offset_ = read_buffer_.size();
+        read_buffer_.resize(read_offset_ + receive_chunk_size_);
+        return {read_buffer_.data() + read_offset_, receive_chunk_size_};
     }
 
-    void CompleteReceive(int result)
+    std::span<const std::byte> CompleteReceive(int result)
     {
         const auto received = result > 0 ? static_cast<std::size_t>(result) : 0;
-        read_buffer_.resize(receive_offset_ + received);
+        read_buffer_.resize(read_offset_ + received);
+        return {reinterpret_cast<const std::byte*>(read_buffer_.data() + read_offset_), received};
     }
 
-    // Send seam -------------------------------------------------------------
-    // Mirror of the receive seam for flushing the prepared response.
-
-    template <typename F>
-    auto WithSendContext(F&& f) const
+    std::span<const char> GetPendingSend() const
     {
-        return f(connection_.GetFileDescriptor(), write_buffer_.data() + write_offset_, write_buffer_.size() - write_offset_);
+        return {write_buffer_.data() + write_offset_, write_buffer_.size() - write_offset_};
+    }
+
+    void PrepareRawWrite(std::string_view data)
+    {
+        WithWriteBuffer([data](std::pmr::vector<char>& buffer) {
+            buffer.assign(data.begin(), data.end());
+        });
+    }
+
+    void DiscardReadBuffer()
+    {
+        ClearReadBuffer();
     }
 
     bool CompleteSend(int result)
@@ -208,12 +287,18 @@ public:
         return f(static_cast<const std::pmr::vector<char>&>(write_buffer_));
     }
 
+    // Return the session to a pristine state: close the socket, forget the
+    // peer endpoint, and drop every byte of protocol state.
     void Reset()
     {
-        connection_.Reset();
+        socket_ = Socket{};
+        peer_address_.Reset();
+        timeout_ = std::chrono::milliseconds{0};
         read_buffer_.clear();
         write_buffer_.clear();
-        receive_offset_ = 0;
+        transaction_.clear();
+        in_transaction_ = false;
+        read_offset_ = 0;
         write_offset_ = 0;
     }
 
@@ -225,7 +310,9 @@ protected:
         networking_model_(networking_model),
         resource_(resource),
         read_buffer_(resource_),
-        write_buffer_(resource_)
+        write_buffer_(resource_),
+        protocol_(resource_),
+        transaction_(resource_)
     {
     }
 
@@ -239,11 +326,25 @@ private:
         return f(static_cast<const std::pmr::vector<char>&>(read_buffer_));
     }
 
-    RequestParse ResolveRequest() const
+    RequestDecode ResolveRequest() const
     {
         return WithReadBuffer([this](const std::pmr::vector<char>& buffer) {
-            return parser_.ParseRequest(std::string_view(buffer.data(), buffer.size()));
+            return protocol_.DecodeRequest(std::string_view(buffer.data(), buffer.size()));
         });
+    }
+
+    Result MakeSimple(std::string_view value) const
+    {
+        return {.type = ResultType::kSimpleString,
+            .value = std::pmr::string(value, resource_),
+            .elements = std::pmr::vector<Result>(resource_)};
+    }
+
+    Result MakeError(std::string_view value) const
+    {
+        return {.type = ResultType::kError,
+            .value = std::pmr::string(value, resource_),
+            .elements = std::pmr::vector<Result>(resource_)};
     }
 
     // Drop the first `size` bytes of the read buffer. Returns whether any bytes
@@ -258,17 +359,21 @@ private:
     void ClearReadBuffer()
     {
         read_buffer_.clear();
-        receive_offset_ = 0;
+        read_offset_ = 0;
     }
 
     static constexpr std::size_t receive_chunk_size_ = 4096;
     const NetworkingModel networking_model_;
     std::pmr::memory_resource* resource_ = std::pmr::get_default_resource();
-    Parser parser_;
-    Connection connection_;
+    Socket socket_;
+    Address peer_address_;
+    std::chrono::milliseconds timeout_{0};
     std::pmr::vector<char> read_buffer_{resource_};
     std::pmr::vector<char> write_buffer_{resource_};
-    std::size_t receive_offset_ = 0;
+    Protocol protocol_{resource_};
+    std::pmr::vector<Command> transaction_{resource_};
+    bool in_transaction_ = false;
+    std::size_t read_offset_ = 0;
     std::size_t write_offset_ = 0;
 };
 

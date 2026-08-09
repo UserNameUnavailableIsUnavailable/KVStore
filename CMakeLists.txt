@@ -11,23 +11,17 @@ project(KVStore)
 # TODO: learn the difference between enable_testing() and include(CTest)
 include(CTest)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(PkgConfig REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
-
-set(KV_SERVER_BACKEND "io_uring" CACHE STRING "Server backend: io_uring or epoll")
-set_property(CACHE KV_SERVER_BACKEND PROPERTY STRINGS io_uring epoll)
-
-if(KV_SERVER_BACKEND STREQUAL "io_uring")
-	pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
-elseif(NOT KV_SERVER_BACKEND STREQUAL "epoll")
-	message(FATAL_ERROR "KV_SERVER_BACKEND must be io_uring or epoll, got: ${KV_SERVER_BACKEND}")
-endif()
+pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
 
 include_directories(
 	${CMAKE_SOURCE_DIR}/include
+	${CMAKE_SOURCE_DIR}/vcpkg_installed/arm64-linux/include
+	${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-linux/include
 )
 
 add_subdirectory(Common)

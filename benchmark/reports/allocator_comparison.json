@@ -1,0 +1,6167 @@
+{
+  "metadata": {
+    "generated_at": "2026-08-09T08:28:57.764789+00:00",
+    "server": "/home/silver/Develop/KVStore/build/Server/KVServer",
+    "clients": 16,
+    "warmup_seconds": 1.0,
+    "duration_seconds": 3.0,
+    "repeat": 3,
+    "allocators": [
+      "default",
+      "jemalloc"
+    ],
+    "value_sizes_bytes": [
+      64,
+      4096,
+      65536
+    ]
+  },
+  "summary": [
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11341.555555555555,
+      "qps_stddev": 739.5735674889921,
+      "request_throughput_mib_s_mean": 1.124879625108507,
+      "latency_p99_us_mean": 3551.2413333333334,
+      "baseline_rss_mib_mean": 5.368489583333333,
+      "peak_rss_mib_mean": 5.578125,
+      "rss_growth_mib_mean": 0.20963541666666666
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 12002.0,
+      "qps_stddev": 101.21045180985784,
+      "request_throughput_mib_s_mean": 1.1903839111328125,
+      "latency_p99_us_mean": 3113.2893333333336,
+      "baseline_rss_mib_mean": 6.24609375,
+      "peak_rss_mib_mean": 6.462239583333333,
+      "rss_growth_mib_mean": 0.21614583333333334
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 12074.222222222224,
+      "qps_stddev": 163.95670913120878,
+      "request_throughput_mib_s_mean": 1.197547064887153,
+      "latency_p99_us_mean": 3080.7419999999997,
+      "baseline_rss_mib_mean": 5.75,
+      "peak_rss_mib_mean": 5.953125,
+      "rss_growth_mib_mean": 0.203125
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 12077.444444444443,
+      "qps_stddev": 19.093014688009177,
+      "request_throughput_mib_s_mean": 1.1978666517469618,
+      "latency_p99_us_mean": 3053.3993333333333,
+      "baseline_rss_mib_mean": 6.75,
+      "peak_rss_mib_mean": 6.944010416666667,
+      "rss_growth_mib_mean": 0.19401041666666666
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11950.111111111111,
+      "qps_stddev": 133.54020987822688,
+      "request_throughput_mib_s_mean": 1.1852374606662328,
+      "latency_p99_us_mean": 3046.9420000000005,
+      "baseline_rss_mib_mean": 5.377604166666667,
+      "peak_rss_mib_mean": 5.614583333333333,
+      "rss_growth_mib_mean": 0.23697916666666666
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 12003.0,
+      "qps_stddev": 26.572054381889288,
+      "request_throughput_mib_s_mean": 1.1904830932617188,
+      "latency_p99_us_mean": 3055.0923333333335,
+      "baseline_rss_mib_mean": 6.244791666666667,
+      "peak_rss_mib_mean": 6.46484375,
+      "rss_growth_mib_mean": 0.22005208333333334
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11960.111111111111,
+      "qps_stddev": 136.13074688296362,
+      "request_throughput_mib_s_mean": 1.1862292819552953,
+      "latency_p99_us_mean": 3084.395666666667,
+      "baseline_rss_mib_mean": 5.786458333333333,
+      "peak_rss_mib_mean": 5.993489583333333,
+      "rss_growth_mib_mean": 0.20703125
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11827.22222222222,
+      "qps_stddev": 103.15121346598934,
+      "request_throughput_mib_s_mean": 1.173049079047309,
+      "latency_p99_us_mean": 3172.6143333333334,
+      "baseline_rss_mib_mean": 6.748697916666667,
+      "peak_rss_mib_mean": 6.962239583333333,
+      "rss_growth_mib_mean": 0.21354166666666666
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11894.88888888889,
+      "qps_stddev": 50.598150554206605,
+      "request_throughput_mib_s_mean": 1.1797604031032987,
+      "latency_p99_us_mean": 3083.4096666666665,
+      "baseline_rss_mib_mean": 5.369791666666667,
+      "peak_rss_mib_mean": 5.58203125,
+      "rss_growth_mib_mean": 0.21223958333333334
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11894.111111111111,
+      "qps_stddev": 78.40131014274476,
+      "request_throughput_mib_s_mean": 1.1796832614474828,
+      "latency_p99_us_mean": 3101.3903333333333,
+      "baseline_rss_mib_mean": 6.19921875,
+      "peak_rss_mib_mean": 6.419270833333333,
+      "rss_growth_mib_mean": 0.22005208333333334
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11587.444444444445,
+      "qps_stddev": 4.66931141987748,
+      "request_throughput_mib_s_mean": 1.1492674085828993,
+      "latency_p99_us_mean": 3259.9503333333337,
+      "baseline_rss_mib_mean": 5.8046875,
+      "peak_rss_mib_mean": 6.01171875,
+      "rss_growth_mib_mean": 0.20703125
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11497.444444444445,
+      "qps_stddev": 189.88814121171293,
+      "request_throughput_mib_s_mean": 1.1403410169813368,
+      "latency_p99_us_mean": 3286.593666666666,
+      "baseline_rss_mib_mean": 6.736979166666667,
+      "peak_rss_mib_mean": 6.947916666666667,
+      "rss_growth_mib_mean": 0.2109375
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11882.222222222224,
+      "qps_stddev": 22.891585601657493,
+      "request_throughput_mib_s_mean": 1.178504096137153,
+      "latency_p99_us_mean": 3120.59,
+      "baseline_rss_mib_mean": 5.38671875,
+      "peak_rss_mib_mean": 5.600260416666667,
+      "rss_growth_mib_mean": 0.21354166666666666
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11683.888888888889,
+      "qps_stddev": 101.73325081303419,
+      "request_throughput_mib_s_mean": 1.1588329739040797,
+      "latency_p99_us_mean": 3196.0040000000004,
+      "baseline_rss_mib_mean": 6.227864583333333,
+      "peak_rss_mib_mean": 6.475260416666667,
+      "rss_growth_mib_mean": 0.24739583333333334
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 10992.888888888889,
+      "qps_stddev": 642.4677154784496,
+      "request_throughput_mib_s_mean": 1.090298122829861,
+      "latency_p99_us_mean": 3653.462,
+      "baseline_rss_mib_mean": 5.763020833333333,
+      "peak_rss_mib_mean": 5.975260416666667,
+      "rss_growth_mib_mean": 0.21223958333333334
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "runs": 3,
+      "qps_mean": 11472.777777777776,
+      "qps_stddev": 139.29832982257176,
+      "request_throughput_mib_s_mean": 1.1378945244683158,
+      "latency_p99_us_mean": 3272.030666666667,
+      "baseline_rss_mib_mean": 6.778645833333333,
+      "peak_rss_mib_mean": 6.96875,
+      "rss_growth_mib_mean": 0.19010416666666666
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11091.888888888889,
+      "qps_stddev": 61.45177774201699,
+      "request_throughput_mib_s_mean": 43.771969053480355,
+      "latency_p99_us_mean": 3326.3096666666665,
+      "baseline_rss_mib_mean": 5.368489583333333,
+      "peak_rss_mib_mean": 6.682291666666667,
+      "rss_growth_mib_mean": 1.3138020833333333
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11057.22222222222,
+      "qps_stddev": 143.0499351646731,
+      "request_throughput_mib_s_mean": 43.635163837009,
+      "latency_p99_us_mean": 3335.694,
+      "baseline_rss_mib_mean": 6.270833333333333,
+      "peak_rss_mib_mean": 7.813802083333333,
+      "rss_growth_mib_mean": 1.54296875
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11107.666666666666,
+      "qps_stddev": 149.02224541869484,
+      "request_throughput_mib_s_mean": 43.83423296610514,
+      "latency_p99_us_mean": 3353.837666666667,
+      "baseline_rss_mib_mean": 5.834635416666667,
+      "peak_rss_mib_mean": 7.092447916666667,
+      "rss_growth_mib_mean": 1.2578125
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11055.0,
+      "qps_stddev": 47.235422991491895,
+      "request_throughput_mib_s_mean": 43.626394271850586,
+      "latency_p99_us_mean": 3421.5623333333333,
+      "baseline_rss_mib_mean": 6.755208333333333,
+      "peak_rss_mib_mean": 8.298177083333334,
+      "rss_growth_mib_mean": 1.54296875
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11184.22222222222,
+      "qps_stddev": 27.468949923077624,
+      "request_throughput_mib_s_mean": 44.136344485812714,
+      "latency_p99_us_mean": 3334.405666666667,
+      "baseline_rss_mib_mean": 5.354166666666667,
+      "peak_rss_mib_mean": 6.631510416666667,
+      "rss_growth_mib_mean": 1.27734375
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11060.22222222222,
+      "qps_stddev": 57.45099898131139,
+      "request_throughput_mib_s_mean": 43.64700274997287,
+      "latency_p99_us_mean": 3351.467,
+      "baseline_rss_mib_mean": 6.248697916666667,
+      "peak_rss_mib_mean": 7.802083333333333,
+      "rss_growth_mib_mean": 1.5533854166666667
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10997.22222222222,
+      "qps_stddev": 80.7613463342983,
+      "request_throughput_mib_s_mean": 43.39838557773166,
+      "latency_p99_us_mean": 3392.2496666666666,
+      "baseline_rss_mib_mean": 5.852864583333333,
+      "peak_rss_mib_mean": 7.110677083333333,
+      "rss_growth_mib_mean": 1.2578125
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10872.77777777778,
+      "qps_stddev": 115.11036035791264,
+      "request_throughput_mib_s_mean": 42.90728992886014,
+      "latency_p99_us_mean": 3459.003,
+      "baseline_rss_mib_mean": 6.766927083333333,
+      "peak_rss_mib_mean": 8.295572916666666,
+      "rss_growth_mib_mean": 1.5286458333333333
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10937.444444444443,
+      "qps_stddev": 82.53678566345025,
+      "request_throughput_mib_s_mean": 43.162484274970154,
+      "latency_p99_us_mean": 3375.869666666667,
+      "baseline_rss_mib_mean": 5.358072916666667,
+      "peak_rss_mib_mean": 6.645833333333333,
+      "rss_growth_mib_mean": 1.2877604166666667
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10986.555555555555,
+      "qps_stddev": 84.54555350391881,
+      "request_throughput_mib_s_mean": 43.356291664971245,
+      "latency_p99_us_mean": 3353.045,
+      "baseline_rss_mib_mean": 6.26953125,
+      "peak_rss_mib_mean": 7.80859375,
+      "rss_growth_mib_mean": 1.5390625
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10968.888888888889,
+      "qps_stddev": 93.68992725547317,
+      "request_throughput_mib_s_mean": 43.2865736219618,
+      "latency_p99_us_mean": 3368.408,
+      "baseline_rss_mib_mean": 5.78515625,
+      "peak_rss_mib_mean": 7.0625,
+      "rss_growth_mib_mean": 1.27734375
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11064.444444444445,
+      "qps_stddev": 49.00516475678339,
+      "request_throughput_mib_s_mean": 43.66366492377387,
+      "latency_p99_us_mean": 3313.238,
+      "baseline_rss_mib_mean": 6.751302083333333,
+      "peak_rss_mib_mean": 8.298177083333334,
+      "rss_growth_mib_mean": 1.546875
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11073.111111111111,
+      "qps_stddev": 64.0961854376243,
+      "request_throughput_mib_s_mean": 43.697866227891716,
+      "latency_p99_us_mean": 3310.491,
+      "baseline_rss_mib_mean": 5.41796875,
+      "peak_rss_mib_mean": 6.69921875,
+      "rss_growth_mib_mean": 1.28125
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10802.555555555555,
+      "qps_stddev": 257.9994736333039,
+      "request_throughput_mib_s_mean": 42.63017166985406,
+      "latency_p99_us_mean": 3565.6649999999995,
+      "baseline_rss_mib_mean": 6.28515625,
+      "peak_rss_mib_mean": 7.8515625,
+      "rss_growth_mib_mean": 1.56640625
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 10890.111111111111,
+      "qps_stddev": 75.61713177107372,
+      "request_throughput_mib_s_mean": 42.9756925370958,
+      "latency_p99_us_mean": 3423.943333333333,
+      "baseline_rss_mib_mean": 5.798177083333333,
+      "peak_rss_mib_mean": 7.078125,
+      "rss_growth_mib_mean": 1.2799479166666667
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "runs": 3,
+      "qps_mean": 11027.777777777776,
+      "qps_stddev": 122.53989020461064,
+      "request_throughput_mib_s_mean": 43.518967098659935,
+      "latency_p99_us_mean": 3363.293,
+      "baseline_rss_mib_mean": 6.78515625,
+      "peak_rss_mib_mean": 8.330729166666666,
+      "rss_growth_mib_mean": 1.5455729166666667
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1881.888888888889,
+      "qps_stddev": 16.010027721847305,
+      "request_throughput_mib_s_mean": 117.69522804684108,
+      "latency_p99_us_mean": 10056.867333333334,
+      "baseline_rss_mib_mean": 5.36328125,
+      "peak_rss_mib_mean": 23.3828125,
+      "rss_growth_mib_mean": 17.97265625
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1887.111111111111,
+      "qps_stddev": 15.139678878470631,
+      "request_throughput_mib_s_mean": 118.02183108859593,
+      "latency_p99_us_mean": 9842.591,
+      "baseline_rss_mib_mean": 6.247395833333333,
+      "peak_rss_mib_mean": 27.498697916666668,
+      "rss_growth_mib_mean": 21.220052083333332
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1991.2222222222224,
+      "qps_stddev": 13.205872244134195,
+      "request_throughput_mib_s_mean": 124.53304492102728,
+      "latency_p99_us_mean": 9042.821333333333,
+      "baseline_rss_mib_mean": 5.778645833333333,
+      "peak_rss_mib_mean": 23.8046875,
+      "rss_growth_mib_mean": 18.022135416666668
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 2012.0,
+      "qps_stddev": 17.05112139246982,
+      "request_throughput_mib_s_mean": 125.8325080871582,
+      "latency_p99_us_mean": 8878.126333333334,
+      "baseline_rss_mib_mean": 6.75,
+      "peak_rss_mib_mean": 27.99609375,
+      "rss_growth_mib_mean": 21.10546875
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1981.0,
+      "qps_stddev": 52.230968534711934,
+      "request_throughput_mib_s_mean": 123.89373683929443,
+      "latency_p99_us_mean": 9217.128666666666,
+      "baseline_rss_mib_mean": 5.399739583333333,
+      "peak_rss_mib_mean": 23.484375,
+      "rss_growth_mib_mean": 18.055989583333332
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1931.0,
+      "qps_stddev": 23.156472577277874,
+      "request_throughput_mib_s_mean": 120.76668643951416,
+      "latency_p99_us_mean": 9723.666,
+      "baseline_rss_mib_mean": 6.26171875,
+      "peak_rss_mib_mean": 27.552083333333332,
+      "rss_growth_mib_mean": 21.231770833333332
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1923.0,
+      "qps_stddev": 17.444090583813686,
+      "request_throughput_mib_s_mean": 120.26635837554932,
+      "latency_p99_us_mean": 9522.731,
+      "baseline_rss_mib_mean": 5.799479166666667,
+      "peak_rss_mib_mean": 23.829427083333332,
+      "rss_growth_mib_mean": 18.028645833333332
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1923.888888888889,
+      "qps_stddev": 38.26257559754737,
+      "request_throughput_mib_s_mean": 120.32195038265651,
+      "latency_p99_us_mean": 9664.930666666667,
+      "baseline_rss_mib_mean": 6.748697916666667,
+      "peak_rss_mib_mean": 28.071614583333332,
+      "rss_growth_mib_mean": 21.220052083333332
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1958.4444444444443,
+      "qps_stddev": 19.656934189450666,
+      "request_throughput_mib_s_mean": 122.48308965894911,
+      "latency_p99_us_mean": 9564.936,
+      "baseline_rss_mib_mean": 5.352864583333333,
+      "peak_rss_mib_mean": 23.384114583333332,
+      "rss_growth_mib_mean": 17.936197916666668
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1923.3333333333333,
+      "qps_stddev": 25.315783394730033,
+      "request_throughput_mib_s_mean": 120.28720537821452,
+      "latency_p99_us_mean": 9686.146666666666,
+      "baseline_rss_mib_mean": 6.290364583333333,
+      "peak_rss_mib_mean": 27.55078125,
+      "rss_growth_mib_mean": 21.225260416666668
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1966.0,
+      "qps_stddev": 25.48637980482037,
+      "request_throughput_mib_s_mean": 122.95562171936035,
+      "latency_p99_us_mean": 9270.236666666666,
+      "baseline_rss_mib_mean": 5.842447916666667,
+      "peak_rss_mib_mean": 23.888020833333332,
+      "rss_growth_mib_mean": 18.04296875
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1945.777777777778,
+      "qps_stddev": 44.51744005595784,
+      "request_throughput_mib_s_mean": 121.69090355767143,
+      "latency_p99_us_mean": 9572.425333333333,
+      "baseline_rss_mib_mean": 6.760416666666667,
+      "peak_rss_mib_mean": 28.001302083333332,
+      "rss_growth_mib_mean": 21.141927083333332
+    },
+    {
+      "allocator": "default",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1932.2222222222224,
+      "qps_stddev": 34.15144195571131,
+      "request_throughput_mib_s_mean": 120.84312544928656,
+      "latency_p99_us_mean": 9726.849666666667,
+      "baseline_rss_mib_mean": 5.373697916666667,
+      "peak_rss_mib_mean": 23.463541666666668,
+      "rss_growth_mib_mean": 18.022135416666668
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1964.777777777778,
+      "qps_stddev": 24.198765400606256,
+      "request_throughput_mib_s_mean": 122.87918270958794,
+      "latency_p99_us_mean": 9454.267666666667,
+      "baseline_rss_mib_mean": 6.247395833333333,
+      "peak_rss_mib_mean": 27.55078125,
+      "rss_growth_mib_mean": 21.276041666666668
+    },
+    {
+      "allocator": "default",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1984.0,
+      "qps_stddev": 5.361039147473193,
+      "request_throughput_mib_s_mean": 124.08135986328125,
+      "latency_p99_us_mean": 9868.613666666666,
+      "baseline_rss_mib_mean": 5.805989583333333,
+      "peak_rss_mib_mean": 23.8828125,
+      "rss_growth_mib_mean": 18.07421875
+    },
+    {
+      "allocator": "jemalloc",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "runs": 3,
+      "qps_mean": 1978.0,
+      "qps_stddev": 17.146428199482248,
+      "request_throughput_mib_s_mean": 123.70611381530762,
+      "latency_p99_us_mean": 9495.176666666666,
+      "baseline_rss_mib_mean": 6.744791666666667,
+      "peak_rss_mib_mean": 27.98046875,
+      "rss_growth_mib_mean": 21.130208333333332
+    }
+  ],
+  "raw_results": [
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 30891,
+      "qps": 10297.0,
+      "request_throughput_mib_s": 1.0212783813476562,
+      "latency_us": {
+        "mean": 1553.178858631964,
+        "p50": 1374.966,
+        "p95": 3116.476,
+        "p99": 4337.325
+      },
+      "memory_kib": {
+        "baseline_rss": 5476,
+        "final_rss": 5696,
+        "peak_rss": 5696,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-qbk77ul6",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35453,
+      "qps": 11817.666666666666,
+      "request_throughput_mib_s": 1.172101338704427,
+      "latency_us": {
+        "mean": 1353.2982112938257,
+        "p50": 1248.964,
+        "p95": 2493.885,
+        "p99": 3200.638
+      },
+      "memory_kib": {
+        "baseline_rss": 5476,
+        "final_rss": 5688,
+        "peak_rss": 5688,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-_67ubbfr",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35730,
+      "qps": 11910.0,
+      "request_throughput_mib_s": 1.1812591552734375,
+      "latency_us": {
+        "mean": 1342.919666358802,
+        "p50": 1248.726,
+        "p95": 2455.858,
+        "p99": 3115.761
+      },
+      "memory_kib": {
+        "baseline_rss": 5540,
+        "final_rss": 5752,
+        "peak_rss": 5752,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-x0ossgao",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36250,
+      "qps": 12083.333333333334,
+      "request_throughput_mib_s": 1.1984507242838542,
+      "latency_us": {
+        "mean": 1323.4475031999998,
+        "p50": 1222.873,
+        "p95": 2436.471,
+        "p99": 3144.755
+      },
+      "memory_kib": {
+        "baseline_rss": 6408,
+        "final_rss": 6628,
+        "peak_rss": 6628,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-u0031jv3",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36190,
+      "qps": 12063.333333333334,
+      "request_throughput_mib_s": 1.1964670817057292,
+      "latency_us": {
+        "mean": 1325.774527935894,
+        "p50": 1230.009,
+        "p95": 2422.944,
+        "p99": 3085.876
+      },
+      "memory_kib": {
+        "baseline_rss": 6384,
+        "final_rss": 6608,
+        "peak_rss": 6608,
+        "growth": 224
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-nchb343p",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35578,
+      "qps": 11859.333333333334,
+      "request_throughput_mib_s": 1.1762339274088542,
+      "latency_us": {
+        "mean": 1348.6129771206927,
+        "p50": 1250.827,
+        "p95": 2443.332,
+        "p99": 3109.237
+      },
+      "memory_kib": {
+        "baseline_rss": 6396,
+        "final_rss": 6616,
+        "peak_rss": 6616,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-u1l4pshk",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36261,
+      "qps": 12087.0,
+      "request_throughput_mib_s": 1.1988143920898438,
+      "latency_us": {
+        "mean": 1323.1833029149775,
+        "p50": 1227.816,
+        "p95": 2397.203,
+        "p99": 3047.24
+      },
+      "memory_kib": {
+        "baseline_rss": 5928,
+        "final_rss": 6136,
+        "peak_rss": 6136,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-toi96gw5",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35602,
+      "qps": 11867.333333333334,
+      "request_throughput_mib_s": 1.1770273844401042,
+      "latency_us": {
+        "mean": 1347.5207646480533,
+        "p50": 1241.283,
+        "p95": 2486.749,
+        "p99": 3173.942
+      },
+      "memory_kib": {
+        "baseline_rss": 5808,
+        "final_rss": 6016,
+        "peak_rss": 6016,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-wdnlihry",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36805,
+      "qps": 12268.333333333334,
+      "request_throughput_mib_s": 1.2167994181315105,
+      "latency_us": {
+        "mean": 1303.614437685097,
+        "p50": 1212.425,
+        "p95": 2357.129,
+        "p99": 3021.044
+      },
+      "memory_kib": {
+        "baseline_rss": 5928,
+        "final_rss": 6136,
+        "peak_rss": 6136,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-9ulxl7xb",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36305,
+      "qps": 12101.666666666666,
+      "request_throughput_mib_s": 1.200269063313802,
+      "latency_us": {
+        "mean": 1321.5205745214157,
+        "p50": 1224.346,
+        "p95": 2425.579,
+        "p99": 3072.36
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 7100,
+        "peak_rss": 7100,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-rnqu70yh",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36227,
+      "qps": 12075.666666666666,
+      "request_throughput_mib_s": 1.1976903279622395,
+      "latency_us": {
+        "mean": 1324.3388158555772,
+        "p50": 1232.187,
+        "p95": 2391.696,
+        "p99": 3045.144
+      },
+      "memory_kib": {
+        "baseline_rss": 6940,
+        "final_rss": 7096,
+        "peak_rss": 7096,
+        "growth": 156
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-sy9mmd0s",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36165,
+      "qps": 12055.0,
+      "request_throughput_mib_s": 1.1956405639648438,
+      "latency_us": {
+        "mean": 1326.5517841283008,
+        "p50": 1231.99,
+        "p95": 2413.986,
+        "p99": 3042.694
+      },
+      "memory_kib": {
+        "baseline_rss": 6912,
+        "final_rss": 7136,
+        "peak_rss": 7136,
+        "growth": 224
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r31v8shr",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36239,
+      "qps": 12079.666666666666,
+      "request_throughput_mib_s": 1.1980870564778645,
+      "latency_us": {
+        "mean": 1323.731219073374,
+        "p50": 1235.226,
+        "p95": 2387.324,
+        "p99": 3035.914
+      },
+      "memory_kib": {
+        "baseline_rss": 5536,
+        "final_rss": 5772,
+        "peak_rss": 5772,
+        "growth": 236
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-rj7703ur",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35299,
+      "qps": 11766.333333333334,
+      "request_throughput_mib_s": 1.167009989420573,
+      "latency_us": {
+        "mean": 1359.1807486897646,
+        "p50": 1267.446,
+        "p95": 2425.371,
+        "p99": 3056.25
+      },
+      "memory_kib": {
+        "baseline_rss": 5512,
+        "final_rss": 5724,
+        "peak_rss": 5724,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-2xut4c01",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36013,
+      "qps": 12004.333333333334,
+      "request_throughput_mib_s": 1.1906153361002605,
+      "latency_us": {
+        "mean": 1332.254810207425,
+        "p50": 1240.929,
+        "p95": 2422.94,
+        "p99": 3048.662
+      },
+      "memory_kib": {
+        "baseline_rss": 5472,
+        "final_rss": 5752,
+        "peak_rss": 5752,
+        "growth": 280
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-03t94_r9",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35983,
+      "qps": 11994.333333333334,
+      "request_throughput_mib_s": 1.189623514811198,
+      "latency_us": {
+        "mean": 1333.4368717449906,
+        "p50": 1235.739,
+        "p95": 2421.009,
+        "p99": 3056.853
+      },
+      "memory_kib": {
+        "baseline_rss": 6388,
+        "final_rss": 6624,
+        "peak_rss": 6624,
+        "growth": 236
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r03l0e08",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35927,
+      "qps": 11975.666666666666,
+      "request_throughput_mib_s": 1.1877721150716145,
+      "latency_us": {
+        "mean": 1335.480528293484,
+        "p50": 1242.532,
+        "p95": 2404.15,
+        "p99": 3031.823
+      },
+      "memory_kib": {
+        "baseline_rss": 6396,
+        "final_rss": 6616,
+        "peak_rss": 6616,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-2l0zb0z9",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36117,
+      "qps": 12039.0,
+      "request_throughput_mib_s": 1.1940536499023438,
+      "latency_us": {
+        "mean": 1328.4094945039733,
+        "p50": 1237.095,
+        "p95": 2420.994,
+        "p99": 3076.601
+      },
+      "memory_kib": {
+        "baseline_rss": 6400,
+        "final_rss": 6620,
+        "peak_rss": 6620,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-bmh_tq28",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35940,
+      "qps": 11980.0,
+      "request_throughput_mib_s": 1.188201904296875,
+      "latency_us": {
+        "mean": 1334.910114524207,
+        "p50": 1243.943,
+        "p95": 2414.187,
+        "p99": 3086.596
+      },
+      "memory_kib": {
+        "baseline_rss": 5912,
+        "final_rss": 6120,
+        "peak_rss": 6120,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ovwpw2l_",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35353,
+      "qps": 11784.333333333334,
+      "request_throughput_mib_s": 1.1687952677408855,
+      "latency_us": {
+        "mean": 1356.9765653268464,
+        "p50": 1257.191,
+        "p95": 2485.387,
+        "p99": 3093.614
+      },
+      "memory_kib": {
+        "baseline_rss": 5944,
+        "final_rss": 6152,
+        "peak_rss": 6152,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-hcw4iukk",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 36348,
+      "qps": 12116.0,
+      "request_throughput_mib_s": 1.201690673828125,
+      "latency_us": {
+        "mean": 1319.98926458127,
+        "p50": 1228.108,
+        "p95": 2406.835,
+        "p99": 3072.977
+      },
+      "memory_kib": {
+        "baseline_rss": 5920,
+        "final_rss": 6140,
+        "peak_rss": 6140,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-b_mo6ma7",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35318,
+      "qps": 11772.666666666666,
+      "request_throughput_mib_s": 1.1676381429036458,
+      "latency_us": {
+        "mean": 1358.3758781357947,
+        "p50": 1259.774,
+        "p95": 2501.791,
+        "p99": 3208.011
+      },
+      "memory_kib": {
+        "baseline_rss": 6964,
+        "final_rss": 7180,
+        "peak_rss": 7180,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ugtcmpw7",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35212,
+      "qps": 11737.333333333334,
+      "request_throughput_mib_s": 1.1641337076822917,
+      "latency_us": {
+        "mean": 1362.5150094854027,
+        "p50": 1262.889,
+        "p95": 2466.144,
+        "p99": 3187.933
+      },
+      "memory_kib": {
+        "baseline_rss": 6888,
+        "final_rss": 7112,
+        "peak_rss": 7112,
+        "growth": 224
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-z3xnpgys",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35915,
+      "qps": 11971.666666666666,
+      "request_throughput_mib_s": 1.1873753865559895,
+      "latency_us": {
+        "mean": 1335.8391744396492,
+        "p50": 1238.437,
+        "p95": 2446.666,
+        "p99": 3121.899
+      },
+      "memory_kib": {
+        "baseline_rss": 6880,
+        "final_rss": 7096,
+        "peak_rss": 7096,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ucv7qecv",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35470,
+      "qps": 11823.333333333334,
+      "request_throughput_mib_s": 1.1726633707682292,
+      "latency_us": {
+        "mean": 1352.5108046800112,
+        "p50": 1257.754,
+        "p95": 2468.771,
+        "p99": 3142.879
+      },
+      "memory_kib": {
+        "baseline_rss": 5448,
+        "final_rss": 5676,
+        "peak_rss": 5676,
+        "growth": 228
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-d596lmzo",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35793,
+      "qps": 11931.0,
+      "request_throughput_mib_s": 1.1833419799804688,
+      "latency_us": {
+        "mean": 1340.5225568127846,
+        "p50": 1246.815,
+        "p95": 2422.756,
+        "p99": 3060.984
+      },
+      "memory_kib": {
+        "baseline_rss": 5556,
+        "final_rss": 5768,
+        "peak_rss": 5768,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-10jqjqmk",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35791,
+      "qps": 11930.333333333334,
+      "request_throughput_mib_s": 1.183275858561198,
+      "latency_us": {
+        "mean": 1340.5444413679418,
+        "p50": 1248.298,
+        "p95": 2427.752,
+        "p99": 3046.366
+      },
+      "memory_kib": {
+        "baseline_rss": 5492,
+        "final_rss": 5704,
+        "peak_rss": 5704,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-8m5k7s7s",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35905,
+      "qps": 11968.333333333334,
+      "request_throughput_mib_s": 1.1870447794596355,
+      "latency_us": {
+        "mean": 1336.3738333936776,
+        "p50": 1244.588,
+        "p95": 2435.754,
+        "p99": 3081.66
+      },
+      "memory_kib": {
+        "baseline_rss": 6364,
+        "final_rss": 6588,
+        "peak_rss": 6588,
+        "growth": 224
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ew_fxqjh",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35357,
+      "qps": 11785.666666666666,
+      "request_throughput_mib_s": 1.168927510579427,
+      "latency_us": {
+        "mean": 1356.979820290183,
+        "p50": 1261.38,
+        "p95": 2458.855,
+        "p99": 3128.688
+      },
+      "memory_kib": {
+        "baseline_rss": 6404,
+        "final_rss": 6624,
+        "peak_rss": 6624,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ks15l9e3",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35785,
+      "qps": 11928.333333333334,
+      "request_throughput_mib_s": 1.1830774943033855,
+      "latency_us": {
+        "mean": 1340.8099398071818,
+        "p50": 1249.405,
+        "p95": 2448.447,
+        "p99": 3093.823
+      },
+      "memory_kib": {
+        "baseline_rss": 6276,
+        "final_rss": 6508,
+        "peak_rss": 6508,
+        "growth": 232
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-p2b7br18",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34765,
+      "qps": 11588.333333333334,
+      "request_throughput_mib_s": 1.1493555704752605,
+      "latency_us": {
+        "mean": 1380.1274372213431,
+        "p50": 1276.151,
+        "p95": 2529.714,
+        "p99": 3280.103
+      },
+      "memory_kib": {
+        "baseline_rss": 5932,
+        "final_rss": 6140,
+        "peak_rss": 6140,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-dfgb3pvh",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34744,
+      "qps": 11581.333333333334,
+      "request_throughput_mib_s": 1.1486612955729167,
+      "latency_us": {
+        "mean": 1380.810784797375,
+        "p50": 1282.5,
+        "p95": 2546.327,
+        "p99": 3249.426
+      },
+      "memory_kib": {
+        "baseline_rss": 5916,
+        "final_rss": 6136,
+        "peak_rss": 6136,
+        "growth": 220
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ft31sa_3",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34778,
+      "qps": 11592.666666666666,
+      "request_throughput_mib_s": 1.1497853597005208,
+      "latency_us": {
+        "mean": 1379.5038752947264,
+        "p50": 1278.602,
+        "p95": 2554.536,
+        "p99": 3250.322
+      },
+      "memory_kib": {
+        "baseline_rss": 5984,
+        "final_rss": 6192,
+        "peak_rss": 6192,
+        "growth": 208
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-owp5vclp",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34245,
+      "qps": 11415.0,
+      "request_throughput_mib_s": 1.1321640014648438,
+      "latency_us": {
+        "mean": 1400.9161461235217,
+        "p50": 1290.67,
+        "p95": 2618.022,
+        "p99": 3332.649
+      },
+      "memory_kib": {
+        "baseline_rss": 6912,
+        "final_rss": 7128,
+        "peak_rss": 7128,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-2000_j1x",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33952,
+      "qps": 11317.333333333334,
+      "request_throughput_mib_s": 1.1224772135416667,
+      "latency_us": {
+        "mean": 1413.1479185614985,
+        "p50": 1303.433,
+        "p95": 2632.412,
+        "p99": 3386.821
+      },
+      "memory_kib": {
+        "baseline_rss": 6888,
+        "final_rss": 7104,
+        "peak_rss": 7104,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-9qif38o9",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35280,
+      "qps": 11760.0,
+      "request_throughput_mib_s": 1.1663818359375,
+      "latency_us": {
+        "mean": 1359.7550976190475,
+        "p50": 1261.479,
+        "p95": 2486.704,
+        "p99": 3140.311
+      },
+      "memory_kib": {
+        "baseline_rss": 6896,
+        "final_rss": 7112,
+        "peak_rss": 7112,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-x9dprzxx",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35736,
+      "qps": 11912.0,
+      "request_throughput_mib_s": 1.18145751953125,
+      "latency_us": {
+        "mean": 1342.5167367080815,
+        "p50": 1246.583,
+        "p95": 2451.91,
+        "p99": 3115.741
+      },
+      "memory_kib": {
+        "baseline_rss": 5568,
+        "final_rss": 5780,
+        "peak_rss": 5780,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-69m_vrk2",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35635,
+      "qps": 11878.333333333334,
+      "request_throughput_mib_s": 1.178118387858073,
+      "latency_us": {
+        "mean": 1346.2764282026098,
+        "p50": 1252.151,
+        "p95": 2435.923,
+        "p99": 3092.988
+      },
+      "memory_kib": {
+        "baseline_rss": 5436,
+        "final_rss": 5648,
+        "peak_rss": 5648,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-xndfwsfc",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35569,
+      "qps": 11856.333333333334,
+      "request_throughput_mib_s": 1.1759363810221355,
+      "latency_us": {
+        "mean": 1348.8689540330063,
+        "p50": 1255.138,
+        "p95": 2458.733,
+        "p99": 3153.041
+      },
+      "memory_kib": {
+        "baseline_rss": 5544,
+        "final_rss": 5776,
+        "peak_rss": 5776,
+        "growth": 232
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-qneawotq",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35231,
+      "qps": 11743.666666666666,
+      "request_throughput_mib_s": 1.1647618611653645,
+      "latency_us": {
+        "mean": 1361.8069242428544,
+        "p50": 1263.247,
+        "p95": 2497.232,
+        "p99": 3158.391
+      },
+      "memory_kib": {
+        "baseline_rss": 6336,
+        "final_rss": 6624,
+        "peak_rss": 6624,
+        "growth": 288
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-irf92227",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35302,
+      "qps": 11767.333333333334,
+      "request_throughput_mib_s": 1.1671091715494792,
+      "latency_us": {
+        "mean": 1359.074934536287,
+        "p50": 1259.968,
+        "p95": 2484.463,
+        "p99": 3189.395
+      },
+      "memory_kib": {
+        "baseline_rss": 6368,
+        "final_rss": 6592,
+        "peak_rss": 6592,
+        "growth": 224
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-0dbjltmx",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34622,
+      "qps": 11540.666666666666,
+      "request_throughput_mib_s": 1.1446278889973958,
+      "latency_us": {
+        "mean": 1385.7211563745595,
+        "p50": 1284.98,
+        "p95": 2527.0,
+        "p99": 3240.226
+      },
+      "memory_kib": {
+        "baseline_rss": 6428,
+        "final_rss": 6676,
+        "peak_rss": 6676,
+        "growth": 248
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-d06xzn90",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34361,
+      "qps": 11453.666666666666,
+      "request_throughput_mib_s": 1.135999043782552,
+      "latency_us": {
+        "mean": 1396.2334391606764,
+        "p50": 1293.646,
+        "p95": 2585.718,
+        "p99": 3287.4
+      },
+      "memory_kib": {
+        "baseline_rss": 5928,
+        "final_rss": 6156,
+        "peak_rss": 6156,
+        "growth": 228
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-j9m68n3t",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34322,
+      "qps": 11440.666666666666,
+      "request_throughput_mib_s": 1.1347096761067708,
+      "latency_us": {
+        "mean": 1397.9288935376726,
+        "p50": 1296.348,
+        "p95": 2573.594,
+        "p99": 3236.426
+      },
+      "memory_kib": {
+        "baseline_rss": 5952,
+        "final_rss": 6164,
+        "peak_rss": 6164,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-4yamcgw4",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 30253,
+      "qps": 10084.333333333334,
+      "request_throughput_mib_s": 1.0001856486002605,
+      "latency_us": {
+        "mean": 1585.938865434833,
+        "p50": 1398.847,
+        "p95": 3209.632,
+        "p99": 4436.56
+      },
+      "memory_kib": {
+        "baseline_rss": 5824,
+        "final_rss": 6036,
+        "peak_rss": 6036,
+        "growth": 212
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-0tekw40h",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34106,
+      "qps": 11368.666666666666,
+      "request_throughput_mib_s": 1.1275685628255208,
+      "latency_us": {
+        "mean": 1406.664389257022,
+        "p50": 1301.71,
+        "p95": 2611.051,
+        "p99": 3325.062
+      },
+      "memory_kib": {
+        "baseline_rss": 7024,
+        "final_rss": 7168,
+        "peak_rss": 7168,
+        "growth": 144
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-t1r09ks2",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 34140,
+      "qps": 11380.0,
+      "request_throughput_mib_s": 1.128692626953125,
+      "latency_us": {
+        "mean": 1405.2536589630931,
+        "p50": 1299.789,
+        "p95": 2605.213,
+        "p99": 3301.236
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 7108,
+        "peak_rss": 7108,
+        "growth": 224
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-v4rkr55t",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 64,
+      "request_size_bytes": 104,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 35009,
+      "qps": 11669.666666666666,
+      "request_throughput_mib_s": 1.157422383626302,
+      "latency_us": {
+        "mean": 1370.491139964009,
+        "p50": 1277.459,
+        "p95": 2501.266,
+        "p99": 3189.794
+      },
+      "memory_kib": {
+        "baseline_rss": 6916,
+        "final_rss": 7132,
+        "peak_rss": 7132,
+        "growth": 216
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-_leu8n4d",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33476,
+      "qps": 11158.666666666666,
+      "request_throughput_mib_s": 44.03549448649088,
+      "latency_us": {
+        "mean": 1433.0782182757798,
+        "p50": 1328.028,
+        "p95": 2609.985,
+        "p99": 3291.949
+      },
+      "memory_kib": {
+        "baseline_rss": 5540,
+        "final_rss": 6872,
+        "peak_rss": 6872,
+        "growth": 1332
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-bcgb640y",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33320,
+      "qps": 11106.666666666666,
+      "request_throughput_mib_s": 43.83028666178385,
+      "latency_us": {
+        "mean": 1439.8542655462184,
+        "p50": 1335.491,
+        "p95": 2604.296,
+        "p99": 3290.782
+      },
+      "memory_kib": {
+        "baseline_rss": 5420,
+        "final_rss": 6796,
+        "peak_rss": 6796,
+        "growth": 1376
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-hzo7340p",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33031,
+      "qps": 11010.333333333334,
+      "request_throughput_mib_s": 43.45012601216634,
+      "latency_us": {
+        "mean": 1452.5600482576974,
+        "p50": 1345.194,
+        "p95": 2654.766,
+        "p99": 3396.198
+      },
+      "memory_kib": {
+        "baseline_rss": 5532,
+        "final_rss": 6860,
+        "peak_rss": 6860,
+        "growth": 1328
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-lrgoaox9",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33764,
+      "qps": 11254.666666666666,
+      "request_throughput_mib_s": 44.41433970133463,
+      "latency_us": {
+        "mean": 1420.988343265016,
+        "p50": 1316.355,
+        "p95": 2581.472,
+        "p99": 3258.676
+      },
+      "memory_kib": {
+        "baseline_rss": 6460,
+        "final_rss": 8040,
+        "peak_rss": 8040,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-tfxzwsqq",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32761,
+      "qps": 10920.333333333334,
+      "request_throughput_mib_s": 43.09495862325033,
+      "latency_us": {
+        "mean": 1464.4913625957695,
+        "p50": 1360.235,
+        "p95": 2656.477,
+        "p99": 3364.032
+      },
+      "memory_kib": {
+        "baseline_rss": 6436,
+        "final_rss": 8008,
+        "peak_rss": 8008,
+        "growth": 1572
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-27fepsdj",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32990,
+      "qps": 10996.666666666666,
+      "request_throughput_mib_s": 43.396193186442055,
+      "latency_us": {
+        "mean": 1454.2684844801456,
+        "p50": 1348.015,
+        "p95": 2644.027,
+        "p99": 3384.374
+      },
+      "memory_kib": {
+        "baseline_rss": 6368,
+        "final_rss": 7956,
+        "peak_rss": 7956,
+        "growth": 1588
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-wbzchumd",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33889,
+      "qps": 11296.333333333334,
+      "request_throughput_mib_s": 44.578769048055015,
+      "latency_us": {
+        "mean": 1415.6974998081973,
+        "p50": 1314.842,
+        "p95": 2575.872,
+        "p99": 3260.617
+      },
+      "memory_kib": {
+        "baseline_rss": 5972,
+        "final_rss": 7280,
+        "peak_rss": 7280,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ewe8gla0",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33284,
+      "qps": 11094.666666666666,
+      "request_throughput_mib_s": 43.78293100992838,
+      "latency_us": {
+        "mean": 1441.5807229900254,
+        "p50": 1332.76,
+        "p95": 2643.13,
+        "p99": 3370.889
+      },
+      "memory_kib": {
+        "baseline_rss": 6004,
+        "final_rss": 7312,
+        "peak_rss": 7312,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-5jvbuzqh",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32796,
+      "qps": 10932.0,
+      "request_throughput_mib_s": 43.14099884033203,
+      "latency_us": {
+        "mean": 1462.906591352604,
+        "p50": 1345.85,
+        "p95": 2695.8,
+        "p99": 3430.007
+      },
+      "memory_kib": {
+        "baseline_rss": 5948,
+        "final_rss": 7196,
+        "peak_rss": 7196,
+        "growth": 1248
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-o81cxc5i",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32994,
+      "qps": 10998.0,
+      "request_throughput_mib_s": 43.40145492553711,
+      "latency_us": {
+        "mean": 1454.1433708249983,
+        "p50": 1338.95,
+        "p95": 2699.049,
+        "p99": 3476.775
+      },
+      "memory_kib": {
+        "baseline_rss": 6920,
+        "final_rss": 8500,
+        "peak_rss": 8500,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-kh8mdqov",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33341,
+      "qps": 11113.666666666666,
+      "request_throughput_mib_s": 43.857910792032875,
+      "latency_us": {
+        "mean": 1438.978889535407,
+        "p50": 1330.899,
+        "p95": 2649.167,
+        "p99": 3387.572
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 8464,
+        "peak_rss": 8464,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-c6_p9tuy",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33160,
+      "qps": 11053.333333333334,
+      "request_throughput_mib_s": 43.61981709798177,
+      "latency_us": {
+        "mean": 1447.093029855247,
+        "p50": 1333.867,
+        "p95": 2687.347,
+        "p99": 3400.34
+      },
+      "memory_kib": {
+        "baseline_rss": 6948,
+        "final_rss": 8528,
+        "peak_rss": 8528,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-bstckcgj",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33530,
+      "qps": 11176.666666666666,
+      "request_throughput_mib_s": 44.106527964274086,
+      "latency_us": {
+        "mean": 1430.9271422904862,
+        "p50": 1327.908,
+        "p95": 2600.012,
+        "p99": 3314.172
+      },
+      "memory_kib": {
+        "baseline_rss": 5492,
+        "final_rss": 6800,
+        "peak_rss": 6800,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-qyutkzrw",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33465,
+      "qps": 11155.0,
+      "request_throughput_mib_s": 44.02102470397949,
+      "latency_us": {
+        "mean": 1433.6409447781264,
+        "p50": 1331.092,
+        "p95": 2580.348,
+        "p99": 3299.268
+      },
+      "memory_kib": {
+        "baseline_rss": 5476,
+        "final_rss": 6784,
+        "peak_rss": 6784,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-iwaa1xhs",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33663,
+      "qps": 11221.0,
+      "request_throughput_mib_s": 44.28148078918457,
+      "latency_us": {
+        "mean": 1425.2711969818495,
+        "p50": 1315.276,
+        "p95": 2625.263,
+        "p99": 3389.777
+      },
+      "memory_kib": {
+        "baseline_rss": 5480,
+        "final_rss": 6788,
+        "peak_rss": 6788,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r6taq8j5",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32939,
+      "qps": 10979.666666666666,
+      "request_throughput_mib_s": 43.32910601298014,
+      "latency_us": {
+        "mean": 1456.7906911867392,
+        "p50": 1351.082,
+        "p95": 2654.039,
+        "p99": 3385.855
+      },
+      "memory_kib": {
+        "baseline_rss": 6340,
+        "final_rss": 7928,
+        "peak_rss": 7928,
+        "growth": 1588
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-z0bdfj6q",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33274,
+      "qps": 11091.333333333334,
+      "request_throughput_mib_s": 43.76977666219076,
+      "latency_us": {
+        "mean": 1441.8761577507964,
+        "p50": 1339.654,
+        "p95": 2612.104,
+        "p99": 3327.428
+      },
+      "memory_kib": {
+        "baseline_rss": 6408,
+        "final_rss": 7992,
+        "peak_rss": 7992,
+        "growth": 1584
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-7gjsuy0h",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33329,
+      "qps": 11109.666666666666,
+      "request_throughput_mib_s": 43.84212557474772,
+      "latency_us": {
+        "mean": 1439.616061207957,
+        "p50": 1333.823,
+        "p95": 2613.156,
+        "p99": 3341.118
+      },
+      "memory_kib": {
+        "baseline_rss": 6448,
+        "final_rss": 8048,
+        "peak_rss": 8048,
+        "growth": 1600
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-32omqh3r",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33295,
+      "qps": 11098.333333333334,
+      "request_throughput_mib_s": 43.79740079243978,
+      "latency_us": {
+        "mean": 1440.8828994743953,
+        "p50": 1335.204,
+        "p95": 2663.405,
+        "p99": 3376.641
+      },
+      "memory_kib": {
+        "baseline_rss": 6008,
+        "final_rss": 7316,
+        "peak_rss": 7316,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-8ddkyir9",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32702,
+      "qps": 10900.666666666666,
+      "request_throughput_mib_s": 43.017347971598305,
+      "latency_us": {
+        "mean": 1467.1732221882453,
+        "p50": 1353.939,
+        "p95": 2699.668,
+        "p99": 3468.206
+      },
+      "memory_kib": {
+        "baseline_rss": 5984,
+        "final_rss": 7232,
+        "peak_rss": 7232,
+        "growth": 1248
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-i9xnu4ul",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32978,
+      "qps": 10992.666666666666,
+      "request_throughput_mib_s": 43.3804079691569,
+      "latency_us": {
+        "mean": 1454.8980392079568,
+        "p50": 1353.463,
+        "p95": 2637.095,
+        "p99": 3331.902
+      },
+      "memory_kib": {
+        "baseline_rss": 5988,
+        "final_rss": 7296,
+        "peak_rss": 7296,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-eb0r80u9",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33052,
+      "qps": 11017.333333333334,
+      "request_throughput_mib_s": 43.47775014241537,
+      "latency_us": {
+        "mean": 1451.62348084836,
+        "p50": 1341.319,
+        "p95": 2655.524,
+        "p99": 3375.83
+      },
+      "memory_kib": {
+        "baseline_rss": 6948,
+        "final_rss": 8476,
+        "peak_rss": 8476,
+        "growth": 1528
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-739upipe",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32596,
+      "qps": 10865.333333333334,
+      "request_throughput_mib_s": 42.87791188557943,
+      "latency_us": {
+        "mean": 1471.8249358510245,
+        "p50": 1349.251,
+        "p95": 2718.995,
+        "p99": 3486.168
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 8464,
+        "peak_rss": 8464,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-kjjyhc83",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32207,
+      "qps": 10735.666666666666,
+      "request_throughput_mib_s": 42.36620775858561,
+      "latency_us": {
+        "mean": 1489.7329047722544,
+        "p50": 1372.381,
+        "p95": 2756.565,
+        "p99": 3515.011
+      },
+      "memory_kib": {
+        "baseline_rss": 6956,
+        "final_rss": 8544,
+        "peak_rss": 8544,
+        "growth": 1588
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r5s_n9ih",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32492,
+      "qps": 10830.666666666666,
+      "request_throughput_mib_s": 42.74110666910807,
+      "latency_us": {
+        "mean": 1476.6872209774715,
+        "p50": 1364.013,
+        "p95": 2679.265,
+        "p99": 3426.307
+      },
+      "memory_kib": {
+        "baseline_rss": 5448,
+        "final_rss": 6760,
+        "peak_rss": 6760,
+        "growth": 1312
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-cbo06fy8",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32850,
+      "qps": 10950.0,
+      "request_throughput_mib_s": 43.212032318115234,
+      "latency_us": {
+        "mean": 1460.7167014003046,
+        "p50": 1358.558,
+        "p95": 2632.141,
+        "p99": 3339.326
+      },
+      "memory_kib": {
+        "baseline_rss": 5496,
+        "final_rss": 6804,
+        "peak_rss": 6804,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-f881wpd3",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33095,
+      "qps": 11031.666666666666,
+      "request_throughput_mib_s": 43.53431383768717,
+      "latency_us": {
+        "mean": 1449.8348065266657,
+        "p50": 1343.003,
+        "p95": 2631.429,
+        "p99": 3361.976
+      },
+      "memory_kib": {
+        "baseline_rss": 5516,
+        "final_rss": 6852,
+        "peak_rss": 6852,
+        "growth": 1336
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-htc7qben",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32603,
+      "qps": 10867.666666666666,
+      "request_throughput_mib_s": 42.887119928995766,
+      "latency_us": {
+        "mean": 1471.5983750575099,
+        "p50": 1363.842,
+        "p95": 2687.294,
+        "p99": 3415.021
+      },
+      "memory_kib": {
+        "baseline_rss": 6400,
+        "final_rss": 7980,
+        "peak_rss": 7980,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-wneekdmb",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33105,
+      "qps": 11035.0,
+      "request_throughput_mib_s": 43.547468185424805,
+      "latency_us": {
+        "mean": 1449.402805829935,
+        "p50": 1345.169,
+        "p95": 2628.477,
+        "p99": 3321.531
+      },
+      "memory_kib": {
+        "baseline_rss": 6408,
+        "final_rss": 7980,
+        "peak_rss": 7980,
+        "growth": 1572
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-sb_hmtzp",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33171,
+      "qps": 11057.0,
+      "request_throughput_mib_s": 43.634286880493164,
+      "latency_us": {
+        "mean": 1446.4387297940973,
+        "p50": 1338.686,
+        "p95": 2649.299,
+        "p99": 3322.583
+      },
+      "memory_kib": {
+        "baseline_rss": 6452,
+        "final_rss": 8028,
+        "peak_rss": 8028,
+        "growth": 1576
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-_cur7w3b",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32531,
+      "qps": 10843.666666666666,
+      "request_throughput_mib_s": 42.79240862528483,
+      "latency_us": {
+        "mean": 1474.6650058713228,
+        "p50": 1367.064,
+        "p95": 2697.602,
+        "p99": 3407.806
+      },
+      "memory_kib": {
+        "baseline_rss": 5916,
+        "final_rss": 7224,
+        "peak_rss": 7224,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-q82dcpwc",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32982,
+      "qps": 10994.0,
+      "request_throughput_mib_s": 43.38566970825195,
+      "latency_us": {
+        "mean": 1454.6510740707054,
+        "p50": 1347.059,
+        "p95": 2647.063,
+        "p99": 3379.929
+      },
+      "memory_kib": {
+        "baseline_rss": 5932,
+        "final_rss": 7240,
+        "peak_rss": 7240,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-e_e5pj2l",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33207,
+      "qps": 11069.0,
+      "request_throughput_mib_s": 43.68164253234863,
+      "latency_us": {
+        "mean": 1444.760002951185,
+        "p50": 1340.94,
+        "p95": 2620.114,
+        "p99": 3317.489
+      },
+      "memory_kib": {
+        "baseline_rss": 5924,
+        "final_rss": 7232,
+        "peak_rss": 7232,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-kpp4rn85",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33031,
+      "qps": 11010.333333333334,
+      "request_throughput_mib_s": 43.45012601216634,
+      "latency_us": {
+        "mean": 1452.6110586418818,
+        "p50": 1339.717,
+        "p95": 2633.657,
+        "p99": 3328.907
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 8464,
+        "peak_rss": 8464,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r_l3cb_v",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33162,
+      "qps": 11054.0,
+      "request_throughput_mib_s": 43.6224479675293,
+      "latency_us": {
+        "mean": 1446.7864993365902,
+        "p50": 1339.699,
+        "p95": 2647.336,
+        "p99": 3335.96
+      },
+      "memory_kib": {
+        "baseline_rss": 6892,
+        "final_rss": 8480,
+        "peak_rss": 8480,
+        "growth": 1588
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-gqepah96",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33387,
+      "qps": 11129.0,
+      "request_throughput_mib_s": 43.91842079162598,
+      "latency_us": {
+        "mean": 1436.8941524845,
+        "p50": 1336.957,
+        "p95": 2586.076,
+        "p99": 3274.847
+      },
+      "memory_kib": {
+        "baseline_rss": 6964,
+        "final_rss": 8548,
+        "peak_rss": 8548,
+        "growth": 1584
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-gptqqu_y",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33454,
+      "qps": 11151.333333333334,
+      "request_throughput_mib_s": 44.0065549214681,
+      "latency_us": {
+        "mean": 1434.346317331261,
+        "p50": 1328.457,
+        "p95": 2605.502,
+        "p99": 3300.57
+      },
+      "memory_kib": {
+        "baseline_rss": 5580,
+        "final_rss": 6892,
+        "peak_rss": 6892,
+        "growth": 1312
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-np4lg9gg",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33221,
+      "qps": 11073.666666666666,
+      "request_throughput_mib_s": 43.70005861918131,
+      "latency_us": {
+        "mean": 1444.3430618885643,
+        "p50": 1342.866,
+        "p95": 2606.828,
+        "p99": 3316.574
+      },
+      "memory_kib": {
+        "baseline_rss": 5560,
+        "final_rss": 6872,
+        "peak_rss": 6872,
+        "growth": 1312
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-mfr_dvbt",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32983,
+      "qps": 10994.333333333334,
+      "request_throughput_mib_s": 43.38698514302572,
+      "latency_us": {
+        "mean": 1454.7817017857683,
+        "p50": 1353.549,
+        "p95": 2610.541,
+        "p99": 3314.329
+      },
+      "memory_kib": {
+        "baseline_rss": 5504,
+        "final_rss": 6816,
+        "peak_rss": 6816,
+        "growth": 1312
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-4jmya3bv",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32760,
+      "qps": 10920.0,
+      "request_throughput_mib_s": 43.09364318847656,
+      "latency_us": {
+        "mean": 1464.5549305250304,
+        "p50": 1351.366,
+        "p95": 2661.05,
+        "p99": 3421.888
+      },
+      "memory_kib": {
+        "baseline_rss": 6404,
+        "final_rss": 7992,
+        "peak_rss": 7992,
+        "growth": 1588
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-l2n4fv2m",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33129,
+      "qps": 11043.0,
+      "request_throughput_mib_s": 43.57903861999512,
+      "latency_us": {
+        "mean": 1448.6940752814755,
+        "p50": 1338.272,
+        "p95": 2655.731,
+        "p99": 3382.091
+      },
+      "memory_kib": {
+        "baseline_rss": 6452,
+        "final_rss": 8064,
+        "peak_rss": 8064,
+        "growth": 1612
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-sbrgclri",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 31334,
+      "qps": 10444.666666666666,
+      "request_throughput_mib_s": 41.21783320109049,
+      "latency_us": {
+        "mean": 1531.3697634837556,
+        "p50": 1394.407,
+        "p95": 2867.357,
+        "p99": 3893.016
+      },
+      "memory_kib": {
+        "baseline_rss": 6452,
+        "final_rss": 8064,
+        "peak_rss": 8064,
+        "growth": 1612
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-un74wc8l",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32534,
+      "qps": 10844.666666666666,
+      "request_throughput_mib_s": 42.79635492960612,
+      "latency_us": {
+        "mean": 1474.9801462470032,
+        "p50": 1363.227,
+        "p95": 2718.896,
+        "p99": 3449.614
+      },
+      "memory_kib": {
+        "baseline_rss": 5992,
+        "final_rss": 7304,
+        "peak_rss": 7304,
+        "growth": 1312
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-4qx2udj7",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32487,
+      "qps": 10829.0,
+      "request_throughput_mib_s": 42.73452949523926,
+      "latency_us": {
+        "mean": 1476.8498910333362,
+        "p50": 1363.648,
+        "p95": 2723.694,
+        "p99": 3474.215
+      },
+      "memory_kib": {
+        "baseline_rss": 5928,
+        "final_rss": 7236,
+        "peak_rss": 7236,
+        "growth": 1308
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-yn8gwmhd",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32990,
+      "qps": 10996.666666666666,
+      "request_throughput_mib_s": 43.396193186442055,
+      "latency_us": {
+        "mean": 1454.5215995150047,
+        "p50": 1345.498,
+        "p95": 2649.363,
+        "p99": 3348.001
+      },
+      "memory_kib": {
+        "baseline_rss": 5892,
+        "final_rss": 7204,
+        "peak_rss": 7204,
+        "growth": 1312
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-q7f5_sg7",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33509,
+      "qps": 11169.666666666666,
+      "request_throughput_mib_s": 44.07890383402506,
+      "latency_us": {
+        "mean": 1431.8699938822406,
+        "p50": 1331.1,
+        "p95": 2600.277,
+        "p99": 3259.264
+      },
+      "memory_kib": {
+        "baseline_rss": 7004,
+        "final_rss": 8588,
+        "peak_rss": 8588,
+        "growth": 1584
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-w2ivxp53",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 32612,
+      "qps": 10870.666666666666,
+      "request_throughput_mib_s": 42.89895884195963,
+      "latency_us": {
+        "mean": 1471.2470016558323,
+        "p50": 1359.638,
+        "p95": 2692.041,
+        "p99": 3456.076
+      },
+      "memory_kib": {
+        "baseline_rss": 6996,
+        "final_rss": 8576,
+        "peak_rss": 8576,
+        "growth": 1580
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-igmn9ly8",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 4096,
+      "request_size_bytes": 4138,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 33129,
+      "qps": 11043.0,
+      "request_throughput_mib_s": 43.57903861999512,
+      "latency_us": {
+        "mean": 1448.2036666062966,
+        "p50": 1329.271,
+        "p95": 2668.69,
+        "p99": 3374.539
+      },
+      "memory_kib": {
+        "baseline_rss": 6844,
+        "final_rss": 8428,
+        "peak_rss": 8428,
+        "growth": 1584
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-7wkzox21",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5657,
+      "qps": 1885.6666666666667,
+      "request_throughput_mib_s": 117.93149407704671,
+      "latency_us": {
+        "mean": 8498.281228566377,
+        "p50": 8428.823,
+        "p95": 9418.653,
+        "p99": 10484.777
+      },
+      "memory_kib": {
+        "baseline_rss": 5472,
+        "final_rss": 23820,
+        "peak_rss": 23892,
+        "growth": 18348
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-y71paeal",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5582,
+      "qps": 1860.6666666666667,
+      "request_throughput_mib_s": 116.36796887715657,
+      "latency_us": {
+        "mean": 8619.598783410964,
+        "p50": 8569.621,
+        "p95": 9548.389,
+        "p99": 9997.218
+      },
+      "memory_kib": {
+        "baseline_rss": 5452,
+        "final_rss": 23860,
+        "peak_rss": 23932,
+        "growth": 18408
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-tza45cde",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5698,
+      "qps": 1899.3333333333333,
+      "request_throughput_mib_s": 118.78622118631999,
+      "latency_us": {
+        "mean": 8441.968623025623,
+        "p50": 8402.718,
+        "p95": 9265.534,
+        "p99": 9688.607
+      },
+      "memory_kib": {
+        "baseline_rss": 5552,
+        "final_rss": 24008,
+        "peak_rss": 24008,
+        "growth": 18456
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-8qam9tl6",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5608,
+      "qps": 1869.3333333333333,
+      "request_throughput_mib_s": 116.90999094645183,
+      "latency_us": {
+        "mean": 8574.864544222539,
+        "p50": 8549.794,
+        "p95": 9442.993,
+        "p99": 10038.066
+      },
+      "memory_kib": {
+        "baseline_rss": 6404,
+        "final_rss": 28188,
+        "peak_rss": 28188,
+        "growth": 21784
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-bu1b5ovy",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5657,
+      "qps": 1885.6666666666667,
+      "request_throughput_mib_s": 117.93149407704671,
+      "latency_us": {
+        "mean": 8496.979110482589,
+        "p50": 8465.669,
+        "p95": 9350.837,
+        "p99": 9770.885
+      },
+      "memory_kib": {
+        "baseline_rss": 6400,
+        "final_rss": 28060,
+        "peak_rss": 28156,
+        "growth": 21660
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-fjskfykg",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5719,
+      "qps": 1906.3333333333333,
+      "request_throughput_mib_s": 119.22400824228923,
+      "latency_us": {
+        "mean": 8405.695921314915,
+        "p50": 8353.909,
+        "p95": 9284.96,
+        "p99": 9718.822
+      },
+      "memory_kib": {
+        "baseline_rss": 6388,
+        "final_rss": 28132,
+        "peak_rss": 28132,
+        "growth": 21744
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-_lq6hkjn",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6007,
+      "qps": 2002.3333333333333,
+      "request_throughput_mib_s": 125.22794500986735,
+      "latency_us": {
+        "mean": 8017.298569835193,
+        "p50": 7975.566,
+        "p95": 8649.839,
+        "p99": 9132.998
+      },
+      "memory_kib": {
+        "baseline_rss": 5924,
+        "final_rss": 24308,
+        "peak_rss": 24312,
+        "growth": 18384
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-q_2fcupd",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5918,
+      "qps": 1972.6666666666667,
+      "request_throughput_mib_s": 123.37256177266438,
+      "latency_us": {
+        "mean": 8129.404250253464,
+        "p50": 8092.951,
+        "p95": 8799.237,
+        "p99": 9120.23
+      },
+      "memory_kib": {
+        "baseline_rss": 5896,
+        "final_rss": 24500,
+        "peak_rss": 24504,
+        "growth": 18604
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-s3f6xwmf",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5996,
+      "qps": 1998.6666666666667,
+      "request_throughput_mib_s": 124.99862798055013,
+      "latency_us": {
+        "mean": 8023.505654936624,
+        "p50": 8016.599,
+        "p95": 8571.878,
+        "p99": 8875.236
+      },
+      "memory_kib": {
+        "baseline_rss": 5932,
+        "final_rss": 24308,
+        "peak_rss": 24312,
+        "growth": 18376
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-wdq17x6u",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6101,
+      "qps": 2033.6666666666667,
+      "request_throughput_mib_s": 127.18756326039632,
+      "latency_us": {
+        "mean": 7880.60143320767,
+        "p50": 7853.641,
+        "p95": 8455.094,
+        "p99": 8736.559
+      },
+      "memory_kib": {
+        "baseline_rss": 6868,
+        "final_rss": 28280,
+        "peak_rss": 28392,
+        "growth": 21412
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-thihwicj",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5976,
+      "qps": 1992.0,
+      "request_throughput_mib_s": 124.5816879272461,
+      "latency_us": {
+        "mean": 8055.141066934405,
+        "p50": 8025.712,
+        "p95": 8642.185,
+        "p99": 8963.358
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 28696,
+        "peak_rss": 28820,
+        "growth": 21812
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-3x6quzu1",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "array",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6031,
+      "qps": 2010.3333333333333,
+      "request_throughput_mib_s": 125.7282730738322,
+      "latency_us": {
+        "mean": 7982.964685292654,
+        "p50": 7935.029,
+        "p95": 8600.734,
+        "p99": 8934.462
+      },
+      "memory_kib": {
+        "baseline_rss": 6984,
+        "final_rss": 28596,
+        "peak_rss": 28792,
+        "growth": 21612
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "array",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-noigltum",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6030,
+      "qps": 2010.0,
+      "request_throughput_mib_s": 125.70742607116699,
+      "latency_us": {
+        "mean": 7975.108272470979,
+        "p50": 7962.229,
+        "p95": 8631.585,
+        "p99": 8938.655
+      },
+      "memory_kib": {
+        "baseline_rss": 5500,
+        "final_rss": 24072,
+        "peak_rss": 24076,
+        "growth": 18572
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-_c_4pdnc",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6076,
+      "qps": 2025.3333333333333,
+      "request_throughput_mib_s": 126.66638819376628,
+      "latency_us": {
+        "mean": 7915.791693548387,
+        "p50": 7888.386,
+        "p95": 8582.104,
+        "p99": 9066.194
+      },
+      "memory_kib": {
+        "baseline_rss": 5572,
+        "final_rss": 24024,
+        "peak_rss": 24040,
+        "growth": 18452
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-alcorrh0",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5723,
+      "qps": 1907.6666666666667,
+      "request_throughput_mib_s": 119.30739625295003,
+      "latency_us": {
+        "mean": 8398.939969421632,
+        "p50": 8361.53,
+        "p95": 9202.664,
+        "p99": 9646.537
+      },
+      "memory_kib": {
+        "baseline_rss": 5516,
+        "final_rss": 23960,
+        "peak_rss": 24028,
+        "growth": 18444
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ngm84c_w",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5695,
+      "qps": 1898.3333333333333,
+      "request_throughput_mib_s": 118.72368017832439,
+      "latency_us": {
+        "mean": 8449.29655592625,
+        "p50": 8421.134,
+        "p95": 9261.121,
+        "p99": 9681.514
+      },
+      "memory_kib": {
+        "baseline_rss": 6484,
+        "final_rss": 28084,
+        "peak_rss": 28216,
+        "growth": 21600
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-27zpj55x",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5848,
+      "qps": 1949.3333333333333,
+      "request_throughput_mib_s": 121.91327158610027,
+      "latency_us": {
+        "mean": 8221.705341484269,
+        "p50": 8198.541,
+        "p95": 8981.405,
+        "p99": 9349.455
+      },
+      "memory_kib": {
+        "baseline_rss": 6364,
+        "final_rss": 28188,
+        "peak_rss": 28200,
+        "growth": 21824
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-il7voq_7",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5836,
+      "qps": 1945.3333333333333,
+      "request_throughput_mib_s": 121.66310755411784,
+      "latency_us": {
+        "mean": 8235.55424417409,
+        "p50": 8174.637,
+        "p95": 9207.282,
+        "p99": 10140.029
+      },
+      "memory_kib": {
+        "baseline_rss": 6388,
+        "final_rss": 28188,
+        "peak_rss": 28224,
+        "growth": 21800
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-8lrb2mpt",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5765,
+      "qps": 1921.6666666666667,
+      "request_throughput_mib_s": 120.1829703648885,
+      "latency_us": {
+        "mean": 8336.798868343452,
+        "p50": 8292.55,
+        "p95": 9086.84,
+        "p99": 9424.782
+      },
+      "memory_kib": {
+        "baseline_rss": 5932,
+        "final_rss": 24336,
+        "peak_rss": 24340,
+        "growth": 18404
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-0jyr1my8",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5707,
+      "qps": 1902.3333333333333,
+      "request_throughput_mib_s": 118.97384421030681,
+      "latency_us": {
+        "mean": 8434.794628701595,
+        "p50": 8377.03,
+        "p95": 9275.696,
+        "p99": 9721.342
+      },
+      "memory_kib": {
+        "baseline_rss": 5936,
+        "final_rss": 24380,
+        "peak_rss": 24380,
+        "growth": 18444
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-jo59trvk",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5835,
+      "qps": 1945.0,
+      "request_throughput_mib_s": 121.64226055145264,
+      "latency_us": {
+        "mean": 8244.362331619537,
+        "p50": 8195.703,
+        "p95": 8952.646,
+        "p99": 9422.069
+      },
+      "memory_kib": {
+        "baseline_rss": 5948,
+        "final_rss": 24484,
+        "peak_rss": 24484,
+        "growth": 18536
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-tdwrv2ci",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5634,
+      "qps": 1878.0,
+      "request_throughput_mib_s": 117.45201301574707,
+      "latency_us": {
+        "mean": 8543.599296237133,
+        "p50": 8481.316,
+        "p95": 9425.704,
+        "p99": 10040.932
+      },
+      "memory_kib": {
+        "baseline_rss": 6900,
+        "final_rss": 28420,
+        "peak_rss": 28580,
+        "growth": 21520
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-nr64_v4f",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5766,
+      "qps": 1922.0,
+      "request_throughput_mib_s": 120.20381736755371,
+      "latency_us": {
+        "mean": 8339.76148838016,
+        "p50": 8290.789,
+        "p95": 9144.623,
+        "p99": 9666.82
+      },
+      "memory_kib": {
+        "baseline_rss": 6904,
+        "final_rss": 28808,
+        "peak_rss": 28812,
+        "growth": 21904
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-3iw2jtfo",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "hash",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5915,
+      "qps": 1971.6666666666667,
+      "request_throughput_mib_s": 123.31002076466878,
+      "latency_us": {
+        "mean": 8130.183288250211,
+        "p50": 8094.669,
+        "p95": 8839.589,
+        "p99": 9287.04
+      },
+      "memory_kib": {
+        "baseline_rss": 6928,
+        "final_rss": 28692,
+        "peak_rss": 28844,
+        "growth": 21764
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "hash",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-utrdtglq",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5793,
+      "qps": 1931.0,
+      "request_throughput_mib_s": 120.76668643951416,
+      "latency_us": {
+        "mean": 8301.620918694976,
+        "p50": 8268.119,
+        "p95": 9196.614,
+        "p99": 9717.652
+      },
+      "memory_kib": {
+        "baseline_rss": 5492,
+        "final_rss": 23892,
+        "peak_rss": 23964,
+        "growth": 18400
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ul0q1x1p",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5928,
+      "qps": 1976.0,
+      "request_throughput_mib_s": 123.5810317993164,
+      "latency_us": {
+        "mean": 8123.678060560053,
+        "p50": 8076.097,
+        "p95": 8958.257,
+        "p99": 9404.348
+      },
+      "memory_kib": {
+        "baseline_rss": 5480,
+        "final_rss": 23832,
+        "peak_rss": 23904,
+        "growth": 18352
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-pn3n2r8m",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5905,
+      "qps": 1968.3333333333333,
+      "request_throughput_mib_s": 123.10155073801677,
+      "latency_us": {
+        "mean": 8146.4120436917865,
+        "p50": 8112.709,
+        "p95": 9016.051,
+        "p99": 9572.808
+      },
+      "memory_kib": {
+        "baseline_rss": 5472,
+        "final_rss": 23820,
+        "peak_rss": 23968,
+        "growth": 18348
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r1ilacaq",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5838,
+      "qps": 1946.0,
+      "request_throughput_mib_s": 121.70480155944824,
+      "latency_us": {
+        "mean": 8239.223915895855,
+        "p50": 8224.845,
+        "p95": 9007.46,
+        "p99": 9455.644
+      },
+      "memory_kib": {
+        "baseline_rss": 6484,
+        "final_rss": 28116,
+        "peak_rss": 28204,
+        "growth": 21632
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-hv8dh6r1",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5664,
+      "qps": 1888.0,
+      "request_throughput_mib_s": 118.07742309570312,
+      "latency_us": {
+        "mean": 8494.788979166666,
+        "p50": 8424.036,
+        "p95": 9386.987,
+        "p99": 10212.451
+      },
+      "memory_kib": {
+        "baseline_rss": 6448,
+        "final_rss": 28260,
+        "peak_rss": 28280,
+        "growth": 21812
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ho602h45",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5808,
+      "qps": 1936.0,
+      "request_throughput_mib_s": 121.07939147949219,
+      "latency_us": {
+        "mean": 8285.215566460054,
+        "p50": 8273.894,
+        "p95": 9069.421,
+        "p99": 9390.345
+      },
+      "memory_kib": {
+        "baseline_rss": 6392,
+        "final_rss": 28152,
+        "peak_rss": 28152,
+        "growth": 21760
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-863tzx6l",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5831,
+      "qps": 1943.6666666666667,
+      "request_throughput_mib_s": 121.55887254079182,
+      "latency_us": {
+        "mean": 8240.848999314012,
+        "p50": 8202.828,
+        "p95": 8975.665,
+        "p99": 9307.279
+      },
+      "memory_kib": {
+        "baseline_rss": 5944,
+        "final_rss": 24268,
+        "peak_rss": 24272,
+        "growth": 18324
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ac6oadg3",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5858,
+      "qps": 1952.6666666666667,
+      "request_throughput_mib_s": 122.12174161275227,
+      "latency_us": {
+        "mean": 8212.20843120519,
+        "p50": 8162.15,
+        "p95": 8967.001,
+        "p99": 9439.945
+      },
+      "memory_kib": {
+        "baseline_rss": 6004,
+        "final_rss": 24700,
+        "peak_rss": 24704,
+        "growth": 18696
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-b60x4_8i",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6005,
+      "qps": 2001.6666666666667,
+      "request_throughput_mib_s": 125.18625100453694,
+      "latency_us": {
+        "mean": 8015.093800499583,
+        "p50": 7985.268,
+        "p95": 8688.711,
+        "p99": 9063.486
+      },
+      "memory_kib": {
+        "baseline_rss": 6000,
+        "final_rss": 24408,
+        "peak_rss": 24408,
+        "growth": 18408
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-a_kxd7_t",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5693,
+      "qps": 1897.6666666666667,
+      "request_throughput_mib_s": 118.68198617299397,
+      "latency_us": {
+        "mean": 8447.618522044617,
+        "p50": 8364.94,
+        "p95": 9262.323,
+        "p99": 10062.959
+      },
+      "memory_kib": {
+        "baseline_rss": 6884,
+        "final_rss": 28556,
+        "peak_rss": 28656,
+        "growth": 21672
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-ji65zk45",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 6015,
+      "qps": 2005.0,
+      "request_throughput_mib_s": 125.39472103118896,
+      "latency_us": {
+        "mean": 7996.105675810474,
+        "p50": 7950.672,
+        "p95": 8684.393,
+        "p99": 9285.105
+      },
+      "memory_kib": {
+        "baseline_rss": 6908,
+        "final_rss": 28472,
+        "peak_rss": 28616,
+        "growth": 21564
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-veht5m0f",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "red-black-tree",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5804,
+      "qps": 1934.6666666666667,
+      "request_throughput_mib_s": 120.99600346883138,
+      "latency_us": {
+        "mean": 8287.63711474845,
+        "p50": 8267.884,
+        "p95": 8986.142,
+        "p99": 9369.212
+      },
+      "memory_kib": {
+        "baseline_rss": 6976,
+        "final_rss": 28688,
+        "peak_rss": 28748,
+        "growth": 21712
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "red-black-tree",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r89m_of9",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5928,
+      "qps": 1976.0,
+      "request_throughput_mib_s": 123.5810317993164,
+      "latency_us": {
+        "mean": 8122.422297064777,
+        "p50": 8091.189,
+        "p95": 8909.704,
+        "p99": 9385.226
+      },
+      "memory_kib": {
+        "baseline_rss": 5468,
+        "final_rss": 24024,
+        "peak_rss": 24040,
+        "growth": 18556
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-hc93ux8n",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5678,
+      "qps": 1892.6666666666667,
+      "request_throughput_mib_s": 118.36928113301595,
+      "latency_us": {
+        "mean": 8472.556975695668,
+        "p50": 8435.871,
+        "p95": 9665.994,
+        "p99": 10394.573
+      },
+      "memory_kib": {
+        "baseline_rss": 5520,
+        "final_rss": 23940,
+        "peak_rss": 24016,
+        "growth": 18420
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-_7_23tpn",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5784,
+      "qps": 1928.0,
+      "request_throughput_mib_s": 120.57906341552734,
+      "latency_us": {
+        "mean": 8311.893484266944,
+        "p50": 8285.44,
+        "p95": 9069.043,
+        "p99": 9400.75
+      },
+      "memory_kib": {
+        "baseline_rss": 5520,
+        "final_rss": 23908,
+        "peak_rss": 24024,
+        "growth": 18388
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-9g09ks53",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5843,
+      "qps": 1947.6666666666667,
+      "request_throughput_mib_s": 121.80903657277425,
+      "latency_us": {
+        "mean": 8229.754472188944,
+        "p50": 8214.196,
+        "p95": 8987.153,
+        "p99": 9318.38
+      },
+      "memory_kib": {
+        "baseline_rss": 6388,
+        "final_rss": 28220,
+        "peak_rss": 28304,
+        "growth": 21832
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-9f4_gij1",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5843,
+      "qps": 1947.6666666666667,
+      "request_throughput_mib_s": 121.80903657277425,
+      "latency_us": {
+        "mean": 8230.712437446517,
+        "p50": 8181.901,
+        "p95": 9107.38,
+        "p99": 9541.136
+      },
+      "memory_kib": {
+        "baseline_rss": 6396,
+        "final_rss": 28024,
+        "peak_rss": 28024,
+        "growth": 21628
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-r0ur9bgt",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "epoll",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5997,
+      "qps": 1999.0,
+      "request_throughput_mib_s": 125.01947498321533,
+      "latency_us": {
+        "mean": 8020.143549774888,
+        "p50": 7974.173,
+        "p95": 8893.355,
+        "p99": 9503.287
+      },
+      "memory_kib": {
+        "baseline_rss": 6408,
+        "final_rss": 28308,
+        "peak_rss": 28308,
+        "growth": 21900
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "epoll",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-zp4fgvsl",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5930,
+      "qps": 1976.6666666666667,
+      "request_throughput_mib_s": 123.6227258046468,
+      "latency_us": {
+        "mean": 8121.0707966273185,
+        "p50": 8097.591,
+        "p95": 8821.437,
+        "p99": 9141.519
+      },
+      "memory_kib": {
+        "baseline_rss": 5924,
+        "final_rss": 24512,
+        "peak_rss": 24516,
+        "growth": 18588
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-92dsqz28",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5968,
+      "qps": 1989.3333333333333,
+      "request_throughput_mib_s": 124.41491190592448,
+      "latency_us": {
+        "mean": 8064.0847654155505,
+        "p50": 7968.422,
+        "p95": 8881.361,
+        "p99": 11166.668
+      },
+      "memory_kib": {
+        "baseline_rss": 5992,
+        "final_rss": 24324,
+        "peak_rss": 24324,
+        "growth": 18332
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-vzt0hz8v",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5958,
+      "qps": 1986.0,
+      "request_throughput_mib_s": 124.20644187927246,
+      "latency_us": {
+        "mean": 8076.739829808661,
+        "p50": 8045.812,
+        "p95": 8749.856,
+        "p99": 9297.654
+      },
+      "memory_kib": {
+        "baseline_rss": 5920,
+        "final_rss": 24524,
+        "peak_rss": 24528,
+        "growth": 18604
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-eldhvyy8",
+        "--allocator",
+        "default"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5934,
+      "qps": 1978.0,
+      "request_throughput_mib_s": 123.70611381530762,
+      "latency_us": {
+        "mean": 8094.835009100101,
+        "p50": 8049.386,
+        "p95": 8760.714,
+        "p99": 9170.894
+      },
+      "memory_kib": {
+        "baseline_rss": 6892,
+        "final_rss": 28688,
+        "peak_rss": 28872,
+        "growth": 21796
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-37daugnl",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5871,
+      "qps": 1957.0,
+      "request_throughput_mib_s": 122.3927526473999,
+      "latency_us": {
+        "mean": 8198.451660534833,
+        "p50": 8161.628,
+        "p95": 8834.567,
+        "p99": 9352.182
+      },
+      "memory_kib": {
+        "baseline_rss": 6892,
+        "final_rss": 28424,
+        "peak_rss": 28484,
+        "growth": 21532
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-7q0xljyk",
+        "--allocator",
+        "jemalloc"
+      ]
+    },
+    {
+      "server_kind": "kvstore",
+      "networking_model": "io_uring",
+      "cache_strategy": "skip-list",
+      "value_size_bytes": 65536,
+      "request_size_bytes": 65579,
+      "clients": 16,
+      "warmup_seconds": 1.0,
+      "duration_seconds": 3.0,
+      "requests": 5997,
+      "qps": 1999.0,
+      "request_throughput_mib_s": 125.01947498321533,
+      "latency_us": {
+        "mean": 8022.432035351009,
+        "p50": 7942.254,
+        "p95": 8903.906,
+        "p99": 9962.454
+      },
+      "memory_kib": {
+        "baseline_rss": 6936,
+        "final_rss": 28520,
+        "peak_rss": 28600,
+        "growth": 21584
+      },
+      "server_command": [
+        "/home/silver/Develop/KVStore/build/Server/KVServer",
+        "--networking-model",
+        "io_uring",
+        "--cache-strategy",
+        "skip-list",
+        "--port",
+        "18080",
+        "--persistent-dir",
+        "/tmp/kvstore-benchmark-gshhm8sq",
+        "--allocator",
+        "jemalloc"
+      ]
+    }
+  ]
+}

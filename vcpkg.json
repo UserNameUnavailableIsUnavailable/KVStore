@@ -1,6 +1,8 @@
 {
 	"dependencies": [
 		"cli11",
-		"gtest"
+		"gtest",
+		"benchmark",
+		"jemalloc"
 	]
 }

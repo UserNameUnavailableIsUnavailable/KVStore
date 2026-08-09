@@ -1,67 +1,96 @@
 #pragma once
 
-#include <coroutine>
-#include <cstdint>
-#include <unordered_map>
+#if not defined (__linux__)
+#error "This header is linux-specific."
+#endif
 
-#include "Server/EpollSession.hpp"
+#include "Common/EpollSession.hpp"
+#include "Common/Message.hpp"
+#include "Common/Task.hpp"
+#include "Common/TimerQueue.hpp"
+
+#include <cstdint>
+#include <deque>
+#include <sys/epoll.h>
+#include <optional>
+#include <unordered_map>
+#include <variant>
+#include <vector>
+
 #include "Server/Server.hpp"
+
 
 namespace KV
 {
+class EpollMessageQueue final : public MessageQueue
+{
+public:
+    EpollMessageQueue();
+    ~EpollMessageQueue() noexcept override;
+
+    void RegisterListener(Socket::HandleType handle);
+    void RegisterSession(Socket::HandleType handle);
+    void Unregister(Socket::HandleType handle) noexcept;
+    void RegisterRead(ReceiveOperation& task) override;
+    void RegisterWrite(SendOperation& task) override;
+    bool RegisterConnect(ConnectOperation& task) override;
+    void CancelConnect(ConnectOperation& task) noexcept override;
+    void RegisterTimer(DelayedOperation& task) override;
+    void CancelTimer(DelayedOperation& task) noexcept override;
+    Message Wait() override;
+
+private:
+    using PendingTask = std::variant<ReceiveOperation*, SendOperation*, ConnectOperation*>;
+
+    bool Arm(Socket::HandleType handle, std::uint32_t events) noexcept;
+    // Translate one kernel event into a logical message. A null result means the
+    // event was stale, EAGAIN, or a timer event that only populated ready_.
+    std::optional<Message> ProcessEvent(const ::epoll_event& event);
+    // Move every expired timer's continuation into ready_.
+    void CollectExpiredTimers();
+
+    int epoll_fd_ = -1;
+    Socket::HandleType listener_handle_ = -1;
+    std::unordered_map<Socket::HandleType, PendingTask> pending_;
+
+    // One timerfd backs every pending delay; the heap decides which deadline it
+    // is currently armed for.
+    TimerQueue timers_;
+
+    // A single expiration can release several coroutines, but Wait() hands back
+    // one message at a time, so the surplus waits here.
+    std::deque<Message> ready_;
+    std::vector<DelayedOperation*> expired_;
+};
+
 class EpollServer final : public Server
 {
 public:
-    EpollServer() = default;
-    ~EpollServer() noexcept override;
+    using Server::Server;
 
-    void Run() override;
+    void Run(std::uint16_t, int backlog) override;
+
+protected:
+    bool StartReplication(const std::string& address, std::uint16_t port) override;
 
 private:
-    class ReceiveAwaiter
+    struct SessionEntry
     {
-    public:
-        ReceiveAwaiter(EpollServer& server, EpollSession& session);
-        bool await_ready();
-        void await_suspend(std::coroutine_handle<>);
-        ssize_t await_resume();
-
-    private:
-        ssize_t Receive();
-
-        EpollServer& server_;
-        EpollSession& session_;
-        char* data_ = nullptr;
-        std::size_t size_ = 0;
-        ssize_t result_ = -1;
+        EpollSession session;
+        std::optional<SessionTask> task;
     };
 
-    class SendAwaiter
-    {
-    public:
-        SendAwaiter(EpollServer& server, EpollSession& session);
-        bool await_ready();
-        void await_suspend(std::coroutine_handle<>);
-        ssize_t await_resume();
-
-    private:
-        ssize_t Send();
-
-        EpollServer& server_;
-        EpollSession& session_;
-        const char* data_ = nullptr;
-        std::size_t size_ = 0;
-        ssize_t result_ = -1;
-    };
-
-    EpollSession ServeSession(EpollSession& session);
+    SessionTask ServeSession(EpollSession& session);
+    SessionTask ReplicateFromMaster(std::string address, std::uint16_t port);
     void AcceptClients();
-    void RegisterWaiter(int fd, std::uint32_t events);
-    void StartClient(int fd);
-    void CloseClient(int fd);
-    void SetNonBlocking(int fd) const;
+    void DispatchMessage(const Message& message);
+    void StartClient(Socket::HandleType handle);
+    void CloseClient(Socket::HandleType handle);
 
-    int epoll_fd_ = -1;
-    std::unordered_map<int, EpollSession> sessions_;
+    // The queue must outlive every coroutine frame that may unregister a
+    // pending operation from its destructor.
+    EpollMessageQueue message_queue_;
+    std::unordered_map<int, SessionEntry> sessions_;
+    std::optional<SessionTask> replication_task_;
 };
 } // namespace KV
