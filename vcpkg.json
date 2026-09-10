@@ -5,6 +5,7 @@
 		"benchmark",
 		"spdlog",
 		"crcpp",
-		"nlohmann-json"
+		"nlohmann-json",
+		"jemalloc"
 	]
 }
