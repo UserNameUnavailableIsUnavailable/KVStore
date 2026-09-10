@@ -21,7 +21,7 @@ cmake -S . -B build
 cmake --build build --target KVServer
 ```
 
-## run the Server
+## Run the Server
 
 ```bash
 ./build/Server/KVServer --port 8080 --networking-model epoll --cache-strategy hash
@@ -43,7 +43,7 @@ Memory management is three orthogonal layers:
 3. **Object pool**: `Slab<T>` manages fixed-size objects of one type, handing out
    stable handles with O(1) acquire and release.
 
-## run the Client
+## Run the Client
 
 ```bash
 ./build/Client/KVClient 127.0.0.1 8080
@@ -62,7 +62,7 @@ QUIT
 ## Basic Usage Notes
 
 - `SAVE` writes a full dump to the persistence directory.
-- `APPendONLY YES` enables command logging for recovery.
+- `APPENDONLY YES` enables command logging for recovery.
 - `SLAVEOF <host> <port>` starts replication from another server.
 
 ## Test

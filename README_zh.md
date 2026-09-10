@@ -40,6 +40,9 @@ cmake --build build --target KVServer
 2. **PMR 策略**：从第一层取一大块内存，再用 `std::pmr` 在块内二次分配，即 `--allocator pool`。
 3. **对象池**：`Slab<T>` 按类型管理定长对象，提供稳定句柄与 O(1) 分配/回收。
 
+- `--allocator default|pool|jemalloc`：选择分配器
+- `--memory-pooling` 和 `--memory-pool-size <bytes>`：启用预分配内存池
+
 ## 启动客户端
 
 ```bash
@@ -60,6 +63,7 @@ QUIT
 
 - `SAVE` 会将当前数据写入完整转储文件。
 - `APPendONLY YES` 会开启命令追加日志，便于恢复。
+- `APPENDONLY YES` 会开启命令追加日志，便于恢复。
 - `SLAVEOF <host> <port>` 可从另一台服务器进行复制。
 
 ## 测试

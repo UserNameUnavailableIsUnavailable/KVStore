@@ -19,7 +19,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(PkgConfig REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
-pkg_check_modules(liburing REQUIRED IMPORTED_TARGET liburing)
 
 include_directories(
 	SYSTEM
@@ -29,3 +28,4 @@ include_directories(
 
 add_subdirectory(Foundation)
 add_subdirectory(Application)
+
