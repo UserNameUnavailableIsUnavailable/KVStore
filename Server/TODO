@@ -1,0 +1,3 @@
+关闭时的宽限期：目前 Shutdown 直接取消在途连接（强制）。若要"先让在途请求做完再退"，可在 cancel 前先 WhenAny(drain, SleepFor(grace))。
+关闭时自动 SAVE：可在 Shutdown 里触发一次快照再 reap。
+skiplist 索引、断线重连/replica 只读、PSYNC 增量续传——仍待办。

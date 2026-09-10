@@ -1,5 +1,6 @@
-# My KVStore Implementation
+# KVStore
 
-## See Also
+Please choose a language:
 
-- [RESP (Redis Serialization Protocol)](https://redis.io/docs/latest/develop/reference/protocol-spec/)
+- [English](README_en.md)
+- [中文](README_zh.md)

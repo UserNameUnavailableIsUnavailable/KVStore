@@ -1,0 +1,10 @@
+{
+	"dependencies": [
+		"cli11",
+		"gtest",
+		"benchmark",
+		"spdlog",
+		"crcpp",
+		"nlohmann-json"
+	]
+}
