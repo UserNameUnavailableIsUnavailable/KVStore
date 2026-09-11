@@ -12,7 +12,7 @@
 namespace Foundation::Async
 {
 ReceiveChannel::ReceiveChannel(Foundation::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler)
-    : Channel(ChannelType::kReceive, socket.get_native_handle(), multiplexer, scheduler), socket_(socket)
+    : Channel(ChannelType::kReceive, socket.native_handle(), multiplexer, scheduler), socket_(socket)
 {
     if (!socket.is_valid())
     {

@@ -14,10 +14,12 @@
 
 #include "Channel.hpp"
 #include "ListenChannel.hpp"
+#include "ReadChannel.hpp"
 #include "NotifyChannel.hpp"
 #include "ReceiveChannel.hpp"
 #include "SendChannel.hpp"
 #include "SignalChannel.hpp"
+#include "WriteChannel.hpp"
 #include "TimerChannel.hpp"
 
 #define MAKE_ERROR_CODE(e) std::error_code(e, std::system_category())
@@ -72,7 +74,7 @@ bool URingMultiplexer::prepare(Channel *channel)
         }
     }
 
-    const int fd = channel->get_native_handle();
+    const int fd = channel->native_handle();
     switch (channel->type())
     {
     case ChannelType::kReceive: {
@@ -85,6 +87,18 @@ bool URingMultiplexer::prepare(Channel *channel)
         auto *send = static_cast<SendChannel *>(channel);
         auto &job = send->job();
         ::io_uring_prep_send(sqe, fd, job.buffer->valid_span().data(), job.buffer->valid_size(), MSG_NOSIGNAL);
+        break;
+    }
+    case ChannelType::kRead: {
+        auto *read = static_cast<ReadChannel *>(channel);
+        auto &job = read->job();
+        ::io_uring_prep_read(sqe, fd, job.buffer->appendable_span().data(), job.buffer->appendable_size(), job.offset);
+        break;
+    }
+    case ChannelType::kWrite: {
+        auto *write = static_cast<WriteChannel *>(channel);
+        auto &job = write->job();
+        ::io_uring_prep_write(sqe, fd, job.buffer->valid_span().data(), job.buffer->valid_size(), job.offset);
         break;
     }
     case ChannelType::kListen: {
@@ -199,6 +213,50 @@ void URingMultiplexer::complete(Channel *channel, int result)
         }
         break;
     }
+    case ChannelType::kRead: {
+        auto &job = static_cast<ReadChannel *>(channel)->job();
+        if (result > 0)
+        {
+            job.buffer->commit(static_cast<std::size_t>(result));
+            job.offset += static_cast<std::uint64_t>(result);
+            job.result.bytes_transferred = static_cast<std::size_t>(result);
+            job.result.status = ReadStatus::kDone;
+        }
+        else if (result == 0)
+        {
+            job.result.status = ReadStatus::kEndOfFile;
+        }
+        else if (result == -EAGAIN || result == -EWOULDBLOCK)
+        {
+            job.result.status = ReadStatus::kPending;
+        }
+        else
+        {
+            job.result.status = ReadStatus::kError;
+            job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
+        }
+        break;
+    }
+    case ChannelType::kWrite: {
+        auto &job = static_cast<WriteChannel *>(channel)->job();
+        if (result >= 0)
+        {
+            job.buffer->consume(static_cast<std::size_t>(result));
+            job.offset += static_cast<std::uint64_t>(result);
+            job.result.bytes_transferred += static_cast<std::size_t>(result);
+            job.result.status = (job.buffer->valid_size() == 0) ? WriteStatus::kDone : WriteStatus::kPending;
+        }
+        else if (result == -EAGAIN || result == -EWOULDBLOCK)
+        {
+            job.result.status = WriteStatus::kPending;
+        }
+        else
+        {
+            job.result.status = WriteStatus::kError;
+            job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
+        }
+        break;
+    }
     case ChannelType::kListen: {
         auto &job = static_cast<ListenChannel *>(channel)->job();
         if (result >= 0)
@@ -301,7 +359,7 @@ void URingMultiplexer::run_for(std::chrono::milliseconds timeout)
 
 void URingMultiplexer::add_channel(Channel *channel)
 {
-    const auto fd = channel->get_native_handle();
+    const auto fd = channel->native_handle();
 
     // No IOHandler is installed: this backend performs no data movement in a
     // callback. It only needs to recognise the channel type.
@@ -309,6 +367,8 @@ void URingMultiplexer::add_channel(Channel *channel)
     {
     case ChannelType::kReceive:
     case ChannelType::kSend:
+    case ChannelType::kRead:
+    case ChannelType::kWrite:
     case ChannelType::kListen:
     case ChannelType::kTimer:
     case ChannelType::kNotify:
@@ -337,7 +397,7 @@ void URingMultiplexer::update_channel(Channel *channel)
 
 void URingMultiplexer::delete_channel(Channel *channel) noexcept
 {
-    const auto fd = channel->get_native_handle();
+    const auto fd = channel->native_handle();
     auto range = registered_channels_.equal_range(fd);
     for (auto it = range.first; it != range.second; ++it)
     {

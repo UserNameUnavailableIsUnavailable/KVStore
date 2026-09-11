@@ -62,7 +62,7 @@ class SendAwaiter
 } // namespace
 
 SendChannel::SendChannel(Foundation::Socket &socket, Scheduler &scheduler, Multiplexer &multiplexer)
-    : Channel(ChannelType::kSend, socket.get_native_handle(), multiplexer, scheduler), socket_(socket)
+    : Channel(ChannelType::kSend, socket.native_handle(), multiplexer, scheduler), socket_(socket)
 {
     if (!socket_.is_valid())
     {

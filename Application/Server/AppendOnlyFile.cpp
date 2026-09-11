@@ -1,5 +1,8 @@
 #include "AppendOnlyFile.hpp"
 
+#include <Foundation/Async/Async.hpp>
+
+#include <iostream>
 #include <system_error>
 
 namespace KV
@@ -29,17 +32,14 @@ bool AppendOnlyFile::enable()
         }
     }
 
-    file_.open(path_, std::ios::binary | std::ios::app);
-    enabled_ = file_.is_open();
+    file_ = Foundation::Async::IO::open_file(path_);
+    enabled_ = static_cast<bool>(file_);
     return enabled_;
 }
 
 void AppendOnlyFile::disable() noexcept
 {
-    if (file_.is_open())
-    {
-        file_.close();
-    }
+    file_.reset();
     enabled_ = false;
 }
 
@@ -118,43 +118,49 @@ RESP::Object AppendOnlyFile::to_object(const Command &command)
     return RESP::Object(std::move(array));
 }
 
-bool AppendOnlyFile::write_buffer(Foundation::Buffer &buffer)
-{
-    const auto bytes = buffer.string_view();
-    if (!bytes.empty())
-    {
-        file_.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    }
-    const bool ok = file_.good();
-    buffer.clear();
-    return ok;
-}
-
-bool AppendOnlyFile::write_object(const RESP::Object &object)
-{
-    Foundation::Buffer buffer;
-    auto encoder = RESP::Encode(object, buffer);
-    while (encoder.poll() == RESP::EncodeStatus::kNeedFlush)
-    {
-        if (!write_buffer(buffer))
-        {
-            return false;
-        }
-    }
-    if (!buffer.is_empty() && !write_buffer(buffer))
-    {
-        return false;
-    }
-    file_.flush();
-    return file_.good();
-}
-
-bool AppendOnlyFile::append(const Command &command)
+Foundation::Async::Task<void> AppendOnlyFile::append(const Command &command)
 {
     if (!enabled_)
     {
-        return true;
+        co_return;
     }
-    return write_object(to_object(command));
+
+    try
+    {
+        Foundation::Buffer buffer;
+        const auto object = to_object(command);
+        auto encoder = RESP::Encode(object, buffer);
+        while (encoder.poll() == RESP::EncodeStatus::kNeedFlush)
+        {
+            if (buffer.is_empty())
+            {
+                continue;
+            }
+            auto result = co_await file_->write(buffer);
+            if (result.status != Foundation::WriteStatus::kDone)
+            {
+                throw std::runtime_error("failed to append AOF entry");
+            }
+        }
+        if (!buffer.is_empty())
+        {
+            auto result = co_await file_->write(buffer);
+            if (result.status != Foundation::WriteStatus::kDone)
+            {
+                throw std::runtime_error("failed to append AOF entry");
+            }
+        }
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "AOF append failed: " << ex.what() << '\n';
+        throw;
+    }
+    catch (...)
+    {
+        std::cerr << "AOF append failed: unknown exception\n";
+        throw;
+    }
+    co_return;
 }
 } // namespace KV

@@ -3,6 +3,7 @@
 #include <CRC.h>
 
 #include <Foundation/Byte.hpp>
+#include <Foundation/FileView.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -11,11 +12,16 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <vector>
 
+#if defined(__linux__)
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <vector>
+#endif
 
 namespace KV
 {
@@ -27,8 +33,6 @@ constexpr std::uint8_t kExpireTimeMs = 0xFC;
 constexpr std::uint8_t kSelectDb = 0xFE;
 constexpr std::uint8_t kEof = 0xFF;
 constexpr std::uint8_t kString = 0x00;
-
-using ByteVector = std::vector<std::uint8_t>;
 
 void Write(std::ofstream &file, const void *data, std::size_t size)
 {
@@ -87,24 +91,7 @@ std::uint64_t Checksum(const std::filesystem::path &path)
     return CRC::Calculate(bytes.data(), bytes.size(), kRedisCrc64);
 }
 
-bool ReadBytes(const std::filesystem::path &path, ByteVector &bytes)
-{
-    if (!std::filesystem::exists(path))
-    {
-        return true;
-    }
-
-    std::ifstream file(path, std::ios::binary);
-    if (!file)
-    {
-        return false;
-    }
-
-    bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-    return true;
-}
-
-bool ReadExact(const ByteVector &bytes, std::size_t &offset, void *data, std::size_t size)
+bool ReadExact(std::span<const std::uint8_t> bytes, std::size_t &offset, void *data, std::size_t size)
 {
     if (offset + size > bytes.size())
     {
@@ -115,12 +102,12 @@ bool ReadExact(const ByteVector &bytes, std::size_t &offset, void *data, std::si
     return true;
 }
 
-bool ReadByte(const ByteVector &bytes, std::size_t &offset, std::uint8_t &value)
+bool ReadByte(std::span<const std::uint8_t> bytes, std::size_t &offset, std::uint8_t &value)
 {
     return ReadExact(bytes, offset, &value, sizeof(value));
 }
 
-bool ReadLength(const ByteVector &bytes, std::size_t &offset, std::uint64_t &value)
+bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t &offset, std::uint64_t &value)
 {
     std::uint8_t header = 0;
     if (!ReadByte(bytes, offset, header))
@@ -166,7 +153,7 @@ bool ReadLength(const ByteVector &bytes, std::size_t &offset, std::uint64_t &val
     return false;
 }
 
-bool ReadString(const ByteVector &bytes, std::size_t &offset, std::string &value)
+bool ReadString(std::span<const std::uint8_t> bytes, std::size_t &offset, std::string &value)
 {
     std::uint64_t length = 0;
     if (!ReadLength(bytes, offset, length))
@@ -182,7 +169,7 @@ bool ReadString(const ByteVector &bytes, std::size_t &offset, std::string &value
     return true;
 }
 
-bool ValidateChecksum(const ByteVector &bytes)
+bool ValidateChecksum(std::span<const std::uint8_t> bytes)
 {
     if (bytes.size() < sizeof(std::uint64_t))
     {
@@ -197,7 +184,7 @@ bool ValidateChecksum(const ByteVector &bytes)
     return computed == stored_checksum;
 }
 
-bool ReadSnapshotImpl(const ByteVector &bytes, std::vector<LoadedEntry> &entries)
+bool ReadSnapshotImpl(std::span<const std::uint8_t> bytes, std::vector<LoadedEntry> &entries)
 {
     entries.clear();
     if (bytes.empty())
@@ -357,17 +344,21 @@ bool WriteSnapshot(const std::filesystem::path &path, const std::vector<Snapshot
 
 bool ReadSnapshot(const std::filesystem::path &path, std::vector<LoadedEntry> &entries)
 {
-    ByteVector bytes;
-    if (!ReadBytes(path, bytes))
-    {
-        return false;
-    }
-    if (bytes.empty())
+    if (!std::filesystem::exists(path))
     {
         entries.clear();
         return true;
     }
-    return ReadSnapshotImpl(bytes, entries);
+    Foundation::File file(path, Foundation::FileMode::kRead);
+    Foundation::FileView view(file);
+    if (view.size() == 0)
+    {
+        entries.clear();
+        return true;
+    }
+
+    const auto *bytes_begin = static_cast<const std::uint8_t *>(view.data());
+    return ReadSnapshotImpl(std::span<const std::uint8_t>(bytes_begin, view.size()), entries);
 }
 } // namespace backup_helper
 } // namespace KV

@@ -11,11 +11,11 @@ using namespace Foundation;
 Async::Task<void> Service()
 {
     auto address = Address::from_ipv4("127.0.0.1", 8080);
-    auto listen_service = Async::Net::listen(address);
+    auto listen_service = Async::Net::listen_on(address);
     while (true)
     {
         auto result = co_await listen_service->accept();
-        auto session = Async::Net::establish(std::move(result.socket));
+        auto session = Async::Net::establish_with(std::move(result.socket));
         // A coroutine lambda is fine, but: (1) Spawn takes a Task, so the
         // lambda must be INVOKED here; (2) captures live in the closure, not
         // the coroutine frame -- the temporary closure dies before the lazy

@@ -6,6 +6,8 @@ target_sources(
     Foundation
     INTERFACE
     Address.cpp
+    File.cpp
+    FileView.cpp
     Socket.cpp
     Timer.cpp
     Signal.cpp

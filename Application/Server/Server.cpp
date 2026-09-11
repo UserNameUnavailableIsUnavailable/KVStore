@@ -46,7 +46,7 @@ void Server::run(const Foundation::Address &address)
 
 Foundation::Async::Task<void> Server::serve(const Foundation::Address &address)
 {
-    co_await std::move(accept_clients(Foundation::Async::Net::listen(address)));
+    co_await std::move(accept_clients(Foundation::Async::Net::listen_on(address)));
 }
 
 Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation::Async::ListenService> listener)
@@ -58,7 +58,7 @@ Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation:
         {
             continue;
         }
-        Foundation::Async::spawn(serve_client(std::make_shared<Session>(Foundation::Async::Net::establish(std::move(result.socket)))));
+        Foundation::Async::spawn(serve_client(std::make_shared<Session>(Foundation::Async::Net::establish_with(std::move(result.socket)))));
     }
 }
 
@@ -166,9 +166,9 @@ Foundation::Async::Task<RESP::Object> Server::execute(const KV::Command &command
     default:
         break;
     }
-    if (should_append_to_aof(command))
+    if (should_append_to_aof(command) && aof_.enabled())
     {
-        (void)aof_.append(command);
+        co_await aof_.append(command);
     }
     co_return response;
 }

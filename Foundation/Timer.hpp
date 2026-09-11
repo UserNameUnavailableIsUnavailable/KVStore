@@ -36,7 +36,7 @@ class Timer
     Timer &operator=(const Timer &) = delete;
     Timer(Timer &&) = delete;
     Timer &operator=(Timer &&) = delete;
-    Handle get_native_handle()
+    Handle native_handle()
     {
         return handle_;
     }

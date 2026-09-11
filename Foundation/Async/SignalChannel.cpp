@@ -10,7 +10,7 @@
 namespace Foundation::Async
 {
 SignalChannel::SignalChannel(Signal &signal, Multiplexer &multiplexer, Scheduler &scheduler)
-    : Channel(ChannelType::kSignal, signal.get_native_handle(), multiplexer, scheduler), signal_(signal)
+    : Channel(ChannelType::kSignal, signal.native_handle(), multiplexer, scheduler), signal_(signal)
 {
     signal.set_non_blocking(true);
     multiplexer_.add_channel(this);
@@ -44,7 +44,7 @@ void SignalChannel::on_event()
 {
     if (count_ == 0)
     {
-        while (::read(get_native_handle(), &count_, sizeof(count_)) == static_cast<ssize_t>(sizeof(count_)))
+        while (::read(native_handle(), &count_, sizeof(count_)) == static_cast<ssize_t>(sizeof(count_)))
         {
         }
     }

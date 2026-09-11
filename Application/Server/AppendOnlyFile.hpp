@@ -4,6 +4,8 @@
 
 #include <Foundation/Buffer.hpp>
 #include <Application/RESP/RESP.hpp>
+#include <Foundation/Async/FileStream.hpp>
+#include <Foundation/Async/Task.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -29,7 +31,7 @@ class AppendOnlyFile
         return enabled_;
     }
 
-    bool append(const Command &command);
+    Foundation::Async::Task<void> append(const Command &command);
 
     template <typename Apply> bool replay(Apply &&apply) const
     {
@@ -79,11 +81,9 @@ class AppendOnlyFile
   private:
     static RESP::Object to_object(const Command &command);
     static std::string_view command_name(CommandType type);
-    bool write_object(const RESP::Object &object);
-    bool write_buffer(Foundation::Buffer &buffer);
 
     std::filesystem::path path_;
-    std::ofstream file_;
+        std::shared_ptr<Foundation::Async::FileStream> file_;
     bool enabled_{false};
 };
 } // namespace KV

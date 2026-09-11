@@ -69,9 +69,18 @@ class Channel
         multiplexer_.update_channel(this);
     }
 
-    Handle get_native_handle() const noexcept
+    Handle native_handle() const noexcept
     {
         return handle_;
+    }
+
+    Multiplexer &multiplexer() noexcept
+    {
+        return multiplexer_;
+    }
+    const Multiplexer &multiplexer() const noexcept
+    {
+        return multiplexer_;
     }
 
   protected:
