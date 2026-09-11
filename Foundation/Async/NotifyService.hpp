@@ -20,7 +20,7 @@ public:
         return channel_;
     }
 private:
-    Notifier notifier_;
+    Foundation::Core::Notifier notifier_;
     NotifyChannel channel_;
 };
 } // Async

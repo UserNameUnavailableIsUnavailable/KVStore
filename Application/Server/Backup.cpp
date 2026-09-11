@@ -2,8 +2,8 @@
 
 #include <CRC.h>
 
-#include <Foundation/Byte.hpp>
-#include <Foundation/FileView.hpp>
+#include <Foundation/Core/Byte.hpp>
+#include <Foundation/Core/FileView.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -58,13 +58,13 @@ void WriteLength(std::ofstream &file, std::uint64_t value)
     else if (value <= std::numeric_limits<std::uint32_t>::max())
     {
         WriteByte(file, 0x80U);
-        const std::uint32_t big_endian = Foundation::to_big_endian(static_cast<std::uint32_t>(value));
+        const std::uint32_t big_endian = Foundation::Core::to_big_endian(static_cast<std::uint32_t>(value));
         Write(file, &big_endian, sizeof(big_endian));
     }
     else
     {
         WriteByte(file, 0x81U);
-        const std::uint64_t big_endian = Foundation::to_big_endian(value);
+        const std::uint64_t big_endian = Foundation::Core::to_big_endian(value);
         Write(file, &big_endian, sizeof(big_endian));
     }
 }
@@ -137,7 +137,7 @@ bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t &offset, std::u
         {
             return false;
         }
-        value = Foundation::from_big_endian(big_endian);
+        value = Foundation::Core::from_big_endian(big_endian);
         return true;
     }
     if (header == 0x81U)
@@ -147,7 +147,7 @@ bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t &offset, std::u
         {
             return false;
         }
-        value = Foundation::from_big_endian(big_endian);
+        value = Foundation::Core::from_big_endian(big_endian);
         return true;
     }
     return false;
@@ -349,8 +349,8 @@ bool ReadSnapshot(const std::filesystem::path &path, std::vector<LoadedEntry> &e
         entries.clear();
         return true;
     }
-    Foundation::File file(path, Foundation::FileMode::kRead);
-    Foundation::FileView view(file);
+    Foundation::Core::File file(path, Foundation::Core::FileMode::kRead);
+    Foundation::Core::FileView view(file);
     if (view.size() == 0)
     {
         entries.clear();

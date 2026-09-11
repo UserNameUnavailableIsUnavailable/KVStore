@@ -2,8 +2,9 @@
 
 #include <system_error>
 
+#include "Native.hpp"
 
-namespace Foundation
+namespace Foundation::Core
 {
 enum class NotifierStatus
 {
@@ -21,7 +22,8 @@ struct NotifierResult
 class Notifier
 {
 public:
-    using Handle = int;
+    using Handle = NativeHandle;
+
     Notifier();
     ~Notifier() noexcept;
 
@@ -38,4 +40,4 @@ public:
 private:
     Handle handle_{-1};
 };
-} // namespace Foundation
+} // namespace Foundation::Core

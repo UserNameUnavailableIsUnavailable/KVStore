@@ -12,7 +12,7 @@
 
 #include <atomic>
 
-namespace Foundation
+namespace Foundation::Core
 {
 
 std::once_flag Signal::once_;
@@ -126,4 +126,4 @@ Signal::~Signal() noexcept
     }
     ::close(handle_);
 }
-} // namespace Foundation
+} // namespace Foundation::Core

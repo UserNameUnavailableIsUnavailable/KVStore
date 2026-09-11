@@ -9,7 +9,7 @@
 
 namespace Foundation::Async
 {
-SignalChannel::SignalChannel(Signal &signal, Multiplexer &multiplexer, Scheduler &scheduler)
+SignalChannel::SignalChannel(Foundation::Core::Signal &signal, Multiplexer &multiplexer, Scheduler &scheduler)
     : Channel(ChannelType::kSignal, signal.native_handle(), multiplexer, scheduler), signal_(signal)
 {
     signal.set_non_blocking(true);

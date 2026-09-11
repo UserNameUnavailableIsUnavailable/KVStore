@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Foundation/Async/Session.hpp>
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 
 #include <Application/RESP/RESP.hpp>
 
@@ -11,7 +11,7 @@ namespace RESP
 class Sender
 {
   public:
-    Sender(Foundation::Async::Session &session, ::Foundation::Buffer &buffer, const Object &object);
+    Sender(Foundation::Async::Session &session, ::Foundation::Core::Buffer &buffer, const Object &object);
     ~Sender() noexcept;
 
     Foundation::Async::Task<bool> send();
@@ -32,7 +32,7 @@ class Sender
 
   private:
     Foundation::Async::Session &session_;
-    Foundation::Buffer &buffer_;
+    Foundation::Core::Buffer &buffer_;
     const Object &object_;
     std::size_t bytes_sent_{0};
     std::string encode_error_;

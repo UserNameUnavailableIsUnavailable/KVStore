@@ -14,7 +14,7 @@
 #error "Unsupported platform"
 #endif
 
-namespace Foundation
+namespace Foundation::Core
 {
 // A thin, copyable wrapper around `sockaddr_storage`. It owns no sockets and
 // only describes an endpoint (IPv4 or IPv6). All platform specifics are hidden
@@ -78,4 +78,4 @@ class Address
     ::sockaddr_storage storage_{};
     ::socklen_t length_ = 0;
 };
-} // namespace Foundation
+} // namespace Foundation::Core

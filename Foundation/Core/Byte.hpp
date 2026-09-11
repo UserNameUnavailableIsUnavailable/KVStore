@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace Foundation
+namespace Foundation::Core
 {
 namespace detail_Byte_hpp
 {
@@ -120,4 +120,4 @@ constexpr T from_big_endian(T value) noexcept
         return swap_endian(value);
     }
 }
-} // namespace Foundation
+} // namespace Foundation::Core

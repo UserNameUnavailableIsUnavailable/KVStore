@@ -1,16 +1,16 @@
 #include <iostream>
 #include <memory>
-#include <Foundation/Address.hpp>
+#include <Foundation/Core/Address.hpp>
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Async/Task.hpp>
 #include <Foundation/Async/Engine.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 
 using namespace Foundation;
 
 Async::Task<void> Service()
 {
-    auto address = Address::from_ipv4("127.0.0.1", 8080);
+    auto address = Core::Address::from_ipv4("127.0.0.1", 8080);
     auto listen_service = Async::Net::listen_on(address);
     while (true)
     {
@@ -23,12 +23,12 @@ Async::Task<void> Service()
         // parameter (parameters are moved into the frame at call time).
         Async::spawn(
             [](std::shared_ptr<Async::Session> session) -> Async::Task<void> {
-                auto buffer = std::make_unique<::Foundation::Buffer>(1024);
+                auto buffer = std::make_unique<::Foundation::Core::Buffer>(1024);
                 while (true)
                 {
                     {
                         auto res = co_await session->receive(*buffer);
-                        if (res.status != ::ReceiveStatus::kDone)
+                        if (res.status != Core::ReceiveStatus::kDone)
                         {
                             std::cout << "[conn] closed\n";
                             co_return;
@@ -37,7 +37,7 @@ Async::Task<void> Service()
                     }
                     {
                         auto res = co_await session->send(*buffer);
-                        if (res.status != ::SendStatus::kDone)
+                        if (res.status != Core::SendStatus::kDone)
                         {
                             std::cout << "[conn] send failed\n";
                             co_return;

@@ -72,8 +72,8 @@ std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
 
 namespace Net
 {
-std::unique_ptr<ListenService> listen_on(const Address &address, int backlog = 4096);
-std::shared_ptr<Session> establish_with(Foundation::Socket socket);
+std::unique_ptr<ListenService> listen_on(const Foundation::Core::Address &address, int backlog = 4096);
+std::shared_ptr<Session> establish_with(Foundation::Core::Socket socket);
 } // namespace Net
 
 // ============================================================================

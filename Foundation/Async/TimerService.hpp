@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Foundation/Timer.hpp>
+#include <Foundation/Core/Timer.hpp>
 #include <chrono>
 
 #include "TimerChannel.hpp"
@@ -24,7 +24,7 @@ class TimerService
 
     template <typename Rep, typename Period> detail::SleepAwaiter SleepFor(std::chrono::duration<Rep, Period> duration)
     {
-        return SleepUntil(Timer::Clock::now() + duration);
+        return SleepUntil(Foundation::Core::Timer::Clock::now() + duration);
     }
 
     TimerChannel &channel() noexcept
@@ -37,7 +37,7 @@ class TimerService
     }
 
   private:
-    Timer timer_;
+    Foundation::Core::Timer timer_;
     TimerChannel channel_;
 };
 } // namespace Foundation::Async

@@ -2,7 +2,7 @@
 
 #include <Foundation/Async/Multiplexer.hpp>
 #include <Foundation/Async/Scheduler.hpp>
-#include <Foundation/Notifier.hpp>
+#include <Foundation/Core/Notifier.hpp>
 
 #include "Channel.hpp"
 #include <coroutine>
@@ -17,7 +17,7 @@ class NotifyChannel;
 class NotifyChannel final : public Channel
 {
 public:
-    NotifyChannel(Notifier& notifier, Multiplexer& multiplexer, Scheduler& scheduler);
+    NotifyChannel(Foundation::Core::Notifier& notifier, Multiplexer& multiplexer, Scheduler& scheduler);
     ~NotifyChannel() noexcept;
 
     template <typename It>
@@ -26,11 +26,11 @@ public:
     virtual void on_event() override;
     void submit(std::coroutine_handle<> h);
 
-    Notifier& notifier() noexcept
+    Foundation::Core::Notifier& notifier() noexcept
     {
         return notifier_;
     }
-    const Notifier& notifier() const noexcept
+    const Foundation::Core::Notifier& notifier() const noexcept
     {
         return notifier_;
     }
@@ -45,9 +45,9 @@ public:
     }
 
 private:
-    Notifier& notifier_;
+    Foundation::Core::Notifier& notifier_;
     std::mutex mutex_;
-    std::vector<std::coroutine_handle<>> raw_notifiees_;
+    std::vector<std::coroutine_handle<>> notifiees_;
     std::uint64_t count_{};
 };
 
@@ -55,7 +55,7 @@ template <typename It>
 void NotifyChannel::submit(It begin, It end)
 {
     std::lock_guard lock(mutex_);
-    raw_notifiees_.insert(raw_notifiees_.end(), begin, end);
+    notifiees_.insert(notifiees_.end(), begin, end);
     notifier_.notify();
 }
 } // namespace Foundation::Async

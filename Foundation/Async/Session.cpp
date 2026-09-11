@@ -4,7 +4,7 @@
 
 namespace Foundation::Async
 {
-Session::Session(Foundation::Socket socket, Multiplexer &multiplexer, Scheduler &scheduler)
+Session::Session(Foundation::Core::Socket socket, Multiplexer &multiplexer, Scheduler &scheduler)
     : socket_(std::move(socket)), multiplexer_(multiplexer), receive_channel_(socket_, multiplexer, scheduler),
       send_channel_(socket_, scheduler, multiplexer), id_(next_id_.fetch_add(1, std::memory_order_acq_rel))
 {
@@ -18,12 +18,12 @@ void Session::close() noexcept
     socket_.close();
 }
 
-Task<ReceiveResult> Session::receive(::Foundation::Buffer &buffer)
+Task<Foundation::Core::ReceiveResult> Session::receive(Foundation::Core::Buffer &buffer)
 {
     return receive_channel_.receive(buffer);
 }
 
-Task<SendResult> Session::send(::Foundation::Buffer &buffer)
+Task<Foundation::Core::SendResult> Session::send(Foundation::Core::Buffer &buffer)
 {
     return send_channel_.send(buffer);
 }

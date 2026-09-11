@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 
 #include "ListenChannel.hpp"
 #include "Multiplexer.hpp"
@@ -11,20 +11,20 @@ namespace Foundation::Async
 class ListenService
 {
   public:
-    ListenService(const Foundation::Address &address, Multiplexer &mux, Scheduler &scheduler, int backlog = 4096);
+    ListenService(const Foundation::Core::Address &address, Multiplexer &mux, Scheduler &scheduler, int backlog = 4096);
     ~ListenService() noexcept;
     ListenService(const ListenService &) = delete;
     ListenService &operator=(const ListenService &) = delete;
     ListenService(ListenService &&) = delete;
     ListenService &operator=(ListenService &&) = delete;
 
-    Task<Foundation::AcceptResult> accept();
+    Task<Foundation::Core::AcceptResult> accept();
 
-    Foundation::Socket &socket() noexcept
+    Foundation::Core::Socket &socket() noexcept
     {
         return socket_;
     }
-    const Foundation::Socket &socket() const noexcept
+    const Foundation::Core::Socket &socket() const noexcept
     {
         return socket_;
     }
@@ -42,7 +42,7 @@ class ListenService
     // NOTE:
     // channel keeps a pointer to socket
     // we MUST use unique_ptr here to avoid dangling pointer
-    Foundation::Socket socket_;
+    Foundation::Core::Socket socket_;
     ListenChannel channel_;
 };
 } // namespace Foundation::Async

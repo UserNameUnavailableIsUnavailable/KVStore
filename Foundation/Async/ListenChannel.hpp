@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <coroutine>
 
 #include "Channel.hpp"
@@ -12,7 +12,7 @@ namespace Foundation::Async
 {
 struct AcceptJob
 {
-    Foundation::AcceptResult result;
+    Foundation::Core::AcceptResult result;
 };
 
 // Simplex channel dedicated to accepting: one job, one waiter, interested only
@@ -20,11 +20,11 @@ struct AcceptJob
 class ListenChannel final : public Channel
 {
   public:
-    ListenChannel(Foundation::Socket &socket, Multiplexer &multiplexert, Scheduler &scheduler);
+    ListenChannel(Foundation::Core::Socket &socket, Multiplexer &multiplexert, Scheduler &scheduler);
     ~ListenChannel() noexcept override;
     void on_event() override;
 
-    Task<Foundation::AcceptResult> Accept();
+    Task<Foundation::Core::AcceptResult> Accept();
 
     void Setwaiter(std::coroutine_handle<> co) noexcept
     {
@@ -44,17 +44,17 @@ class ListenChannel final : public Channel
         return job_;
     }
 
-    const Foundation::Socket &socket() const noexcept
+    const Foundation::Core::Socket &socket() const noexcept
     {
         return socket_;
     }
-    Foundation::Socket &socket() noexcept
+    Foundation::Core::Socket &socket() noexcept
     {
         return socket_;
     }
 
   private:
-    Foundation::Socket &socket_;
+    Foundation::Core::Socket &socket_;
     AcceptJob job_;
     std::coroutine_handle<> waiter_;
 };

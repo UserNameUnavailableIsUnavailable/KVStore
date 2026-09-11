@@ -27,7 +27,7 @@ DecodeResult ErrorDecode(std::string error)
     return {.status = DecodeStatus::kProtocolError, .object = std::nullopt, .error = std::move(error)};
 }
 
-Decoder ReadLine(::Foundation::Buffer &buffer, std::string &line)
+Decoder ReadLine(::Foundation::Core::Buffer &buffer, std::string &line)
 {
     for (;;)
     {
@@ -55,7 +55,7 @@ Decoder ReadLine(::Foundation::Buffer &buffer, std::string &line)
     }
 }
 
-Decoder ReadBytes(::Foundation::Buffer &buffer, std::size_t size, std::string &bytes)
+Decoder ReadBytes(::Foundation::Core::Buffer &buffer, std::size_t size, std::string &bytes)
 {
     while (size != 0)
     {
@@ -71,9 +71,9 @@ Decoder ReadBytes(::Foundation::Buffer &buffer, std::size_t size, std::string &b
     co_return CompleteDecode();
 }
 
-Decoder ParseObject(::Foundation::Buffer &buffer, std::optional<Object> &output, std::size_t depth);
+Decoder ParseObject(::Foundation::Core::Buffer &buffer, std::optional<Object> &output, std::size_t depth);
 
-Decoder ParseAggregate(::Foundation::Buffer &buffer, std::optional<Object> &output, std::size_t depth, char marker, std::size_t count)
+Decoder ParseAggregate(::Foundation::Core::Buffer &buffer, std::optional<Object> &output, std::size_t depth, char marker, std::size_t count)
 {
     if (marker == '%' || marker == '|')
     {
@@ -140,7 +140,7 @@ Decoder ParseAggregate(::Foundation::Buffer &buffer, std::optional<Object> &outp
     co_return CompleteDecode();
 }
 
-Decoder ParseObject(::Foundation::Buffer &buffer, std::optional<Object> &output, std::size_t depth)
+Decoder ParseObject(::Foundation::Core::Buffer &buffer, std::optional<Object> &output, std::size_t depth)
 {
     constexpr std::size_t kMaximumNesting = 128;
     if (depth > kMaximumNesting)
@@ -443,7 +443,7 @@ void ExpandObject(std::vector<EncodeFrame> &frames, const Object &object)
 }
 } // namespace
 
-Decoder Decode(::Foundation::Buffer &buffer)
+Decoder Decode(::Foundation::Core::Buffer &buffer)
 {
     std::optional<Object> object;
     auto parser = ParseObject(buffer, object, 0);
@@ -642,7 +642,7 @@ const DecodeResult &Decoder::result() const noexcept
     return handle_.promise().result_;
 }
 
-Encoder Encode(const Object &object, ::Foundation::Buffer &buffer)
+Encoder Encode(const Object &object, ::Foundation::Core::Buffer &buffer)
 {
     std::vector<EncodeFrame> frames;
     frames.reserve(16);

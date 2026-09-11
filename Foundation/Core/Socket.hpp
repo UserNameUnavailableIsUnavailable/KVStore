@@ -17,7 +17,7 @@
 #error "Unsupported platform"
 #endif
 
-namespace Foundation
+namespace Foundation::Core
 {
 
 enum class ReceiveStatus
@@ -182,4 +182,4 @@ struct AcceptResult
     Address address;
     std::error_code error_code{};
 };
-} // namespace Foundation
+} // namespace Foundation::Core

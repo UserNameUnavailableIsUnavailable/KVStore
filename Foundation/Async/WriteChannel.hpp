@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/Buffer.hpp>
-#include <Foundation/File.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/File.hpp>
 #include <coroutine>
 #include <cstdint>
 
@@ -15,7 +15,7 @@ class FileStream;
 
 struct WriteJob
 {
-    Buffer *buffer{nullptr};
+    Foundation::Core::Buffer *buffer{nullptr};
     std::uint64_t offset{0};
     WriteResult result{};
 };
@@ -26,7 +26,7 @@ class WriteChannel final : public Channel
     WriteChannel(FileStream &file, Multiplexer &multiplexer, Scheduler &scheduler);
     ~WriteChannel() noexcept override;
 
-    Task<WriteResult> write(Buffer &buffer);
+    Task<WriteResult> write(Foundation::Core::Buffer &buffer);
 
     void on_event() override;
 
@@ -58,7 +58,7 @@ class WriteChannel final : public Channel
     }
 
   private:
-    WriteResult write_sync(Buffer &buffer);
+    WriteResult write_sync(Foundation::Core::Buffer &buffer);
 
     FileStream &file_;
     WriteJob job_;

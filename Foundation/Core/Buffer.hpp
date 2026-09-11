@@ -10,7 +10,7 @@
 //   storage_:  [ prependable | valid | appendable ]
 //              ^             ^       ^            ^
 //              0             begin_  end_         capacity_
-namespace Foundation
+namespace Foundation::Core
 {
 class Buffer
 {
@@ -117,4 +117,4 @@ class Buffer
     std::size_t begin_{base_};
     std::size_t end_{base_};
 };
-} // namespace Foundation
+} // namespace Foundation::Core

@@ -2,13 +2,13 @@
 #include <Foundation/Async/Channel.hpp>
 #include <Foundation/Async/Multiplexer.hpp>
 #include <Foundation/Async/Types.hpp>
-#include <Foundation/Notifier.hpp>
+#include <Foundation/Core/Notifier.hpp>
 #include <coroutine>
 #include <mutex>
 
 namespace Foundation::Async
 {
-NotifyChannel::NotifyChannel(Notifier& notifier, Multiplexer& multiplexer, Scheduler& scheduler) :
+NotifyChannel::NotifyChannel(Foundation::Core::Notifier& notifier, Multiplexer& multiplexer, Scheduler& scheduler) :
     Channel(ChannelType::kNotify, notifier.native_handle(), multiplexer, scheduler),
     notifier_(notifier)
 {
@@ -28,14 +28,14 @@ void NotifyChannel::on_event()
         handler_(this);
     }
     std::lock_guard lock(mutex_);
-    for (auto& notifiee : raw_notifiees_)
+    for (auto& notifiee : notifiees_)
     {
         if (notifiee)
         {
             scheduler_.submit(notifiee);
         }
     }
-    raw_notifiees_.clear();
+    notifiees_.clear();
 
     arm(); // re-arm the channel
 }
@@ -43,7 +43,7 @@ void NotifyChannel::on_event()
 void NotifyChannel::submit(std::coroutine_handle<> h)
 {
     std::lock_guard lock(mutex_);
-    raw_notifiees_.emplace_back(h);
+    notifiees_.emplace_back(h);
     notifier_.notify();
 }
 } // namespace Foundation::Async

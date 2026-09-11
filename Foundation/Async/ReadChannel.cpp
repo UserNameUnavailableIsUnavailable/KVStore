@@ -29,7 +29,7 @@ ReadChannel::~ReadChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-ReadResult ReadChannel::read_sync(Buffer &buffer)
+ReadResult ReadChannel::read_sync(Foundation::Core::Buffer &buffer)
 {
     while (true)
     {
@@ -57,12 +57,12 @@ ReadResult ReadChannel::read_sync(Buffer &buffer)
     }
 }
 
-Task<ReadResult> ReadChannel::read(Buffer &buffer)
+Task<ReadResult> ReadChannel::read(Foundation::Core::Buffer &buffer)
 {
     struct Awaiter
     {
         ReadChannel *channel;
-        Buffer &buffer;
+        Foundation::Core::Buffer &buffer;
 
         bool await_ready() const noexcept
         {

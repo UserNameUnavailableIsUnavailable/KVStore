@@ -1,7 +1,7 @@
-#include <Foundation/Address.hpp>
+#include <Foundation/Core/Address.hpp>
 #include <Foundation/Async/Async.hpp>
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
@@ -206,9 +206,9 @@ std::vector<std::string> Tokenize(const std::string &line)
 
 } // namespace
 
-Foundation::Async::Task<void> run_client(Foundation::Address address, std::string host, std::uint16_t port)
+Foundation::Async::Task<void> run_client(Foundation::Core::Address address, std::string host, std::uint16_t port)
 {
-    Foundation::Socket socket(address.family(), Foundation::Socket::Type::kStream);
+    Foundation::Core::Socket socket(address.family(), Foundation::Core::Socket::Type::kStream);
     socket.connect(address);
     auto session = Foundation::Async::Net::establish_with(std::move(socket));
 
@@ -240,7 +240,7 @@ Foundation::Async::Task<void> run_client(Foundation::Address address, std::strin
             continue;
         }
 
-        ::Foundation::Buffer send_buffer;
+        ::Foundation::Core::Buffer send_buffer;
         RESP::Sender sender(*session, send_buffer, *request);
         if (!co_await sender.send())
         {
@@ -249,7 +249,7 @@ Foundation::Async::Task<void> run_client(Foundation::Address address, std::strin
             co_return;
         }
 
-        ::Foundation::Buffer receive_buffer;
+        ::Foundation::Core::Buffer receive_buffer;
         RESP::Receiver receiver(*session, receive_buffer);
         const std::optional<RESP::Object> response = co_await receiver.receive();
         if (!response)
@@ -268,8 +268,8 @@ int main(int argc, char *argv[])
 {
     const std::string host = argc > 1 ? argv[1] : "127.0.0.1";
     const std::uint16_t port = argc > 2 ? static_cast<std::uint16_t>(std::stoul(argv[2])) : 6379;
-    const Foundation::Address address =
-        host.find(':') == std::string::npos ? Foundation::Address::from_ipv4(host, port) : Foundation::Address::from_ipv6(host, port);
+    const Foundation::Core::Address address =
+        host.find(':') == std::string::npos ? Foundation::Core::Address::from_ipv4(host, port) : Foundation::Core::Address::from_ipv6(host, port);
     Foundation::Async::run(run_client(address, host, port));
     return 0;
 }
