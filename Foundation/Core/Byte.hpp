@@ -6,7 +6,7 @@
 
 namespace Foundation::Core
 {
-namespace detail_Byte_hpp
+namespace detail
 {
 constexpr std::uint16_t Swap16(std::uint16_t value) noexcept
 {
@@ -48,15 +48,15 @@ constexpr T swap_endian(T value) noexcept
     const auto raw = static_cast<Unsigned>(value);
     if constexpr (sizeof(T) == 2)
     {
-        return static_cast<T>(detail_Byte_hpp::Swap16(static_cast<std::uint16_t>(raw)));
+        return static_cast<T>(detail::Swap16(static_cast<std::uint16_t>(raw)));
     }
     else if constexpr (sizeof(T) == 4)
     {
-        return static_cast<T>(detail_Byte_hpp::Swap32(static_cast<std::uint32_t>(raw)));
+        return static_cast<T>(detail::Swap32(static_cast<std::uint32_t>(raw)));
     }
     else if constexpr (sizeof(T) == 8)
     {
-        return static_cast<T>(detail_Byte_hpp::Swap64(static_cast<std::uint64_t>(raw)));
+        return static_cast<T>(detail::Swap64(static_cast<std::uint64_t>(raw)));
     }
     else
     {

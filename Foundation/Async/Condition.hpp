@@ -50,4 +50,4 @@ Task<void> Condition::wait(Predicate predicate)
         co_await wait();
     }
 }
-} // namespace Foundation::Async
+} // namespace Foundation::Async::detail

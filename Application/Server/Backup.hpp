@@ -19,7 +19,7 @@
 
 namespace KV
 {
-namespace backup_helper
+namespace detail
 {
 struct SnapshotEntry
 {
@@ -37,7 +37,7 @@ struct LoadedEntry
 
 bool WriteSnapshot(const std::filesystem::path &path, const std::vector<SnapshotEntry> &entries);
 bool ReadSnapshot(const std::filesystem::path &path, std::vector<LoadedEntry> &entries);
-} // namespace backup_helper
+} // namespace detail
 
 class Backup
 {
@@ -65,8 +65,8 @@ class Backup
         template <template <typename, typename> typename Map>
         bool load(Store<std::string, std::string, Map> &store) const
         {
-            std::vector<backup_helper::LoadedEntry> entries;
-            if (!backup_helper::ReadSnapshot(path_, entries))
+            std::vector<detail::LoadedEntry> entries;
+            if (!detail::ReadSnapshot(path_, entries))
             {
                 return false;
             }
@@ -96,7 +96,7 @@ class Backup
         template <template <typename, typename> typename Map>
 		bool save_impl(Store<std::string, std::string, Map> &store) const
         {
-            std::vector<backup_helper::SnapshotEntry> entries;
+            std::vector<detail::SnapshotEntry> entries;
             store.visit_live([&](const std::string &key, const std::string &value, const auto &ttl) {
                 entries.push_back({.key = key, .value = value, .ttl = ttl});
             });
@@ -107,7 +107,7 @@ class Backup
             }
             if (child == 0)
             {
-                bool ok = backup_helper::WriteSnapshot(path_, entries);
+                bool ok = detail::WriteSnapshot(path_, entries);
                 _exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
             }
 

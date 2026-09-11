@@ -7,3 +7,9 @@ build/
 __pycache__/
 vcpkg_installed/
 .VSCodeCounter/
+
+temp/
+tmp/
+
+*.rdb
+*.aof
