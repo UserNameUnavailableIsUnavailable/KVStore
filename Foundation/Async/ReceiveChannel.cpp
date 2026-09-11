@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <cassert>
 #include <stdexcept>
 #include <utility>
@@ -11,7 +11,7 @@
 
 namespace Foundation::Async
 {
-ReceiveChannel::ReceiveChannel(Foundation::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler)
+ReceiveChannel::ReceiveChannel(Foundation::Core::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler)
     : Channel(ChannelType::kReceive, socket.native_handle(), multiplexer, scheduler), socket_(socket)
 {
     if (!socket.is_valid())
@@ -44,7 +44,7 @@ void ReceiveChannel::on_event()
         handler_(this);
     }
 
-    if (job_.result.status == ReceiveStatus::kPending)
+    if (job_.result.status == Foundation::Core::ReceiveStatus::kPending)
     {
         // Not finished (e.g. EAGAIN): stay armed and keep the coroutine suspended.
         arm();
@@ -62,7 +62,7 @@ void ReceiveChannel::on_event()
     }
 }
 
-Task<ReceiveResult> ReceiveChannel::receive(::Foundation::Buffer &buffer)
+Task<Foundation::Core::ReceiveResult> ReceiveChannel::receive(Foundation::Core::Buffer &buffer)
 {
     auto awaiter = detail::ReceiveAwaiter(this, buffer);
     auto result = co_await std::move(awaiter);

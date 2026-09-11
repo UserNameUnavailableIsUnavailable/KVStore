@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/Buffer.hpp>
-#include <Foundation/File.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/File.hpp>
 #include <coroutine>
 #include <cstdint>
 
@@ -15,7 +15,7 @@ class FileStream;
 
 struct ReadJob
 {
-    Buffer *buffer{nullptr};
+    Foundation::Core::Buffer *buffer{nullptr};
     std::uint64_t offset{0};
     ReadResult result{};
 };
@@ -26,7 +26,7 @@ class ReadChannel final : public Channel
     ReadChannel(FileStream &file, Multiplexer &multiplexer, Scheduler &scheduler);
     ~ReadChannel() noexcept override;
 
-    Task<ReadResult> read(Buffer &buffer);
+    Task<ReadResult> read(Foundation::Core::Buffer &buffer);
 
     void on_event() override;
 
@@ -58,7 +58,7 @@ class ReadChannel final : public Channel
     }
 
   private:
-    ReadResult read_sync(Buffer &buffer);
+    ReadResult read_sync(Foundation::Core::Buffer &buffer);
 
     FileStream &file_;
     ReadJob job_;

@@ -2,7 +2,7 @@
 #include "Backup.hpp"
 
 #include <Foundation/Async/Async.hpp>
-#include <Foundation/Buffer.hpp>
+#include <Foundation/Core/Buffer.hpp>
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
@@ -28,7 +28,7 @@ RESP::Object Error(std::string message)
 }
 } // namespace
 
-void Server::run(const Foundation::Address &address)
+void Server::run(const Foundation::Core::Address &address)
 {
     Backup backup;
     if (!backup.load(store_))
@@ -44,7 +44,7 @@ void Server::run(const Foundation::Address &address)
     Foundation::Async::run(serve(address));
 }
 
-Foundation::Async::Task<void> Server::serve(const Foundation::Address &address)
+Foundation::Async::Task<void> Server::serve(const Foundation::Core::Address &address)
 {
     co_await std::move(accept_clients(Foundation::Async::Net::listen_on(address)));
 }
@@ -54,7 +54,7 @@ Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation:
     while (true)
     {
         auto result = co_await listener->accept();
-        if (result.status != Foundation::AcceptStatus::kDone)
+        if (result.status != Foundation::Core::AcceptStatus::kDone)
         {
             continue;
         }
@@ -64,8 +64,8 @@ Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation:
 
     Foundation::Async::Task<void> Server::serve_client(std::shared_ptr<Session> session)
 {
-    auto recv_buffer = std::make_unique<::Foundation::Buffer>();
-    auto send_buffer = std::make_unique<::Foundation::Buffer>();
+    auto recv_buffer = std::make_unique<::Foundation::Core::Buffer>();
+    auto send_buffer = std::make_unique<::Foundation::Core::Buffer>();
     while (true)
     {
         RESP::Receiver receiver(session->transport(), *recv_buffer);

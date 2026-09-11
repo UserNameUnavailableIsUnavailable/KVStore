@@ -31,7 +31,7 @@ WriteChannel::~WriteChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-WriteResult WriteChannel::write_sync(Buffer &buffer)
+WriteResult WriteChannel::write_sync(Foundation::Core::Buffer &buffer)
 {
     auto total = std::size_t{0};
     while (buffer.valid_size() > 0)
@@ -62,12 +62,12 @@ WriteResult WriteChannel::write_sync(Buffer &buffer)
     return {.status = WriteStatus::kDone, .bytes_transferred = total, .error_code = {}};
 }
 
-Task<WriteResult> WriteChannel::write(Buffer &buffer)
+Task<WriteResult> WriteChannel::write(Foundation::Core::Buffer &buffer)
 {
     struct Awaiter
     {
         WriteChannel *channel;
-        Buffer &buffer;
+        Foundation::Core::Buffer &buffer;
 
         bool await_ready() const noexcept
         {

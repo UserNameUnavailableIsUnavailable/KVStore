@@ -7,7 +7,7 @@
 #include "AppendOnlyFile.hpp"
 #include "Store.hpp"
 
-#include <Foundation/Address.hpp>
+#include <Foundation/Core/Address.hpp>
 #include <Foundation/Async/ListenService.hpp>
 #include <Foundation/Async/Session.hpp>
 #include <Foundation/Async/Task.hpp>
@@ -46,9 +46,9 @@ class Server
     Server(Server &&) = delete;
     Server &operator=(Server &&) = delete;
 
-    void run(const Foundation::Address &address);
+    void run(const Foundation::Core::Address &address);
 
-    Foundation::Async::Task<void> serve(const Foundation::Address &address);
+    Foundation::Async::Task<void> serve(const Foundation::Core::Address &address);
     Foundation::Async::Task<void> accept_clients(std::unique_ptr<Foundation::Async::ListenService> listener);
     Foundation::Async::Task<void> serve_client(std::shared_ptr<Session> session);
 

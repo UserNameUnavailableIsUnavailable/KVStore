@@ -9,7 +9,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace Foundation
+namespace Foundation::Core
 {
 Timer::Timer()
 {
@@ -97,4 +97,4 @@ TimerResult Timer::wait()
     return result;
 }
 #endif
-} // namespace Foundation
+} // namespace Foundation::Core

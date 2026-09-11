@@ -1,4 +1,4 @@
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <cerrno>
 
 #if defined(_WIN32)
@@ -28,7 +28,7 @@
 #endif
 #include <system_error>
 
-namespace Foundation
+namespace Foundation::Core
 {
 namespace
 {
@@ -206,9 +206,9 @@ AcceptResult Socket::accept()
     return result;
 }
 
-Foundation::ReceiveResult Socket::receive(std::span<char> buffer)
+ReceiveResult Socket::receive(std::span<char> buffer)
 {
-    Foundation::ReceiveResult result{
+    ReceiveResult result{
         .status = ReceiveStatus::kPending,
         .bytes_transferred = 0,
     };
@@ -354,7 +354,7 @@ void Socket::get_local_address(Address &out) const
     out.length() = Address::capacity();
     if (::getsockname(handle_, out.storage<sockaddr>(), &out.length()) < 0)
     {
-        throw std::system_error(Foundation::Socket::get_last_error(), "Socket: getsockname failed");
+        throw std::system_error(Socket::get_last_error(), "Socket: getsockname failed");
     }
 }
 
@@ -419,4 +419,4 @@ void Socket::close() noexcept
 // Explicit instantiation so the template is emitted once in this translation
 // unit (callers only use it through the public setters above).
 template void Socket::set_native_option<int>(int, int, const int &);
-} // namespace Foundation
+} // namespace Foundation::Core

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <coroutine>
 
 #include "Channel.hpp"
@@ -13,18 +13,18 @@ namespace Foundation::Async
 {
 struct ReceiveJob
 {
-    Buffer *buffer{nullptr};
-    ReceiveResult result{};
+    Foundation::Core::Buffer *buffer{nullptr};
+    Foundation::Core::ReceiveResult result{};
 };
 // Simplex channel dedicated to receiving: one job, one waiter, interested only
 // in the "readable" event.
 class ReceiveChannel : public Channel
 {
   public:
-    explicit ReceiveChannel(Foundation::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler);
+    explicit ReceiveChannel(Foundation::Core::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler);
     ~ReceiveChannel() noexcept override;
 
-    Task<ReceiveResult> receive(Buffer &buffer);
+    Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
 
     void on_event() override;
 
@@ -45,17 +45,17 @@ class ReceiveChannel : public Channel
     {
         return job_;
     }
-    Foundation::Socket &socket() noexcept
+    Foundation::Core::Socket &socket() noexcept
     {
         return socket_;
     }
-    const Foundation::Socket &socket() const noexcept
+    const Foundation::Core::Socket &socket() const noexcept
     {
         return socket_;
     }
 
   private:
-    Foundation::Socket &socket_;
+    Foundation::Core::Socket &socket_;
     ReceiveJob job_;
     std::coroutine_handle<> waiter_;
 };
@@ -66,7 +66,7 @@ namespace detail
 class ReceiveAwaiter
 {
   public:
-    ReceiveAwaiter(ReceiveChannel *channel, Buffer &buffer) : channel_(channel), buffer_(buffer)
+    ReceiveAwaiter(ReceiveChannel *channel, Foundation::Core::Buffer &buffer) : channel_(channel), buffer_(buffer)
     {
     }
 
@@ -103,22 +103,22 @@ class ReceiveAwaiter
         handle_ = handle;
         channel_->set_waiter(handle);
         ReceiveJob job{.buffer = &buffer_,
-                       .result = {.status = ReceiveStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
+                       .result = {.status = Foundation::Core::ReceiveStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
         std::memcpy(&channel_->job(), &job, sizeof(ReceiveJob));
         // Ask the multiplexer to deliver the "readable" event for us.
         channel_->arm();
     }
 
-    ReceiveResult await_resume() noexcept
+    Foundation::Core::ReceiveResult await_resume() noexcept
     {
         const ReceiveJob &job = channel_->job();
-        assert(job.result.status != ReceiveStatus::kPending);
+        assert(job.result.status != Foundation::Core::ReceiveStatus::kPending);
         return job.result;
     }
 
   private:
     ReceiveChannel *channel_;
-    ::Foundation::Buffer &buffer_;
+    ::Foundation::Core::Buffer &buffer_;
     std::coroutine_handle<> handle_{};
 };
 } // namespace detail

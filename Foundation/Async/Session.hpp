@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <atomic>
 #include <memory>
 
@@ -16,7 +16,7 @@ namespace Foundation::Async
 class Session : protected std::enable_shared_from_this<Session>
 {
   public:
-    Session(Foundation::Socket socket, Multiplexer &multiplexer, Scheduler &scheduler);
+    Session(Foundation::Core::Socket socket, Multiplexer &multiplexer, Scheduler &scheduler);
 
     Session(Session &&) = delete;
     Session &operator=(Session &&) = delete;
@@ -37,8 +37,8 @@ class Session : protected std::enable_shared_from_this<Session>
 
     // Session is a thin wrapper over the transport layer: it forwards Receive/
     // Send to its simplex channels and owns the connection lifecycle.
-    Task<ReceiveResult> receive(Buffer &buffer);
-    Task<SendResult> send(Buffer &buffer);
+    Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
+    Task<Foundation::Core::SendResult> send(Foundation::Core::Buffer &buffer);
 
     ReceiveChannel &receive_channel() noexcept
     {
@@ -49,18 +49,18 @@ class Session : protected std::enable_shared_from_this<Session>
         return send_channel_;
     }
 
-    Socket &socket() noexcept
+    Foundation::Core::Socket &socket() noexcept
     {
         return socket_;
     }
-    const Socket &socket() const noexcept
+    const Foundation::Core::Socket &socket() const noexcept
     {
         return socket_;
     }
 
   private:
     // destruction order: channels are destroyed before socket (closes fd)
-    Foundation::Socket socket_; // session owns socket
+    Foundation::Core::Socket socket_; // session owns socket
     Multiplexer &multiplexer_;
     ReceiveChannel receive_channel_;
     SendChannel send_channel_;

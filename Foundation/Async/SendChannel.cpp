@@ -1,6 +1,6 @@
 #include "SendChannel.hpp"
 
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <cassert>
 #include <utility>
 
@@ -13,7 +13,7 @@ namespace
 class SendAwaiter
 {
   public:
-    SendAwaiter(SendChannel *channel, ::Foundation::Buffer &buffer) : channel_(channel), buffer_(buffer)
+    SendAwaiter(SendChannel *channel, ::Foundation::Core::Buffer &buffer) : channel_(channel), buffer_(buffer)
     {
     }
 
@@ -41,27 +41,27 @@ class SendAwaiter
         handle_ = handle;
         channel_->set_waiter(handle);
         SendJob job{.buffer = &buffer_,
-                    .result = {.status = SendStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
+                    .result = {.status = Foundation::Core::SendStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
         std::memcpy(&channel_->job(), &job, sizeof(SendJob));
         // Ask the multiplexer to deliver the "writable" event for us.
         channel_->arm();
     }
 
-    SendResult await_resume() noexcept
+    Foundation::Core::SendResult await_resume() noexcept
     {
         const SendJob &job = channel_->job();
-        assert(job.result.status != SendStatus::kPending);
+        assert(job.result.status != Foundation::Core::SendStatus::kPending);
         return job.result;
     }
 
   private:
     SendChannel *channel_;
-    ::Foundation::Buffer &buffer_;
+    ::Foundation::Core::Buffer &buffer_;
     std::coroutine_handle<> handle_{};
 };
 } // namespace
 
-SendChannel::SendChannel(Foundation::Socket &socket, Scheduler &scheduler, Multiplexer &multiplexer)
+SendChannel::SendChannel(Foundation::Core::Socket &socket, Scheduler &scheduler, Multiplexer &multiplexer)
     : Channel(ChannelType::kSend, socket.native_handle(), multiplexer, scheduler), socket_(socket)
 {
     if (!socket_.is_valid())
@@ -90,7 +90,7 @@ void SendChannel::on_event()
         handler_(this);
     }
 
-    if (job_.result.status == SendStatus::kPending)
+    if (job_.result.status == Foundation::Core::SendStatus::kPending)
     {
         // Not finished (EAGAIN, or partially written): stay armed.
         arm();
@@ -105,7 +105,7 @@ void SendChannel::on_event()
     }
 }
 
-Task<SendResult> SendChannel::send(::Foundation::Buffer &buffer)
+Task<Foundation::Core::SendResult> SendChannel::send(Foundation::Core::Buffer &buffer)
 {
     auto result = co_await SendAwaiter(this, buffer);
     co_return std::move(result);

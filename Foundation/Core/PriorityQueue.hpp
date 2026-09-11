@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace Foundation
+namespace Foundation::Core
 {
 template <typename T, typename Compare = std::less<T>> class PriorityQueue
 {
@@ -88,4 +88,4 @@ template <typename T, typename Compare = std::less<T>> class PriorityQueue
     std::vector<T> data_;
     Compare comparator_;
 };
-} // namespace Foundation
+} // namespace Foundation::Core

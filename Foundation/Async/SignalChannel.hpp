@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Foundation/Signal.hpp>
+#include <Foundation/Core/Signal.hpp>
 #include <coroutine>
 #include <list>
 
@@ -14,7 +14,7 @@ namespace Foundation::Async
 class SignalChannel final : public Channel
 {
   public:
-    SignalChannel(Signal &signal, Multiplexer &multiplexer, Scheduler &scheduler);
+        SignalChannel(Foundation::Core::Signal &signal, Multiplexer &multiplexer, Scheduler &scheduler);
     ~SignalChannel() override;
 
     void on_event() override;
@@ -68,7 +68,7 @@ class SignalChannel final : public Channel
     }
 
   private:
-    Signal &signal_;
+        Foundation::Core::Signal &signal_;
     std::list<std::coroutine_handle<>> waiters_;
     std::size_t count_;
 };

@@ -127,7 +127,7 @@ Foundation::Async::Task<void> AppendOnlyFile::append(const Command &command)
 
     try
     {
-        Foundation::Buffer buffer;
+        Foundation::Core::Buffer buffer;
         const auto object = to_object(command);
         auto encoder = RESP::Encode(object, buffer);
         while (encoder.poll() == RESP::EncodeStatus::kNeedFlush)
@@ -137,7 +137,7 @@ Foundation::Async::Task<void> AppendOnlyFile::append(const Command &command)
                 continue;
             }
             auto result = co_await file_->write(buffer);
-            if (result.status != Foundation::WriteStatus::kDone)
+            if (result.status != Foundation::Core::WriteStatus::kDone)
             {
                 throw std::runtime_error("failed to append AOF entry");
             }
@@ -145,7 +145,7 @@ Foundation::Async::Task<void> AppendOnlyFile::append(const Command &command)
         if (!buffer.is_empty())
         {
             auto result = co_await file_->write(buffer);
-            if (result.status != Foundation::WriteStatus::kDone)
+            if (result.status != Foundation::Core::WriteStatus::kDone)
             {
                 throw std::runtime_error("failed to append AOF entry");
             }

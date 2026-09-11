@@ -1,7 +1,7 @@
 #include "Address.hpp"
 #include <stdexcept>
 
-namespace Foundation
+namespace Foundation::Core
 {
 Address Address::from_ipv4(std::string_view ip, std::uint16_t port)
 {
@@ -81,4 +81,4 @@ std::uint16_t Address::port() const noexcept
     }
     return 0;
 }
-} // namespace Foundation
+} // namespace Foundation::Core

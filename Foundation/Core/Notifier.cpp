@@ -9,7 +9,7 @@
 #include <unistd.h>
 #endif
 
-namespace Foundation
+namespace Foundation::Core
 {
 Notifier::Notifier()
 {
@@ -113,4 +113,4 @@ NotifierResult Notifier::wait()
     } while (retry);
     return result;
 }
-} // namespace Foundation
+} // namespace Foundation::Core

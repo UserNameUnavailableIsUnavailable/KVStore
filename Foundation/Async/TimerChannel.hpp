@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/PriorityQueue.hpp>
-#include <Foundation/Timer.hpp>
+#include <Foundation/Core/PriorityQueue.hpp>
+#include <Foundation/Core/Timer.hpp>
 #include <chrono>
 #include <coroutine>
 #include <type_traits>
@@ -78,14 +78,14 @@ class TimerChannel final : public Channel
     friend struct detail::SleepAwaiter;
 
   public:
-    explicit TimerChannel(Timer &timer, Multiplexer &multiplexer, Scheduler &scheduler);
+    explicit TimerChannel(Foundation::Core::Timer &timer, Multiplexer &multiplexer, Scheduler &scheduler);
     virtual ~TimerChannel() noexcept override;
 
-    Timer &timer() noexcept
+    Foundation::Core::Timer &timer() noexcept
     {
         return timer_;
     }
-    const Timer &timer() const noexcept
+    const Foundation::Core::Timer &timer() const noexcept
     {
         return timer_;
     }
@@ -113,8 +113,8 @@ class TimerChannel final : public Channel
     void insert(std::coroutine_handle<> handle, std::chrono::steady_clock::time_point due);
     bool remove(std::coroutine_handle<> handle);
 
-    Timer &timer_;
-    PriorityQueue<detail::TimerEntry, detail::TimerEntryComparator> queue_;
+    Foundation::Core::Timer &timer_;
+    Foundation::Core::PriorityQueue<detail::TimerEntry, detail::TimerEntryComparator> queue_;
     std::size_t last_expirations_{0};
 };
 

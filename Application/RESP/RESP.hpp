@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Foundation/Async/Async.hpp>
-#include <Foundation/Buffer.hpp>
+#include <Foundation/Core/Buffer.hpp>
 #include <coroutine>
 #include <cstdint>
 #include <optional>
@@ -181,7 +181,7 @@ class Decoder
     std::coroutine_handle<promise_type> handle_{};
 };
 
-Decoder Decode(::Foundation::Buffer &buffer);
-Encoder Encode(const Object &object, ::Foundation::Buffer &buffer);
-Encoder Encode(Object &&object, ::Foundation::Buffer &buffer) = delete;
+Decoder Decode(::Foundation::Core::Buffer &buffer);
+Encoder Encode(const Object &object, ::Foundation::Core::Buffer &buffer);
+Encoder Encode(Object &&object, ::Foundation::Core::Buffer &buffer) = delete;
 } // namespace RESP

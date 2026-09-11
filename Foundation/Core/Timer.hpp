@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Foundation/Core/Native.hpp>
 #include <chrono>
 #include <system_error>
 #if defined(__linux__)
 #include <sys/timerfd.h>
 #endif
 
-namespace Foundation
+namespace Foundation::Core
 {
 enum class TimerStatus
 {
@@ -24,12 +25,12 @@ struct TimerResult
 class Timer
 {
   public:
+    using Handle = NativeHandle;
+    
     using Clock = std::chrono::steady_clock;
     using Timepoint = Clock::time_point;
     using Duration = Clock::duration;
-#if defined(__linux__)
-    using Handle = int;
-#endif
+    
     Timer();
     ~Timer() noexcept;
     Timer(const Timer &) = delete;
@@ -70,4 +71,4 @@ template <typename Rep, typename Period> void Timer::fire_after(std::chrono::dur
     }
 }
 #endif
-} // namespace Foundation
+} // namespace Foundation::Core

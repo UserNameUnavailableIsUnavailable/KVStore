@@ -13,7 +13,7 @@ namespace RESP
 class Receiver
 {
   public:
-    Receiver(Foundation::Async::Session &session, ::Foundation::Buffer &buffer);
+    Receiver(Foundation::Async::Session &session, ::Foundation::Core::Buffer &buffer);
     ~Receiver() noexcept;
 
     Foundation::Async::Task<std::optional<Object>> receive();
@@ -32,7 +32,7 @@ class Receiver
 
   private:
     Foundation::Async::Session &session_;
-    Foundation::Buffer &buffer_;
+    Foundation::Core::Buffer &buffer_;
     std::size_t bytes_received_{0};
     std::string decode_error_;
     std::string internal_error_;

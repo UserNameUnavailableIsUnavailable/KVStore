@@ -1,7 +1,7 @@
 #include "ListenChannel.hpp"
 
 #include <Foundation/Async/Multiplexer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <cassert>
 #include <stdexcept>
 #include <utility>
@@ -10,7 +10,7 @@
 
 namespace Foundation::Async
 {
-ListenChannel::ListenChannel(Foundation::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler)
+ListenChannel::ListenChannel(Foundation::Core::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler)
     : Channel(ChannelType::kListen, socket.native_handle(), multiplexer, scheduler), socket_(socket)
 {
     if (!socket_.is_valid())
@@ -58,15 +58,15 @@ class AcceptAwaiter
         handle_ = handle;
         channel_->Setwaiter(handle);
         channel_->job() =
-            AcceptJob{.result = {.status = AcceptStatus::kPending, .socket = {}, .address = {}, .error_code = {}}};
+            AcceptJob{.result = {.status = Foundation::Core::AcceptStatus::kPending, .socket = {}, .address = {}, .error_code = {}}};
         // Ask the multiplexer to deliver the "readable" event for us.
         channel_->arm();
     }
 
-    AcceptResult await_resume() noexcept
+    Foundation::Core::AcceptResult await_resume() noexcept
     {
         AcceptJob &job = channel_->job();
-        assert(job.result.status != AcceptStatus::kPending);
+        assert(job.result.status != Foundation::Core::AcceptStatus::kPending);
         return std::move(job.result);
     }
 
@@ -88,7 +88,7 @@ void ListenChannel::on_event()
         handler_(this);
     }
 
-    if (job().result.status == AcceptStatus::kPending)
+    if (job().result.status == Foundation::Core::AcceptStatus::kPending)
     {
         // No connection was ready (EAGAIN): stay armed, keep suspended.
         arm();
@@ -103,7 +103,7 @@ void ListenChannel::on_event()
     }
 }
 
-Task<AcceptResult> ListenChannel::Accept()
+Task<Foundation::Core::AcceptResult> ListenChannel::Accept()
 {
     auto result = co_await AcceptAwaiter(this);
     co_return std::move(result);

@@ -2,7 +2,7 @@
 
 #include <Application/Commands.hpp>
 
-#include <Foundation/Buffer.hpp>
+#include <Foundation/Core/Buffer.hpp>
 #include <Application/RESP/RESP.hpp>
 #include <Foundation/Async/FileStream.hpp>
 #include <Foundation/Async/Task.hpp>
@@ -13,7 +13,6 @@
 #include <iterator>
 #include <string>
 #include <string_view>
-#include <utility>
 
 namespace KV
 {
@@ -47,7 +46,7 @@ class AppendOnlyFile
         }
 
         const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        Foundation::Buffer buffer(std::max<std::size_t>(512, bytes.size()), std::max<std::size_t>(512, bytes.size()));
+        Foundation::Core::Buffer buffer(std::max<std::size_t>(512, bytes.size()), std::max<std::size_t>(512, bytes.size()));
         if (!bytes.empty() && !buffer.append(bytes.data(), bytes.size()))
         {
             return false;

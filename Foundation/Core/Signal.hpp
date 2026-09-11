@@ -4,7 +4,9 @@
 #include <mutex>
 #include <system_error>
 
-namespace Foundation
+#include "Native.hpp"
+
+namespace Foundation::Core
 {
 enum class SignalStatus
 {
@@ -22,7 +24,7 @@ struct SignalResult
 class Signal
 {
   public:
-    using Handle = int;
+    using Handle = NativeHandle;
     Signal();
     ~Signal() noexcept;
     Handle native_handle() const noexcept
@@ -42,4 +44,4 @@ class Signal
     static std::list<Handle> handles_; // all registered handles
     std::list<Handle>::iterator it_;   // iterator for the current handle in the list
 };
-} // namespace Foundation
+} // namespace Foundation::Core

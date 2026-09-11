@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstring>
 
-namespace Foundation
+namespace Foundation::Core
 {
 Buffer::Buffer(std::size_t capacity, std::size_t max_capacity)
     : // begin_/end_ start at base_, so the storage must at least hold that.
@@ -167,4 +167,4 @@ void Buffer::shrink()
     begin_ = base_;
     end_ = base_ + held;
 }
-} // namespace Foundation
+} // namespace Foundation::Core

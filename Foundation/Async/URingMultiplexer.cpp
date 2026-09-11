@@ -3,7 +3,7 @@
 #include <liburing.h>
 #include <sys/socket.h>
 
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -176,20 +176,20 @@ void URingMultiplexer::complete(Channel *channel, int result)
         {
             job.buffer->commit(static_cast<std::size_t>(result));
             job.result.bytes_transferred = static_cast<std::size_t>(result);
-            job.result.status = ::Foundation::ReceiveStatus::kDone;
+            job.result.status = ::Foundation::Core::ReceiveStatus::kDone;
         }
         else if (result == 0)
         {
-            job.result.status = ::Foundation::ReceiveStatus::kPeerClosed;
+            job.result.status = ::Foundation::Core::ReceiveStatus::kPeerClosed;
         }
         else if (result == -EAGAIN || result == -EWOULDBLOCK)
         {
-            job.result.status = ::Foundation::ReceiveStatus::kPending; // retry later
+            job.result.status = ::Foundation::Core::ReceiveStatus::kPending; // retry later
         }
         else
         {
-            job.result.status = ::Foundation::ReceiveStatus::kError;
-            job.result.error_code = Foundation::Socket::get_last_error();
+            job.result.status = ::Foundation::Core::ReceiveStatus::kError;
+            job.result.error_code = Foundation::Core::Socket::get_last_error();
         }
         break;
     }
@@ -200,15 +200,15 @@ void URingMultiplexer::complete(Channel *channel, int result)
             job.buffer->consume(static_cast<std::size_t>(result));
             job.result.bytes_transferred += static_cast<std::size_t>(result);
             // "write flushes all": done only when nothing is left to send.
-            job.result.status = (job.buffer->valid_size() == 0) ? ::Foundation::SendStatus::kDone : ::Foundation::SendStatus::kPending;
+            job.result.status = (job.buffer->valid_size() == 0) ? ::Foundation::Core::SendStatus::kDone : ::Foundation::Core::SendStatus::kPending;
         }
         else if (result == -EAGAIN || result == -EWOULDBLOCK)
         {
-            job.result.status = ::Foundation::SendStatus::kPending;
+            job.result.status = ::Foundation::Core::SendStatus::kPending;
         }
         else
         {
-            job.result.status = ::Foundation::SendStatus::kError;
+            job.result.status = ::Foundation::Core::SendStatus::kError;
             job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
         }
         break;
@@ -263,16 +263,16 @@ void URingMultiplexer::complete(Channel *channel, int result)
         {
             // result is the accepted socket fd; the peer address was filled in
             // place by the kernel when the operation was submitted.
-            job.result.status = ::Foundation::AcceptStatus::kDone;
-            job.result.socket = Socket::Adopt(result);
+            job.result.status = ::Foundation::Core::AcceptStatus::kDone;
+            job.result.socket = Foundation::Core::Socket::Adopt(result);
         }
         else if (result == -EAGAIN || result == -EWOULDBLOCK)
         {
-            job.result.status = ::Foundation::AcceptStatus::kPending;
+            job.result.status = ::Foundation::Core::AcceptStatus::kPending;
         }
         else
         {
-            job.result.status = ::Foundation::AcceptStatus::kError;
+            job.result.status = ::Foundation::Core::AcceptStatus::kError;
             job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
         }
         break;

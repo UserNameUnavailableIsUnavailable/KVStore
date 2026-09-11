@@ -3,14 +3,14 @@
 #include "Receiver.hpp"
 
 #include <Foundation/Async/Session.hpp>
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 
 #include <Application/RESP/RESP.hpp>
 
 namespace RESP
 {
-Receiver::Receiver(Foundation::Async::Session &session, ::Foundation::Buffer &buffer) : session_(session), buffer_(buffer)
+Receiver::Receiver(Foundation::Async::Session &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
 {
     if (!buffer.is_empty())
     {
@@ -29,7 +29,7 @@ Foundation::Async::Task<std::optional<Object>> Receiver::receive()
     do
     {
         auto result = co_await session_.receive(buffer_);
-        if (result.status != Foundation::ReceiveStatus::kDone)
+        if (result.status != Foundation::Core::ReceiveStatus::kDone)
         {
             internal_error_ = result.error_code.message();
             co_return {};

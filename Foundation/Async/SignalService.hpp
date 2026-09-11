@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Foundation/Signal.hpp>
+#include <Foundation/Core/Signal.hpp>
 
 #include "SignalChannel.hpp"
 
@@ -24,7 +24,7 @@ class SignalService
     }
 
   private:
-    Signal signal_;
+    Foundation::Core::Signal signal_;
     SignalChannel channel_;
 };
 } // namespace Foundation::Async

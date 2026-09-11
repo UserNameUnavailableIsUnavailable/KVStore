@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <coroutine>
 
 #include "Channel.hpp"
@@ -13,18 +13,18 @@ namespace Foundation::Async
 {
 struct SendJob
 {
-    Buffer *buffer{nullptr};
-    SendResult result{};
+    Foundation::Core::Buffer *buffer{nullptr};
+    Foundation::Core::SendResult result{};
 };
 // Simplex channel dedicated to sending: one job, one waiter, interested only
 // in the "writable" event.
 class SendChannel final : public Channel
 {
   public:
-    explicit SendChannel(Foundation::Socket &socket, Scheduler &scheduler, Multiplexer &multiplexer);
+    explicit SendChannel(Foundation::Core::Socket &socket, Scheduler &scheduler, Multiplexer &multiplexer);
     ~SendChannel() noexcept override;
 
-    Task<SendResult> send(::Foundation::Buffer &buffer);
+    Task<Foundation::Core::SendResult> send(Foundation::Core::Buffer &buffer);
 
     void on_event() override;
 
@@ -45,17 +45,17 @@ class SendChannel final : public Channel
     {
         return job_;
     }
-    Foundation::Socket &socket() noexcept
+    Foundation::Core::Socket &socket() noexcept
     {
         return socket_;
     }
-    const Foundation::Socket &socket() const noexcept
+    const Foundation::Core::Socket &socket() const noexcept
     {
         return socket_;
     }
 
   private:
-    Foundation::Socket &socket_;
+    Foundation::Core::Socket &socket_;
     SendJob job_;
     std::coroutine_handle<> waiter_;
 };

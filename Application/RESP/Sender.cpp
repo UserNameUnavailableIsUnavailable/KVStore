@@ -1,15 +1,15 @@
 #include "Sender.hpp"
 
 #include <Foundation/Async/Task.hpp>
-#include <Foundation/Buffer.hpp>
-#include <Foundation/Socket.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/Core/Socket.hpp>
 #include <stdexcept>
 
 #include "RESP.hpp"
 
 namespace RESP
 {
-Sender::Sender(Foundation::Async::Session &session, Foundation::Buffer &buffer, const Object &object)
+Sender::Sender(Foundation::Async::Session &session, Foundation::Core::Buffer &buffer, const Object &object)
     : session_(session), buffer_(buffer), object_(object)
 {
     if (!buffer.is_empty())
@@ -29,7 +29,7 @@ Foundation::Async::Task<bool> Sender::send()
     while (decoder.poll() == RESP::EncodeStatus::kNeedFlush)
     {
         auto result = co_await session_.send(buffer_);
-        if (result.status != Foundation::SendStatus::kDone)
+        if (result.status != Foundation::Core::SendStatus::kDone)
         {
             internal_error_ = result.error_code.message();
             co_return false;
@@ -39,7 +39,7 @@ Foundation::Async::Task<bool> Sender::send()
     if (!buffer_.is_empty())
     {
         auto result = co_await session_.send(buffer_);
-        if (result.status != Foundation::SendStatus::kDone)
+        if (result.status != Foundation::Core::SendStatus::kDone)
         {
             internal_error_ = result.error_code.message();
             co_return false;
