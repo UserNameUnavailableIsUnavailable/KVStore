@@ -116,7 +116,7 @@ class Socket
     // assumed already open; no further configuration is applied.
     [[nodiscard]] static Socket Adopt(Handle handle) noexcept;
 
-    Handle get_native_handle() const noexcept
+    Handle native_handle() const noexcept
     {
         return handle_;
     }

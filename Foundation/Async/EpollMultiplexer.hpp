@@ -28,7 +28,7 @@ class EpollMultiplexer final : public Multiplexer
     virtual void add_channel(Channel *channel) override;
     virtual void update_channel(Channel *channel) override;
     virtual void delete_channel(Channel *channel) noexcept override;
-    Handle get_native_handle() const noexcept
+    Handle native_handle() const noexcept
     {
         return handle_;
     }
@@ -53,5 +53,6 @@ class EpollMultiplexer final : public Multiplexer
     std::unordered_multimap<int, Channel *>
         registered_channels_;                // fd -> channel, a fd may be associated with multiple channels
     std::vector<Channel *> active_channels_; // channels that are ready for I/O
+    std::vector<Channel *> always_ready_channels_;
 };
 } // namespace Foundation::Async

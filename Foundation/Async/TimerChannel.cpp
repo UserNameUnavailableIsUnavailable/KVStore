@@ -3,7 +3,7 @@
 namespace Foundation::Async
 {
 TimerChannel::TimerChannel(Timer &timer, Multiplexer &multiplexer, Scheduler &scheduler)
-    : Channel(ChannelType::kTimer, timer.get_native_handle(), multiplexer, scheduler), timer_(timer), queue_()
+    : Channel(ChannelType::kTimer, timer.native_handle(), multiplexer, scheduler), timer_(timer), queue_()
 {
     timer_.set_non_blocking(true);
     multiplexer_.add_channel(this);

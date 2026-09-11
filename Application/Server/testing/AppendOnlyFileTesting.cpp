@@ -9,6 +9,7 @@
 
 #include <Application/Server/AppendOnlyFile.hpp>
 #include <Application/Server/Store.hpp>
+#include <Foundation/Async/Async.hpp>
 
 namespace
 {
@@ -56,36 +57,55 @@ TEST(AppendOnlyFileTesting, SaveToggleAndReplay)
     const auto temp_path = std::filesystem::temp_directory_path() /
                            ("kvstore-aof-" + std::to_string(std::random_device{}()) + ".aof");
 
-    KV::AppendOnlyFile aof(temp_path);
-    ASSERT_TRUE(aof.enable());
-
     std::mt19937_64 rng{0x616f662d7265706cULL};
     StoreType source;
     std::map<std::string, std::string> expected;
 
-    for (std::size_t index = 0; index < 16; ++index)
-    {
-        const std::string key = "key_" + std::to_string(index) + "_" + random_text(rng, 4, 10);
-        const std::string value = random_text(rng, 8, 24);
-        source.set(key, value);
-        expected.insert_or_assign(key, value);
-        ASSERT_TRUE(aof.append(make_set(key, value)));
-    }
+    bool ok = false;
+    Foundation::Async::run([&]() -> Foundation::Async::Task<void> {
+        KV::AppendOnlyFile aof(temp_path);
+        ok = aof.enable();
+        if (!ok)
+        {
+            co_return;
+        }
 
-    const std::string removed_key = expected.begin()->first;
-    source.set(removed_key, std::nullopt);
-    expected.erase(removed_key);
-    ASSERT_TRUE(aof.append(make_del(removed_key)));
+        for (std::size_t index = 0; index < 16; ++index)
+        {
+            const std::string key = "key_" + std::to_string(index) + "_" + random_text(rng, 4, 10);
+            const std::string value = random_text(rng, 8, 24);
+            source.set(key, value);
+            expected.insert_or_assign(key, value);
+            co_await aof.append(make_set(key, value));
+        }
 
-    aof.disable();
-    ASSERT_TRUE(aof.append(make_set("disabled-key", "disabled-value")));
+        const std::string removed_key = expected.begin()->first;
+        source.set(removed_key, std::nullopt);
+        expected.erase(removed_key);
+        co_await aof.append(make_del(removed_key));
 
+        aof.disable();
+        co_await aof.append(make_set("disabled-key", "disabled-value"));
+
+        ok = aof.enable();
+        if (!ok)
+        {
+            co_return;
+        }
+
+        const std::string extra_key = "extra_" + random_text(rng, 4, 10);
+        const std::string extra_value = random_text(rng, 8, 24);
+        source.set(extra_key, extra_value);
+        expected.insert_or_assign(extra_key, extra_value);
+        co_await aof.append(make_set(extra_key, extra_value));
+        aof.disable();
+        co_return;
+    }());
+
+    ASSERT_TRUE(ok);
+
+    KV::AppendOnlyFile aof(temp_path);
     ASSERT_TRUE(aof.enable());
-    const std::string extra_key = "extra_" + random_text(rng, 4, 10);
-    const std::string extra_value = random_text(rng, 8, 24);
-    source.set(extra_key, extra_value);
-    expected.insert_or_assign(extra_key, extra_value);
-    ASSERT_TRUE(aof.append(make_set(extra_key, extra_value)));
 
     StoreType restored;
     ASSERT_TRUE(aof.replay([&](const KV::Command &command) {

@@ -25,7 +25,7 @@ class Signal
     using Handle = int;
     Signal();
     ~Signal() noexcept;
-    Handle get_native_handle() const noexcept
+    Handle native_handle() const noexcept
     {
         return handle_;
     }

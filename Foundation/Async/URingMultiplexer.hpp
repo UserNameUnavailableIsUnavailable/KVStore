@@ -35,7 +35,7 @@ class URingMultiplexer final : public Multiplexer
     {
         return MultiplexerType::kURing;
     }
-    Handle get_native_handle() noexcept
+    Handle native_handle() noexcept
     {
         return &ring_;
     }

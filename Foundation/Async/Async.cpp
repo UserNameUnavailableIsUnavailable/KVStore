@@ -29,21 +29,26 @@ Condition::Condition() :
 
 Condition::~Condition() = default;
 
-namespace File
+namespace IO
 {
-
-} // namespace File
+std::shared_ptr<FileStream> open_file(const std::filesystem::path &p)
+{
+    auto &engine = detail::Engine::instance();
+    return FileStream::Open(p.string(), Foundation::FileMode::kReadWrite | Foundation::FileMode::kCreate, 0644,
+                            engine.multiplexer(), engine.scheduler());
+}
+} // namespace IO
 
 // Non-blocking IO
 namespace Net
 {
-std::unique_ptr<ListenService> listen(const Foundation::Address &address, int backlog)
+std::unique_ptr<ListenService> listen_on(const Foundation::Address &address, int backlog)
 {
     auto &engine = detail::Engine::instance();
     return std::make_unique<ListenService>(address, engine.multiplexer(), engine.scheduler(), backlog);
 }
 
-std::shared_ptr<Session> establish(Socket socket)
+std::shared_ptr<Session> establish_with(Socket socket)
 {
     auto &engine = detail::Engine::instance();
     auto &scheduler = engine.scheduler();

@@ -28,5 +28,5 @@ Task<SendResult> Session::send(::Foundation::Buffer &buffer)
     return send_channel_.send(buffer);
 }
 
-std::atomic_uint64_t Session::next_id_{0};
+std::atomic_uint Session::next_id_{0};
 } // namespace Foundation::Async

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Foundation/Async/Condition.hpp>
+#include <Foundation/Async/FileStream.hpp>
 #include <Foundation/Async/Multiplexer.hpp>
 #include <cstddef>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -63,10 +65,15 @@ Task<void> sleep_for(std::chrono::steady_clock::duration duration);
 // The common shutdown idiom is: co_await WhenAny(AcceptLoop(), waitForSignal()).
 Task<void> wait_for_signal();
 
+namespace IO
+{
+std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
+} // namespace IO
+
 namespace Net
 {
-std::unique_ptr<ListenService> listen(const Address &address, int backlog = 4096);
-std::shared_ptr<Session> establish(Foundation::Socket socket);
+std::unique_ptr<ListenService> listen_on(const Address &address, int backlog = 4096);
+std::shared_ptr<Session> establish_with(Foundation::Socket socket);
 } // namespace Net
 
 // ============================================================================

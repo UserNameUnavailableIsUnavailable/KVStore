@@ -6,17 +6,22 @@
 #include <sys/unistd.h>
 
 #include <cerrno>
+#include <algorithm>
 #include <chrono>
 #include <climits>
 #include <stdexcept>
+#include <system_error>
+#include <utility>
 
 #include "Channel.hpp"
+#include "FileStream.hpp"
+#include "ReadChannel.hpp"
 #include "ListenChannel.hpp"
 #include "Multiplexer.hpp"
 #include "ReceiveChannel.hpp"
 #include "SendChannel.hpp"
+#include "WriteChannel.hpp"
 #include "TimerChannel.hpp"
-#include "spdlog/spdlog.h"
 
 namespace Foundation::Async
 {
@@ -25,6 +30,8 @@ static void do_send_data(Channel *base);
 static void do_accept_connection(Channel *base);
 static void do_wait_timer(Channel *base);
 static void do_wait_notifier(Channel* base);
+static void do_file_read(Channel *base);
+static void do_file_write(Channel *base);
 
 EpollMultiplexer::EpollMultiplexer()
 {
@@ -40,12 +47,14 @@ std::uint32_t EpollMultiplexer::native_flags_for(ChannelType type)
     switch (type)
     {
     case ChannelType::kReceive:
+    case ChannelType::kRead:
     case ChannelType::kListen:
     case ChannelType::kTimer:
     case ChannelType::kNotify:
     case ChannelType::kSignal:
         return EPOLLIN;
     case ChannelType::kSend:
+    case ChannelType::kWrite:
         return EPOLLOUT;
     default:
         throw std::logic_error("EpollMultiplexer::native_flags_for: unsupported channel type");
@@ -86,6 +95,30 @@ void EpollMultiplexer::sync_registration(int fd, bool already_added)
 // run once
 void EpollMultiplexer::run_impl(int timeout_ms)
 {
+    if (!always_ready_channels_.empty())
+    {
+        auto channels = std::move(always_ready_channels_);
+        always_ready_channels_.clear();
+        for (auto *channel : channels)
+        {
+            if (channel == nullptr)
+            {
+                continue;
+            }
+            channel->disarm();
+            if (channel->type() == ChannelType::kRead)
+            {
+                do_file_read(channel);
+            }
+            else if (channel->type() == ChannelType::kWrite)
+            {
+                do_file_write(channel);
+            }
+            channel->on_event();
+        }
+        return;
+    }
+
     epoll_event events[1024];
     bool retry = false;
     do
@@ -163,7 +196,16 @@ void EpollMultiplexer::add_channel(Channel *channel)
     // If the channel is incomplete (e.g., has not finished construction yet),
     // calling virtual functions results in runtime error!
 
-    auto fd = channel->get_native_handle();
+    auto fd = channel->native_handle();
+    if (channel->type() == ChannelType::kRead || channel->type() == ChannelType::kWrite)
+    {
+        return;
+    }
+    switch (channel->type())
+    {
+    default:
+        break;
+    }
     // Teach the channel how to do its I/O under epoll, based on its type. A
     // type this multiplexer does not support is rejected.
     switch (channel->type())
@@ -198,7 +240,23 @@ void EpollMultiplexer::add_channel(Channel *channel)
 
 void EpollMultiplexer::update_channel(Channel *channel)
 {
-    auto fd = channel->get_native_handle();
+    if (channel->type() == ChannelType::kRead || channel->type() == ChannelType::kWrite)
+    {
+        if (channel->armed())
+        {
+            if (std::find(always_ready_channels_.begin(), always_ready_channels_.end(), channel) ==
+                always_ready_channels_.end())
+            {
+                always_ready_channels_.push_back(channel);
+            }
+        }
+        else
+        {
+            std::erase(always_ready_channels_, channel);
+        }
+        return;
+    }
+    auto fd = channel->native_handle();
     if (registered_channels_.find(fd) == registered_channels_.end())
     {
         throw std::logic_error("channel not added");
@@ -208,7 +266,12 @@ void EpollMultiplexer::update_channel(Channel *channel)
 
 void EpollMultiplexer::delete_channel(Channel *channel) noexcept
 {
-    auto fd = channel->get_native_handle();
+    if (channel->type() == ChannelType::kRead || channel->type() == ChannelType::kWrite)
+    {
+        std::erase(always_ready_channels_, channel);
+        return;
+    }
+    auto fd = channel->native_handle();
     auto range = registered_channels_.equal_range(fd);
     for (auto it = range.first; it != range.second; ++it)
     {
@@ -272,6 +335,78 @@ void do_wait_notifier(Channel* base)
 {
     auto *channel = static_cast<NotifyChannel *>(base);
     channel->notifier().wait();
+}
+
+static void do_file_read(Channel *base)
+{
+    auto *channel = static_cast<ReadChannel *>(base);
+    auto &job = channel->job();
+    while (true)
+    {
+        const auto chunk = job.buffer->appendable_span();
+        const auto result = ::pread(channel->native_handle(), chunk.data(), chunk.size(),
+                                    static_cast<off_t>(job.offset));
+        if (result < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            job.result = {.status = ReadStatus::kError, .bytes_transferred = 0, .error_code = std::error_code(errno, std::system_category())};
+            return;
+        }
+        if (result == 0)
+        {
+            job.result = {.status = ReadStatus::kEndOfFile, .bytes_transferred = 0, .error_code = {}};
+            return;
+        }
+
+        job.buffer->commit(static_cast<std::size_t>(result));
+        job.offset += static_cast<std::uint64_t>(result);
+        channel->file().advance_read_offset(static_cast<std::size_t>(result));
+        job.result = {.status = ReadStatus::kDone,
+                      .bytes_transferred = static_cast<std::size_t>(result),
+                      .error_code = {}};
+        return;
+    }
+}
+
+static void do_file_write(Channel *base)
+{
+    auto *channel = static_cast<WriteChannel *>(base);
+    auto &job = channel->job();
+    auto total = std::size_t{0};
+    while (job.buffer->valid_size() > 0)
+    {
+        const auto chunk = job.buffer->valid_span();
+        const auto result = ::pwrite(channel->native_handle(), chunk.data(), chunk.size(),
+                                     static_cast<off_t>(job.offset));
+        if (result < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            job.result = {.status = WriteStatus::kError,
+                          .bytes_transferred = total,
+                          .error_code = std::error_code(errno, std::system_category())};
+            return;
+        }
+        if (result == 0)
+        {
+            job.result = {.status = WriteStatus::kError,
+                          .bytes_transferred = total,
+                          .error_code = std::make_error_code(std::errc::io_error)};
+            return;
+        }
+
+        job.buffer->consume(static_cast<std::size_t>(result));
+        job.offset += static_cast<std::uint64_t>(result);
+        channel->file().advance_write_offset(static_cast<std::size_t>(result));
+        total += static_cast<std::size_t>(result);
+    }
+
+    job.result = {.status = WriteStatus::kDone, .bytes_transferred = total, .error_code = {}};
 }
 
 } // namespace Foundation::Async

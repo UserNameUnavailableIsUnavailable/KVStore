@@ -9,7 +9,7 @@
 namespace Foundation::Async
 {
 NotifyChannel::NotifyChannel(Notifier& notifier, Multiplexer& multiplexer, Scheduler& scheduler) :
-    Channel(ChannelType::kNotify, notifier.get_native_handle(), multiplexer, scheduler),
+    Channel(ChannelType::kNotify, notifier.native_handle(), multiplexer, scheduler),
     notifier_(notifier)
 {
     notifier.set_non_blocking(true);

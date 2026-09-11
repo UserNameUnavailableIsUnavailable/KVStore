@@ -19,6 +19,8 @@ enum class ChannelType
 {
     kReceive,
     kSend,
+    kRead,
+    kWrite,
     kListen,
     kTimer,
     kSignal,

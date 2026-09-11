@@ -210,7 +210,7 @@ Foundation::Async::Task<void> run_client(Foundation::Address address, std::strin
 {
     Foundation::Socket socket(address.family(), Foundation::Socket::Type::kStream);
     socket.connect(address);
-    auto session = Foundation::Async::Net::establish(std::move(socket));
+    auto session = Foundation::Async::Net::establish_with(std::move(socket));
 
     std::cout << "connected to " << host << ':' << port << '\n';
 

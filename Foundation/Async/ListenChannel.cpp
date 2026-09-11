@@ -11,7 +11,7 @@
 namespace Foundation::Async
 {
 ListenChannel::ListenChannel(Foundation::Socket &socket, Multiplexer &multiplexer, Scheduler &scheduler)
-    : Channel(ChannelType::kListen, socket.get_native_handle(), multiplexer, scheduler), socket_(socket)
+    : Channel(ChannelType::kListen, socket.native_handle(), multiplexer, scheduler), socket_(socket)
 {
     if (!socket_.is_valid())
     {
