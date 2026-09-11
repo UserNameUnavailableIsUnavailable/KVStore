@@ -25,7 +25,7 @@
 
 namespace KV
 {
-namespace backup_helper
+namespace detail
 {
 constexpr std::uint8_t kAux = 0xFA;
 constexpr std::uint8_t kResizeDb = 0xFB;

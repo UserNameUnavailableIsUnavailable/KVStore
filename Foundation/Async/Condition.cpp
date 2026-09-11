@@ -104,4 +104,4 @@ void Condition::notify_all()
 
     channel_.submit(notifiees.begin(), notifiees.end());
 }
-} // namespace Foundation::Async
+} // namespace Foundation::Async::detail
