@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Foundation/Async/Session.hpp>
+#include <Foundation/NBIO/Session.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
 
@@ -11,10 +12,10 @@ namespace RESP
 class Sender
 {
   public:
-    Sender(Foundation::Async::Session &session, ::Foundation::Core::Buffer &buffer, const Object &object);
+    Sender(Foundation::NBIO::Session &session, ::Foundation::Core::Buffer &buffer, const Object &object);
     ~Sender() noexcept;
 
-    Foundation::Async::Task<bool> send();
+    Foundation::NBIO::Task<bool> send();
     std::size_t bytes_sent() const noexcept
     {
         return bytes_sent_;
@@ -31,7 +32,7 @@ class Sender
     }
 
   private:
-    Foundation::Async::Session &session_;
+    Foundation::NBIO::Session &session_;
     Foundation::Core::Buffer &buffer_;
     const Object &object_;
     std::size_t bytes_sent_{0};

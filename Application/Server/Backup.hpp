@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Store.hpp"
+#include <Foundation/NBIO/ConditionVariable.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Async/Task.hpp>
 
@@ -46,17 +48,20 @@ class Backup
 		{
 		}
         template <template <typename, typename> typename Map>
-        Foundation::Async::Task<bool> save(Store<std::string, std::string, Map> &store) const
+        Foundation::NBIO::Task<bool> save(Store<std::string, std::string, Map> &store) const
         {
-            Foundation::Async::Condition condition;
+            Foundation::NBIO::ConditionVariable condition;
             std::atomic_bool ok{false};
             std::atomic_bool done{false};
-            std::thread worker([this, &store, &condition, &ok, &done] {
+            std::atomic_bool start{false};
+            std::thread worker([&] {
+                while (!start.load(std::memory_order_acquire));
                 ok.store(save_impl(store), std::memory_order_release);
                 done.store(true, std::memory_order_release);
                 condition.notify_one();
             });
             co_await condition.wait([&] {
+                start.store(true, std::memory_order_release);
                 return done.load(std::memory_order_acquire);
             });
             worker.join();

@@ -1,87 +1,90 @@
 #include "Scheduler.hpp"
 
-#include <atomic>
 #include <cassert>
+#include <utility>
 
 namespace Foundation::Async
 {
 void Scheduler::run()
 {
     bool expected = false;
-    // if assertion fails, then run() must be called from different threads at the same time
+    // Re-entrancy guard: run() drives the loop and must never be nested.
     assert(running_.compare_exchange_strong(expected, true));
 
-    // Block only when there is nothing to run; otherwise just harvest events.
-    // A pending cancellation also counts as work, so we do not park in epoll
-    // while a coroutine is waiting to be reclaimed.
-    idle_(ready_.empty() && cancelled_.empty());
+    reap_cancelled();
+
+    // Park only when there is genuinely nothing to run and nothing to reclaim. A
+    // pending cancellation counts as work: a frame is waiting to be destroyed
+    // and the loop must not sleep through it.
+    idle_(ready_.empty() && finished_.empty());
 
     // Swap so coroutines that become ready during this batch run in the next
-    // iteration: that keeps each iteration bounded and round-robin fair.
-    std::swap(ready_, batch_); // FIXME: not thread-safe
-    for (auto handle : batch_)
+    // iteration, and so resume() can submit without invalidating the loop.
+    std::vector<Coroutine> batch;
+    batch.swap(ready_);
+    for (const Coroutine &coroutine : batch)
     {
-        // Only check validity BEFORE resuming: after resume() the handle may
-        // already have been destroyed (an awaited Task is a temporary owned
-        // by its caller's frame).
-        if (handle && !handle.done() && !cancelled_.contains(handle))
+        if (!coroutine)
         {
-            handle.resume();
+            continue;
         }
-    }
-    auto end = std::remove_if(all_.begin(), all_.end(), [this](const Coroutine &coroutine) {
-        return cancelled_.contains(coroutine.get_handle());
-    });
-    if (end != all_.end())
-    {
-        dead_.splice(dead_.end(), all_, end, all_.end());
-    }
-
-    cancelled_.clear(); // FIXME: not thread-safe
-
-    batch_.clear();
-
-    // Wake any coroutine joining a task that is about to be reclaimed. Both
-    // terminal paths funnel through dead_ (normal completion via Complete(),
-    // cancellation via the sweep above), so this single point covers both.
-    // The join awaiter reads the control block -- which outlives the frame --
-    // so it is safe even though dead_.clear() destroys the frame next.
-    for (const Coroutine &coroutine : dead_)
-    {
-        const auto &control_block = coroutine.control_block();
-        if (control_block && control_block->join_waiter)
+        // is_dead() first: done() reads the frame, which may already be gone.
+        if (coroutine.control_block->is_dead())
         {
-            submit(control_block->join_waiter);
+            continue;
+        }
+        if (coroutine.handle.done())
+        {
+            continue;
+        }
+        coroutine.handle.resume();
+    }
+
+    for (const auto &control_block : finished_)
+    {
+        if (control_block->join)
+        {
+            submit(std::move(control_block->join));
         }
     }
 
-    // The single destruction point. Safe here: no coroutine is running and
-    // no channel member function is on the stack.
-    dead_.clear();
+    for (auto &control_block : finished_)
+    {
+        control_block->reclaim();
+        roots_.fetch_sub(1, std::memory_order_acq_rel);
+    }
+    finished_.clear();
+
     running_.store(false, std::memory_order_release);
+}
+
+void Scheduler::reap_cancelled()
+{
+    {
+        std::lock_guard lock(cancel_mutex_);
+        std::swap(cancel_batch_, cancelled_);
+    }
+
+    for (auto &ccb : cancel_batch_)
+    {
+        if (ccb->schedule_reclaim())
+        {
+            finished_.push_back(std::move(ccb));
+        }
+    }
 }
 
 void CoroutineToken::cancel()
 {
-    if (!control_block_)
+    if (!coroutine_control_block_ || coroutine_control_block_->is_finished())
     {
         return;
     }
-    // Already reclaimed: `root` is dangling, so must not touch the scheduler.
-    if (control_block_->finished.load(std::memory_order_acquire))
-    {
-        return;
-    }
-    // Idempotent: only the first cancel() forwards to the scheduler.
-    if (control_block_->cancelled.exchange(true))
-    {
-        return;
-    }
-    control_block_->scheduler->cancel(control_block_->root);
+    coroutine_control_block_->scheduler->cancel(coroutine_control_block_);
 }
 
 bool CoroutineToken::is_finished() const noexcept
 {
-    return !control_block_ || control_block_->finished.load(std::memory_order_acquire);
+    return !coroutine_control_block_ || coroutine_control_block_->is_finished();
 }
 } // namespace Foundation::Async

@@ -1,8 +1,9 @@
 #include <stdexcept>
+#include <Foundation/NBIO/Runtime.hpp>
 
 #include "Receiver.hpp"
 
-#include <Foundation/Async/Session.hpp>
+#include <Foundation/NBIO/Session.hpp>
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
 
@@ -10,7 +11,7 @@
 
 namespace RESP
 {
-Receiver::Receiver(Foundation::Async::Session &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
+Receiver::Receiver(Foundation::NBIO::Session &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
 {
     if (!buffer.is_empty())
     {
@@ -23,7 +24,7 @@ Receiver::~Receiver() noexcept
     buffer_.clear();
 }
 
-Foundation::Async::Task<std::optional<Object>> Receiver::receive()
+Foundation::NBIO::Task<std::optional<Object>> Receiver::receive()
 {
     auto decoder = Decode(buffer_);
     do

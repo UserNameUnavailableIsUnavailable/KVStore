@@ -1,28 +1,31 @@
 #include <iostream>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <memory>
 #include <Foundation/Core/Address.hpp>
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Async/Task.hpp>
-#include <Foundation/Async/Engine.hpp>
+#include <Foundation/NBIO/Engine.hpp>
+#include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
 
 using namespace Foundation;
 
-Async::Task<void> Service()
+NBIO::Task<void> Service()
 {
     auto address = Core::Address::from_ipv4("127.0.0.1", 8080);
-    auto listen_service = Async::Net::listen_on(address);
+    auto listen_service = NBIO::listen_on(address);
     while (true)
     {
         auto result = co_await listen_service->accept();
-        auto session = Async::Net::establish_with(std::move(result.socket));
+        auto session = NBIO::establish_with(std::move(result.socket));
         // A coroutine lambda is fine, but: (1) Spawn takes a Task, so the
         // lambda must be INVOKED here; (2) captures live in the closure, not
         // the coroutine frame -- the temporary closure dies before the lazy
         // task ever runs, so anything it needs must arrive as a by-value
         // parameter (parameters are moved into the frame at call time).
-        Async::spawn(
-            [](std::shared_ptr<Async::Session> session) -> Async::Task<void> {
+        NBIO::spawn(
+            [](std::shared_ptr<NBIO::Session> session) -> NBIO::Task<void> {
                 auto buffer = std::make_unique<::Foundation::Core::Buffer>(1024);
                 while (true)
                 {

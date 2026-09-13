@@ -1,9 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <optional>
 
-#include <Foundation/Async/Session.hpp>
+#include <Foundation/NBIO/Session.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <Application/RESP/RESP.hpp>
@@ -13,10 +14,10 @@ namespace RESP
 class Receiver
 {
   public:
-    Receiver(Foundation::Async::Session &session, ::Foundation::Core::Buffer &buffer);
+    Receiver(Foundation::NBIO::Session &session, ::Foundation::Core::Buffer &buffer);
     ~Receiver() noexcept;
 
-    Foundation::Async::Task<std::optional<Object>> receive();
+    Foundation::NBIO::Task<std::optional<Object>> receive();
     std::size_t bytes_received() const noexcept
     {
         return bytes_received_;
@@ -31,7 +32,7 @@ class Receiver
     }
 
   private:
-    Foundation::Async::Session &session_;
+    Foundation::NBIO::Session &session_;
     Foundation::Core::Buffer &buffer_;
     std::size_t bytes_received_{0};
     std::string decode_error_;

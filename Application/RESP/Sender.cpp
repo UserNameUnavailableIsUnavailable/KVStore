@@ -1,4 +1,5 @@
 #include "Sender.hpp"
+#include <Foundation/NBIO/Runtime.hpp>
 
 #include <Foundation/Async/Task.hpp>
 #include <Foundation/Core/Buffer.hpp>
@@ -9,7 +10,7 @@
 
 namespace RESP
 {
-Sender::Sender(Foundation::Async::Session &session, Foundation::Core::Buffer &buffer, const Object &object)
+Sender::Sender(Foundation::NBIO::Session &session, Foundation::Core::Buffer &buffer, const Object &object)
     : session_(session), buffer_(buffer), object_(object)
 {
     if (!buffer.is_empty())
@@ -23,7 +24,7 @@ Sender::~Sender() noexcept
     buffer_.clear();
 }
 
-Foundation::Async::Task<bool> Sender::send()
+Foundation::NBIO::Task<bool> Sender::send()
 {
     auto decoder = RESP::Encode(object_, buffer_);
     while (decoder.poll() == RESP::EncodeStatus::kNeedFlush)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <string>
 #include <vector>
 
@@ -8,8 +9,8 @@
 #include "Store.hpp"
 
 #include <Foundation/Core/Address.hpp>
-#include <Foundation/Async/ListenService.hpp>
-#include <Foundation/Async/Session.hpp>
+#include <Foundation/NBIO/ListenChannel.hpp>
+#include <Foundation/NBIO/Session.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <Application/RESP/RESP.hpp>
@@ -20,11 +21,11 @@ namespace KV
 class Session
 {
   public:
-    explicit Session(std::shared_ptr<Foundation::Async::Session> transport) : transport_(std::move(transport))
+    explicit Session(std::shared_ptr<Foundation::NBIO::Session> transport) : transport_(std::move(transport))
     {
     }
 
-    Foundation::Async::Session &transport() const noexcept
+    Foundation::NBIO::Session &transport() const noexcept
     {
         return *transport_;
     }
@@ -33,7 +34,7 @@ class Session
     std::vector<KV::Command> queued_commands;
 
   private:
-    std::shared_ptr<Foundation::Async::Session> transport_;
+    std::shared_ptr<Foundation::NBIO::Session> transport_;
 };
 
 class Server
@@ -48,20 +49,20 @@ class Server
 
     void run(const Foundation::Core::Address &address);
 
-    Foundation::Async::Task<void> serve(const Foundation::Core::Address &address);
-    Foundation::Async::Task<void> accept_clients(std::unique_ptr<Foundation::Async::ListenService> listener);
-    Foundation::Async::Task<void> serve_client(std::shared_ptr<Session> session);
+    Foundation::NBIO::Task<void> serve(const Foundation::Core::Address &address);
+    Foundation::NBIO::Task<void> accept_clients(std::unique_ptr<Foundation::NBIO::ListenChannel> listener);
+    Foundation::NBIO::Task<void> serve_client(std::shared_ptr<Session> session);
 
   private:
-    Foundation::Async::Task<RESP::Object> dispatch(Session &session, KV::Command command);
-    Foundation::Async::Task<RESP::Object> execute(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_ping(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_get(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_set(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_del(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_exists(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_appendonly(const KV::Command &command);
-    Foundation::Async::Task<RESP::Object> execute_save(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> dispatch(Session &session, KV::Command command);
+    Foundation::NBIO::Task<RESP::Object> execute(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_set(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_del(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_exists(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_appendonly(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command& command);
 
     bool replay_aof_command(const KV::Command &command);
     bool should_append_to_aof(const KV::Command &command) const noexcept;

@@ -1,4 +1,6 @@
 #include <Foundation/Core/Address.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
@@ -206,11 +208,11 @@ std::vector<std::string> Tokenize(const std::string &line)
 
 } // namespace
 
-Foundation::Async::Task<void> run_client(Foundation::Core::Address address, std::string host, std::uint16_t port)
+Foundation::NBIO::Task<void> run_client(Foundation::Core::Address address, std::string host, std::uint16_t port)
 {
     Foundation::Core::Socket socket(address.family(), Foundation::Core::Socket::Type::kStream);
     socket.connect(address);
-    auto session = Foundation::Async::Net::establish_with(std::move(socket));
+    auto session = Foundation::NBIO::establish_with(std::move(socket));
 
     std::cout << "connected to " << host << ':' << port << '\n';
 
@@ -270,6 +272,6 @@ int main(int argc, char *argv[])
     const std::uint16_t port = argc > 2 ? static_cast<std::uint16_t>(std::stoul(argv[2])) : 6379;
     const Foundation::Core::Address address =
         host.find(':') == std::string::npos ? Foundation::Core::Address::from_ipv4(host, port) : Foundation::Core::Address::from_ipv6(host, port);
-    Foundation::Async::run(run_client(address, host, port));
+    Foundation::NBIO::run(run_client(address, host, port));
     return 0;
 }
