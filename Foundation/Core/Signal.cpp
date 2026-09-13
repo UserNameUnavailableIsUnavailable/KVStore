@@ -77,7 +77,7 @@ void Signal::set_non_blocking(bool enabled)
     }
 }
 
-SignalResult Signal::observe() const
+SignalResult Signal::drain() const
 {
     uint64_t value;
     SignalResult result{.status = SignalStatus::kPending, .error_code = {}};

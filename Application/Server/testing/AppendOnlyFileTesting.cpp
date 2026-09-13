@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
 
 #include <filesystem>
 #include <map>
@@ -62,7 +64,7 @@ TEST(AppendOnlyFileTesting, SaveToggleAndReplay)
     std::map<std::string, std::string> expected;
 
     bool ok = false;
-    Foundation::Async::run([&]() -> Foundation::Async::Task<void> {
+    Foundation::NBIO::run([&]() -> Foundation::NBIO::Task<void> {
         KV::AppendOnlyFile aof(temp_path);
         ok = aof.enable();
         if (!ok)

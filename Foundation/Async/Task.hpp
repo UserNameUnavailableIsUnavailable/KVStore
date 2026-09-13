@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <concepts>
 #include <coroutine>
 #include <exception>
 #include <utility>
@@ -13,9 +14,9 @@ namespace Foundation::Async
 {
 class Scheduler;
 
-// IMPORTANT: this must only move the task into the scheduler's dead list. It
-// must NEVER destroy the frame: it is called from final_suspend, where the
-// FinalAwaiter object itself still lives inside that very frame.
+// IMPORTANT: this must only queue the frame for reclamation. It must NEVER
+// destroy the frame: it is called from final_suspend, where the FinalAwaiter
+// object itself still lives inside that very frame.
 struct Promise
 {
     struct FinalAwaiter
@@ -33,12 +34,14 @@ struct Promise
         {
             auto &promise = me.promise();
             auto continuation = promise.continuation;
-            // No continuation => this is a scheduler-owned root coroutine that
-            // just finished. Notify the owner (via the control block) so it
-            // reclaims the frame later.
-            if (!continuation && promise.control_block != nullptr)
+            // No continuation means this frame is the root of its tree. Children
+            // always have one, and since the block is propagated down the await
+            // chain they carry a non-null block too -- so identity, not the
+            // presence of a block, is what distinguishes a root here.
+            auto *control_block = promise.control_block;
+            if (!continuation && control_block != nullptr && control_block->root.address() == me.address())
             {
-                promise.control_block->scheduler->complete(promise.control_block->index);
+                control_block->scheduler->finish(control_block->shared_from_this());
             }
             return continuation ? continuation : std::noop_coroutine();
         }
@@ -61,17 +64,23 @@ struct Promise
     }
 
     std::coroutine_handle<> continuation;
-    // Non-owning: points at the control block owned by the scheduler-side
-    // Coroutine (and the CoroutineToken). Only set for root coroutines; null
-    // for awaited children. Used by FinalAwaiter to trigger reclamation.
+    // Non-owning. Names the control block of the tree this frame belongs to:
+    // set on a root by spawn(), and inherited from the caller by every awaited
+    // child. Non-null on every schedulable frame, which is what lets a parked
+    // descendant read its tree's cancellation state.
     CoroutineControlBlock *control_block = nullptr;
 };
 
-template <typename T> class Task : public Coroutine
+template <typename RuntimeTag, typename T> class Task
 {
   public:
     struct promise_type : Promise
     {
+        // Names the runtime that owns this frame. The awaiter compares it with
+        // the caller's, so a cross-runtime co_await is a compile error rather
+        // than the callee running on the wrong thread.
+        using Runtime = RuntimeTag;
+
         std::variant<std::monostate, T, std::exception_ptr> result_;
 
         Task get_return_object() noexcept
@@ -102,8 +111,36 @@ template <typename T> class Task : public Coroutine
 
     Task() noexcept = default;
 
-    explicit Task(std::coroutine_handle<promise_type> handle) noexcept : Coroutine(handle)
+    explicit Task(std::coroutine_handle<promise_type> handle) noexcept : handle_(handle)
     {
+    }
+
+    Task(const Task &) = delete;
+    Task &operator=(const Task &) = delete;
+
+    Task(Task &&other) noexcept : handle_(std::exchange(other.handle_, {}))
+    {
+    }
+
+    Task &operator=(Task &&other) noexcept
+    {
+        if (this != &other)
+        {
+            if (handle_)
+            {
+                handle_.destroy();
+            }
+            handle_ = std::exchange(other.handle_, {});
+        }
+        return *this;
+    }
+
+    ~Task() noexcept
+    {
+        if (handle_)
+        {
+            handle_.destroy();
+        }
     }
 
     // Recovers the typed handle from the erased one; no second handle is stored.
@@ -112,41 +149,66 @@ template <typename T> class Task : public Coroutine
         return std::coroutine_handle<promise_type>::from_address(handle_.address());
     }
 
+    // Relinquish the frame without destroying it: the ownership handover to a
+    // scheduler. Afterwards this Task is empty and its destructor is a no-op.
+    std::coroutine_handle<> release_handle() noexcept
+    {
+        return std::exchange(handle_, {});
+    }
+
     // A Task can be awaited exactly once (afterwards its result has been moved
     // out and the frame sits at final suspend). The && qualifier makes
     // `Task t = f(); co_await t;` fail to compile, forcing `co_await f()` or
     // `co_await std::move(t)`.
-    auto operator co_await() && noexcept
+    //
+    // Awaiter is a nested type rather than a local one: its await_suspend is a
+    // member template, and local classes cannot declare templates.
+    struct Awaiter
     {
-        struct Awaiter
+        std::coroutine_handle<promise_type> callee_;
+
+        bool await_ready() noexcept
         {
-            std::coroutine_handle<promise_type> callee_;
+            return !callee_ || callee_.done();
+        }
 
-            bool await_ready() noexcept
-            {
-                return !callee_ || callee_.done();
-            }
+        // Only a caller belonging to the same runtime may await this task.
+        template <typename CallerPromise>
+            requires std::same_as<typename CallerPromise::Runtime, RuntimeTag>
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<CallerPromise> caller) noexcept
+        {
+            auto &callee = callee_.promise();
+            callee.continuation = caller;
+            // Inherit the root's control block. The whole await tree shares one,
+            // which is what makes a cancel at the root visible to a descendant
+            // parked deep in the chain. spawn() means "independent root", so it
+            // never inherits.
+            callee.control_block = caller.promise().control_block;
+            return callee_; // symmetric transfer into the callee
+        }
 
-            std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept
-            {
-                callee_.promise().continuation = caller;
-                return callee_; // symmetric transfer into the callee
-            }
+        T await_resume()
+        {
+            return callee_.promise().take();
+        }
+    };
 
-            T await_resume()
-            {
-                return callee_.promise().take();
-            }
-        };
+    Awaiter operator co_await() && noexcept
+    {
         return Awaiter{get_typed_handle()};
     }
+
+  private:
+    std::coroutine_handle<> handle_{};
 };
 
-template <> class Task<void> : public Coroutine
+template <typename RuntimeTag> class Task<RuntimeTag, void>
 {
   public:
     struct promise_type : Promise
     {
+        using Runtime = RuntimeTag;
+
         std::exception_ptr error_;
 
         Task get_return_object() noexcept
@@ -174,8 +236,36 @@ template <> class Task<void> : public Coroutine
 
     Task() noexcept = default;
 
-    explicit Task(std::coroutine_handle<promise_type> handle) noexcept : Coroutine(handle)
+    explicit Task(std::coroutine_handle<promise_type> handle) noexcept : handle_(handle)
     {
+    }
+
+    Task(const Task &) = delete;
+    Task &operator=(const Task &) = delete;
+
+    Task(Task &&other) noexcept : handle_(std::exchange(other.handle_, {}))
+    {
+    }
+
+    Task &operator=(Task &&other) noexcept
+    {
+        if (this != &other)
+        {
+            if (handle_)
+            {
+                handle_.destroy();
+            }
+            handle_ = std::exchange(other.handle_, {});
+        }
+        return *this;
+    }
+
+    ~Task() noexcept
+    {
+        if (handle_)
+        {
+            handle_.destroy();
+        }
     }
 
     std::coroutine_handle<promise_type> get_typed_handle() const noexcept
@@ -183,29 +273,43 @@ template <> class Task<void> : public Coroutine
         return std::coroutine_handle<promise_type>::from_address(handle_.address());
     }
 
-    auto operator co_await() && noexcept
+    std::coroutine_handle<> release_handle() noexcept
     {
-        struct Awaiter
+        return std::exchange(handle_, {});
+    }
+
+    struct Awaiter
+    {
+        std::coroutine_handle<promise_type> callee_;
+
+        bool await_ready() noexcept
         {
-            std::coroutine_handle<promise_type> callee_;
+            return !callee_ || callee_.done();
+        }
 
-            bool await_ready() noexcept
-            {
-                return !callee_ || callee_.done();
-            }
+        template <typename CallerPromise>
+            requires std::same_as<typename CallerPromise::Runtime, RuntimeTag>
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<CallerPromise> caller) noexcept
+        {
+            // in side a symmetric transfer, the callee inherits the caller's control block and continuation.
+            auto &callee = callee_.promise();
+            callee.control_block = caller.promise().control_block; // inherit the tree's block
+            callee.continuation = caller;
+            return callee_;
+        }
 
-            std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept
-            {
-                callee_.promise().continuation = caller;
-                return callee_;
-            }
+        void await_resume()
+        {
+            callee_.promise().take();
+        }
+    };
 
-            void await_resume()
-            {
-                callee_.promise().take();
-            }
-        };
+    Awaiter operator co_await() && noexcept
+    {
         return Awaiter{get_typed_handle()};
     }
+
+  private:
+    std::coroutine_handle<> handle_{};
 };
 } // namespace Foundation::Async

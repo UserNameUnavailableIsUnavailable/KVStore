@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Foundation/Async/Condition.hpp>
-#include <Foundation/Async/FileStream.hpp>
-#include <Foundation/Async/Multiplexer.hpp>
+#include <Foundation/Async/Task.hpp>
 #include <cstddef>
 #include <exception>
-#include <filesystem>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -13,68 +10,52 @@
 #include <variant>
 #include <vector>
 
-#include "Engine.hpp"
-#include "ListenService.hpp"
-#include "Session.hpp"
-
 namespace Foundation::Async
 {
-// Specify an underlying multiplexer for the current thread to use for coroutine framework.
-// Note that this should be called before you run any Async function or create any Async object (e.g., Async::Condition), otherwise it raises a runtime error.
-static inline void use_multiplexer(std::unique_ptr<Multiplexer> multiplexer)
+namespace detail
 {
-    detail::Engine::use_multiplexer(std::move(multiplexer));
+// Wraps the root coroutine so a throw is captured and rethrown by run() after
+// the loop drains, instead of propagating out of the scheduler.
+template <typename RuntimeTag>
+Task<RuntimeTag, void> guard_exception(Task<RuntimeTag, void> main, std::exception_ptr &exception)
+{
+    try
+    {
+        co_await std::move(main);
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
+    }
 }
-void run(Task<void> main);
-template <typename T> CoroutineToken spawn(Task<T> task)
+} // namespace detail
+
+// Drives the scheduler until no root coroutine remains. The runtime must
+// already be installed on this thread; the tag supplies its scheduler, so this
+// knows nothing about any particular backend.
+template <typename RuntimeTag> void run(Task<RuntimeTag, void> main)
 {
-    return detail::Engine::spawn(std::move(task));
+    std::exception_ptr error;
+    auto &scheduler = RuntimeTag::scheduler();
+    scheduler.spawn(detail::guard_exception<RuntimeTag>(std::move(main), error));
+    while (scheduler.is_runnable())
+    {
+        scheduler.run();
+    }
+    if (error)
+    {
+        std::rethrow_exception(error);
+    }
 }
 
-class Condition
+// Fire-and-forget: takes ownership of a root coroutine on the tag's runtime.
+template <typename RuntimeTag, typename T> CoroutineToken spawn(Task<RuntimeTag, T> task)
 {
-public:
-    Condition();
-    ~Condition();
-    void notify_one()
-    {
-        condition_.notify_one();
-    }
-    void notify_all()
-    {
-        condition_.notify_all();
-    }
-    using Awaiter = detail::ConditionAwaiter;
-    Awaiter wait()
-    {
-        return condition_.wait();
-    }
-    template <typename Predicate>
-    Task<void> wait(Predicate predicate)
-    {
-        return condition_.wait(predicate);
-    }
-private:
-    detail::Condition condition_;
-};
+    return RuntimeTag::scheduler().spawn(std::move(task));
+}
 
-Task<void> sleep_until(std::chrono::steady_clock::time_point time_point);
-Task<void> sleep_for(std::chrono::steady_clock::duration duration);
-
-// Suspends until SIGINT/SIGTERM is delivered (via the engine's SignalChannel).
-// The common shutdown idiom is: co_await WhenAny(AcceptLoop(), waitForSignal()).
-Task<void> wait_for_signal();
-
-namespace IO
-{
-std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
-} // namespace IO
-
-namespace Net
-{
-std::unique_ptr<ListenService> listen_on(const Foundation::Core::Address &address, int backlog = 4096);
-std::shared_ptr<Session> establish_with(Foundation::Core::Socket socket);
-} // namespace Net
+// Backend-provided behaviour (sleep, signal waiting, Net, IO) lives in the
+// concrete backend namespace, e.g. Foundation::NBIO.
 
 // ============================================================================
 // Structured concurrency combinators.
@@ -95,7 +76,7 @@ std::shared_ptr<Session> establish_with(Foundation::Core::Socket socket);
 // Policy for how WhenAll reacts to a child throwing.
 enum class WhenAllPolicy
 {
-    kwaitAll,      // wait for every task, then rethrow the first error seen
+    kWaitAll,      // wait for every task, then rethrow the first error seen
     kAbortOnError, // on the first error, cancel the rest and rethrow immediately
 };
 
@@ -121,13 +102,13 @@ template <typename T> struct ResultSlot
 
 // cancels every held token on destruction. cancel() on a finished token is a
 // no-op, so this is safe on all exit paths (normal / throw / cancellation).
-struct cancelGuard
+struct CancelGuard
 {
     std::vector<CoroutineToken> tokens;
-    cancelGuard() = default;
-    cancelGuard(const cancelGuard &) = delete;
-    cancelGuard &operator=(const cancelGuard &) = delete;
-    ~cancelGuard()
+    CancelGuard() = default;
+    CancelGuard(const CancelGuard &) = delete;
+    CancelGuard &operator=(const CancelGuard &) = delete;
+    ~CancelGuard()
     {
         for (auto &token : tokens)
         {
@@ -140,7 +121,9 @@ struct cancelGuard
 struct AllState
 {
     Scheduler *scheduler{nullptr};
-    std::coroutine_handle<> continuation{};
+    // The awaiting frame plus its control block. The scheduler resumes by
+    // reference, and the block is what makes the resume check possible.
+    Coroutine continuation{};
     std::size_t remaining{0};
     std::exception_ptr first_error{};
     bool abort_on_error{false};
@@ -159,7 +142,7 @@ struct AllState
             woken = true;
             if (continuation)
             {
-                scheduler->submit(continuation);
+                scheduler->submit(std::move(continuation));
             }
         }
     }
@@ -172,16 +155,17 @@ struct AllAwaiter
     {
         return state->woken || state->remaining == 0;
     }
-    void await_suspend(std::coroutine_handle<> handle) noexcept
+    template <typename Promise> void await_suspend(std::coroutine_handle<Promise> handle) noexcept
     {
-        state->continuation = handle;
+        state->continuation = Coroutine::from_handle(handle);
     }
     void await_resume() const noexcept
     {
     }
 };
 
-template <typename T> Task<void> run_all(Task<T> task, ResultSlot<T> &slot, std::shared_ptr<AllState> state)
+template <typename RuntimeTag, typename T>
+Task<RuntimeTag, void> run_all(Task<RuntimeTag, T> task, ResultSlot<T> &slot, std::shared_ptr<AllState> state)
 {
     std::exception_ptr error;
     try
@@ -208,7 +192,7 @@ template <typename T> Task<void> run_all(Task<T> task, ResultSlot<T> &slot, std:
 struct AnyState
 {
     Scheduler *scheduler{nullptr};
-    std::coroutine_handle<> continuation{};
+    Coroutine continuation{};
     std::size_t winner{static_cast<std::size_t>(-1)};
     bool fired{false};
 
@@ -222,7 +206,7 @@ struct AnyState
         winner = index;
         if (continuation)
         {
-            scheduler->submit(continuation);
+            scheduler->submit(std::move(continuation));
         }
     }
 };
@@ -234,9 +218,9 @@ struct AnyAwaiter
     {
         return state->fired;
     }
-    void await_suspend(std::coroutine_handle<> handle) noexcept
+    template <typename Promise> void await_suspend(std::coroutine_handle<Promise> handle) noexcept
     {
-        state->continuation = handle;
+        state->continuation = Coroutine::from_handle(handle);
     }
     std::size_t await_resume() const noexcept
     {
@@ -244,8 +228,8 @@ struct AnyAwaiter
     }
 };
 
-template <typename T>
-Task<void> run_any(Task<T> task, ResultSlot<T> &slot, std::shared_ptr<AnyState> state, std::size_t index)
+template <typename RuntimeTag, typename T>
+Task<RuntimeTag, void> run_any(Task<RuntimeTag, T> task, ResultSlot<T> &slot, std::shared_ptr<AnyState> state, std::size_t index)
 {
     try
     {
@@ -278,21 +262,21 @@ std::variant<WhenValue<Ts>...> collect_any(std::size_t winner, Slots &slots, std
 } // namespace detail
 
 // Awaits all tasks concurrently. Returns their results as a tuple (void results
-// become std::monostate). Under kwaitAll (default) it waits for every task and
+// become std::monostate). Under kWaitAll (default) it waits for every task and
 // then rethrows the first error seen; under kAbortOnError it rethrows as soon
 // as any task throws, cancelling the rest.
-template <WhenAllPolicy Policy = WhenAllPolicy::kwaitAll, typename... Ts>
-Task<std::tuple<detail::WhenValue<Ts>...>> when_all(Task<Ts>... tasks)
+template <WhenAllPolicy Policy = WhenAllPolicy::kWaitAll, typename RuntimeTag, typename... Ts>
+Task<RuntimeTag, std::tuple<detail::WhenValue<Ts>...>> when_all(Task<RuntimeTag, Ts>... tasks)
 {
     auto task_tuple = std::make_tuple(std::move(tasks)...);
     std::tuple<detail::ResultSlot<Ts>...> slots;
 
     auto state = std::make_shared<detail::AllState>();
-    state->scheduler = &detail::Engine::instance().scheduler();
+    state->scheduler = &RuntimeTag::scheduler();
     state->remaining = sizeof...(Ts);
     state->abort_on_error = (Policy == WhenAllPolicy::kAbortOnError);
 
-    detail::cancelGuard guard; // cancels any survivors on scope exit
+    detail::CancelGuard guard; // cancels any survivors on scope exit
     guard.tokens.reserve(sizeof...(Ts));
 
     [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -302,7 +286,7 @@ Task<std::tuple<detail::WhenValue<Ts>...>> when_all(Task<Ts>... tasks)
 
     co_await detail::AllAwaiter{state};
 
-    // kwaitAll: all finished, first_error holds the first thrower (if any).
+    // kWaitAll: all finished, first_error holds the first thrower (if any).
     // kAbortOnError: woken early by a throw; guard cancels the survivors below.
     if (state->first_error)
     {
@@ -315,7 +299,8 @@ Task<std::tuple<detail::WhenValue<Ts>...>> when_all(Task<Ts>... tasks)
 // Awaits all tasks concurrently; resumes as soon as the FIRST finishes and
 // returns its result as a variant (void -> std::monostate). The remaining tasks
 // are cancelled. If the winner threw, that exception is rethrown.
-template <typename... Ts> Task<std::variant<detail::WhenValue<Ts>...>> when_any(Task<Ts>... tasks)
+template <typename RuntimeTag, typename... Ts>
+Task<RuntimeTag, std::variant<detail::WhenValue<Ts>...>> when_any(Task<RuntimeTag, Ts>... tasks)
 {
     static_assert(sizeof...(Ts) > 0, "WhenAny requires at least one task");
 
@@ -323,9 +308,9 @@ template <typename... Ts> Task<std::variant<detail::WhenValue<Ts>...>> when_any(
     std::tuple<detail::ResultSlot<Ts>...> slots;
 
     auto state = std::make_shared<detail::AnyState>();
-    state->scheduler = &detail::Engine::instance().scheduler();
+    state->scheduler = &RuntimeTag::scheduler();
 
-    detail::cancelGuard guard; // cancels the losers on scope exit
+    detail::CancelGuard guard; // cancels the losers on scope exit
     guard.tokens.reserve(sizeof...(Ts));
 
     [&]<std::size_t... I>(std::index_sequence<I...>) {

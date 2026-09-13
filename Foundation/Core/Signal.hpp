@@ -31,7 +31,7 @@ class Signal
     {
         return handle_;
     }
-    SignalResult observe() const;
+    SignalResult drain() const;
 
     void set_non_blocking(bool enabled = true);
 

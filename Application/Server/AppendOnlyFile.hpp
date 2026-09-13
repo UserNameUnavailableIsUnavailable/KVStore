@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Application/Commands.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
 
 #include <Foundation/Core/Buffer.hpp>
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/Async/FileStream.hpp>
+#include <Foundation/NBIO/FileStream.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <algorithm>
@@ -30,7 +31,7 @@ class AppendOnlyFile
         return enabled_;
     }
 
-    Foundation::Async::Task<void> append(const Command &command);
+    Foundation::NBIO::Task<void> append(const Command &command);
 
     template <typename Apply> bool replay(Apply &&apply) const
     {
@@ -82,7 +83,7 @@ class AppendOnlyFile
     static std::string_view command_name(CommandType type);
 
     std::filesystem::path path_;
-        std::shared_ptr<Foundation::Async::FileStream> file_;
+        std::shared_ptr<Foundation::NBIO::FileStream> file_;
     bool enabled_{false};
 };
 } // namespace KV

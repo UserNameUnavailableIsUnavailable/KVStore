@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -59,7 +61,7 @@ TEST(BackupTesting, SaveAndLoadRoundTrip)
 
     KV::Backup backup(temp_path);
     bool saved = false;
-    Foundation::Async::run([&]() -> Foundation::Async::Task<void> {
+    Foundation::NBIO::run([&]() -> Foundation::NBIO::Task<void> {
         saved = co_await backup.save(source);
         co_return;
     }());

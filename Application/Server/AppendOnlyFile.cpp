@@ -1,9 +1,11 @@
 #include "AppendOnlyFile.hpp"
+#include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
 
 #include <Foundation/Async/Async.hpp>
 
-#include <iostream>
 #include <system_error>
+#include <iostream>
 
 namespace KV
 {
@@ -32,7 +34,7 @@ bool AppendOnlyFile::enable()
         }
     }
 
-    file_ = Foundation::Async::IO::open_file(path_);
+    file_ = Foundation::NBIO::open_file(path_);
     enabled_ = static_cast<bool>(file_);
     return enabled_;
 }
@@ -118,7 +120,7 @@ RESP::Object AppendOnlyFile::to_object(const Command &command)
     return RESP::Object(std::move(array));
 }
 
-Foundation::Async::Task<void> AppendOnlyFile::append(const Command &command)
+Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
 {
     if (!enabled_)
     {
@@ -132,10 +134,7 @@ Foundation::Async::Task<void> AppendOnlyFile::append(const Command &command)
         auto encoder = RESP::Encode(object, buffer);
         while (encoder.poll() == RESP::EncodeStatus::kNeedFlush)
         {
-            if (buffer.is_empty())
-            {
-                continue;
-            }
+            std::cout << "here" << std::endl;
             auto result = co_await file_->write(buffer);
             if (result.status != Foundation::Core::WriteStatus::kDone)
             {

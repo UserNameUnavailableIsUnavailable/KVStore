@@ -1,4 +1,6 @@
 #include "Server.hpp"
+#include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
 #include "Backup.hpp"
 
 #include <Foundation/Async/Async.hpp>
@@ -41,15 +43,15 @@ void Server::run(const Foundation::Core::Address &address)
     {
         throw std::runtime_error("failed to load AOF snapshot");
     }
-    Foundation::Async::run(serve(address));
+    Foundation::NBIO::run(serve(address));
 }
 
-Foundation::Async::Task<void> Server::serve(const Foundation::Core::Address &address)
+Foundation::NBIO::Task<void> Server::serve(const Foundation::Core::Address &address)
 {
-    co_await std::move(accept_clients(Foundation::Async::Net::listen_on(address)));
+    co_await std::move(accept_clients(Foundation::NBIO::listen_on(address)));
 }
 
-Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation::Async::ListenService> listener)
+Foundation::NBIO::Task<void> Server::accept_clients(std::unique_ptr<Foundation::NBIO::ListenChannel> listener)
 {
     while (true)
     {
@@ -58,11 +60,11 @@ Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation:
         {
             continue;
         }
-        Foundation::Async::spawn(serve_client(std::make_shared<Session>(Foundation::Async::Net::establish_with(std::move(result.socket)))));
+        Foundation::NBIO::spawn(serve_client(std::make_shared<Session>(Foundation::NBIO::establish_with(std::move(result.socket)))));
     }
 }
 
-    Foundation::Async::Task<void> Server::serve_client(std::shared_ptr<Session> session)
+    Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<Session> session)
 {
     auto recv_buffer = std::make_unique<::Foundation::Core::Buffer>();
     auto send_buffer = std::make_unique<::Foundation::Core::Buffer>();
@@ -102,7 +104,7 @@ Foundation::Async::Task<void> Server::accept_clients(std::unique_ptr<Foundation:
     }
 }
 
-Foundation::Async::Task<RESP::Object> Server::dispatch(Session &session, KV::Command command)
+Foundation::NBIO::Task<RESP::Object> Server::dispatch(Session &session, KV::Command command)
 {
     if (command.type == KV::CommandType::kMulti)
     {
@@ -137,7 +139,7 @@ Foundation::Async::Task<RESP::Object> Server::dispatch(Session &session, KV::Com
     co_return co_await execute(command);
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command &command)
 {
     RESP::Object response = detail::Error("ERR command cannot be executed");
     switch (command.type)
@@ -173,26 +175,26 @@ Foundation::Async::Task<RESP::Object> Server::execute(const KV::Command &command
     co_return response;
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_ping(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_ping(const KV::Command &command)
 {
     (void)command;
     co_return RESP::Object(RESP::SimpleString{.value = "PONG"});
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_get(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_get(const KV::Command &command)
 {
     const auto &get = std::get<KV::GetParams>(command.parameters);
     co_return RESP::Object(RESP::BulkString{.value = store_.get(get.key)});
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_set(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_set(const KV::Command &command)
 {
     const auto &set = std::get<KV::SetParams>(command.parameters);
     store_.set(set.key, set.value);
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_del(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_del(const KV::Command &command)
 {
     const auto &del = std::get<KV::DelParams>(command.parameters);
     const bool exists = store_.contains(del.key);
@@ -200,7 +202,7 @@ Foundation::Async::Task<RESP::Object> Server::execute_del(const KV::Command &com
     co_return RESP::Object(RESP::Integer{.value = exists ? 1 : 0});
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_exists(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_exists(const KV::Command &command)
 {
     const auto &exists = std::get<KV::ExistsParams>(command.parameters);
     co_return RESP::Object(RESP::Boolean{.value = store_.contains(exists.key)});
@@ -240,7 +242,7 @@ bool Server::replay_aof_command(const KV::Command &command)
     }
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_appendonly(const KV::Command &command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_appendonly(const KV::Command &command)
 {
     const auto &appendonly = std::get<KV::AppendOnlyParams>(command.parameters);
     if (appendonly.enabled)
@@ -257,7 +259,7 @@ Foundation::Async::Task<RESP::Object> Server::execute_appendonly(const KV::Comma
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-Foundation::Async::Task<RESP::Object> Server::execute_save(const KV::Command& command)
+Foundation::NBIO::Task<RESP::Object> Server::execute_save(const KV::Command& command)
 {
     (void)command;
     Backup backup;

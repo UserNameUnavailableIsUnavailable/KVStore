@@ -4,6 +4,7 @@
 #include <cassert>
 #include <charconv>
 #include <concepts>
+#include <iostream>
 #include <stdexcept>
 #include <type_traits>
 
