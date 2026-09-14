@@ -1,7 +1,6 @@
 #pragma once
+#if defined(__linux__)
 
-#include <Foundation/NBIO/Channel.hpp>
-#include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/Async/Scheduler.hpp>
 #include <Foundation/Async/Task.hpp>
 
@@ -9,11 +8,8 @@
 #include <set>
 #include <unordered_map>
 
-#include <Foundation/NBIO/Types.hpp>
-
-#if not defined(__linux__)
-#error "EpollMultiplexer is only supported on Linux"
-#endif
+#include "Channel.hpp"
+#include "Multiplexer.hpp"
 
 #include <sys/epoll.h>
 
@@ -45,3 +41,4 @@ class EpollMultiplexer final : public Foundation::NBIO::Multiplexer
 	std::set<Foundation::NBIO::Channel *> active_channels_;
 };
 } // namespace Foundation::NBIO
+#endif // defined(__linux__)

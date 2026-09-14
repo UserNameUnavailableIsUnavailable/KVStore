@@ -6,6 +6,14 @@
 		"spdlog",
 		"crcpp",
 		"nlohmann-json",
-		"jemalloc"
+		"jemalloc",
+		{
+			"name": "rdma-core",
+			"platform": "linux"
+		},
+		{
+			"name": "liburing",
+			"platform": "linux"
+		}
 	]
 }

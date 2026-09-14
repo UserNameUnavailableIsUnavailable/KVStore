@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 
-function(add_example NAME)
+function(add_example name)
     add_executable(
-        ${NAME}
-        ${NAME}.cpp
+        ${name}
+        ${name}.cpp
     )
     target_link_libraries(
-        ${NAME}
+        ${name}
         PRIVATE
         Foundation
     )

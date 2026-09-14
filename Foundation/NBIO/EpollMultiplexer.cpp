@@ -1,10 +1,6 @@
+#if defined(__linux__)
 #include "EpollMultiplexer.hpp"
 
-#include <Foundation/NBIO/NotifyChannel.hpp>
-#include <Foundation/NBIO/SignalChannel.hpp>
-#include <Foundation/NBIO/Types.hpp>
-#include <Foundation/NBIO/Channel.hpp>
-#include <Foundation/NBIO/Multiplexer.hpp>
 #include <cassert>
 #include <spdlog/spdlog.h>
 #include <sys/epoll.h>
@@ -18,6 +14,11 @@
 #include <system_error>
 #include <utility>
 
+#include "NotifyChannel.hpp"
+#include "SignalChannel.hpp"
+#include "Types.hpp"
+#include "Channel.hpp"
+#include "Multiplexer.hpp"
 #include "FileStream.hpp"
 #include "ListenChannel.hpp"
 #include "ReadChannel.hpp"
@@ -467,3 +468,4 @@ static void do_write_file(Foundation::NBIO::Channel *base)
 }
 
 } // namespace Foundation::NBIO
+#endif // defined(__linux__)

@@ -1,3 +1,5 @@
+#if defined(__linux__)
+
 #include "URingMultiplexer.hpp"
 
 #include <Foundation/NBIO/Types.hpp>
@@ -418,3 +420,4 @@ void URingMultiplexer::delete_channel(Foundation::NBIO::Channel *channel) noexce
     // is only reclaimed after its coroutine finishes.
 }
 } // namespace Foundation::NBIO
+#endif // defined(__linux__)

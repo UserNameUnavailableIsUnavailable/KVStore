@@ -11,4 +11,5 @@ target_sources(
     Signal.cpp
     Notifier.cpp
     Buffer.cpp
+    RDMA_Channel.cpp
 )
