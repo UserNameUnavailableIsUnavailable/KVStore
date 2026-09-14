@@ -1,5 +1,6 @@
 #include "URingMultiplexer.hpp"
 
+#include <Foundation/NBIO/Types.hpp>
 #include <liburing.h>
 #include <sys/socket.h>
 
@@ -30,7 +31,8 @@ namespace Foundation::NBIO
     throw std::system_error(error, std::system_category(),                                                             \
                             std::string(what) + ": " + std::system_category().message(error));
 
-URingMultiplexer::URingMultiplexer(std::uint32_t submission_capacity, std::uint32_t completion_capacity)
+URingMultiplexer::URingMultiplexer(std::uint32_t submission_capacity, std::uint32_t completion_capacity) :
+	Multiplexer(MultiplexerType::kURing)
 {
     // Zero-initialised: only the fields we set may influence setup.
     io_uring_params parameters{};

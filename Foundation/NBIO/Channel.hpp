@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <spdlog/spdlog.h>
 
 #include <Foundation/Async/Scheduler.hpp>
@@ -12,11 +11,11 @@
 namespace Foundation::NBIO
 {
 class Channel;
-using IOHandler = void (*)(Channel *);
-
 class Channel
 {
   public:
+	using IOHandler = void (*)(Channel *);
+
     using Handle = int;
     constexpr static Handle kInvalidHandle = -1;
 

@@ -34,10 +34,6 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
     void update_channel(Foundation::NBIO::Channel *channel) override;
     void delete_channel(Foundation::NBIO::Channel *channel) noexcept override;
 
-    Foundation::NBIO::MultiplexerType type() const override
-    {
-        return Foundation::NBIO::MultiplexerType::kURing;
-    }
     Handle native_handle() noexcept
     {
         return &ring_;

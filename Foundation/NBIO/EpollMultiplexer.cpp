@@ -5,11 +5,12 @@
 #include <Foundation/NBIO/Types.hpp>
 #include <Foundation/NBIO/Channel.hpp>
 #include <Foundation/NBIO/Multiplexer.hpp>
+#include <cassert>
+#include <spdlog/spdlog.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/unistd.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <climits>
@@ -36,7 +37,8 @@ static void do_drain_signal(Foundation::NBIO::Channel *base);
 static void do_read_file(Foundation::NBIO::Channel *base);
 static void do_write_file(Foundation::NBIO::Channel *base);
 
-EpollMultiplexer::EpollMultiplexer()
+EpollMultiplexer::EpollMultiplexer() :
+	Multiplexer(MultiplexerType::kEpoll)
 {
     handle_ = epoll_create1(0);
     if (handle_ < 0)
@@ -45,26 +47,12 @@ EpollMultiplexer::EpollMultiplexer()
     }
 }
 
-std::uint32_t EpollMultiplexer::native_flags_for(Foundation::NBIO::ChannelType type)
+static bool is_always_ready(ChannelType type)
 {
-    switch (type)
-    {
-    case Foundation::NBIO::ChannelType::kReceive:
-    case Foundation::NBIO::ChannelType::kRead:
-    case Foundation::NBIO::ChannelType::kListen:
-    case Foundation::NBIO::ChannelType::kTimer:
-    case Foundation::NBIO::ChannelType::kNotify:
-    case Foundation::NBIO::ChannelType::kSignal:
-        return EPOLLIN;
-    case Foundation::NBIO::ChannelType::kSend:
-    case Foundation::NBIO::ChannelType::kWrite:
-        return EPOLLOUT;
-    default:
-        throw std::logic_error("EpollMultiplexer::native_flags_for: unsupported channel type");
-    }
+	return type == ChannelType::kRead || type == ChannelType::kWrite;
 }
 
-constexpr std::uint32_t active_flags_for(Foundation::NBIO::ChannelType type)
+static constexpr std::uint32_t native_flags_for(Foundation::NBIO::ChannelType type)
 {
     switch (type)
     {
@@ -83,42 +71,31 @@ constexpr std::uint32_t active_flags_for(Foundation::NBIO::ChannelType type)
     }
 }
 
-constexpr std::uint32_t inactive_flags_for(Foundation::NBIO::ChannelType type)
-{
-    switch (type)
-    {
-    case Foundation::NBIO::ChannelType::kReceive:
-    case Foundation::NBIO::ChannelType::kRead:
-    case Foundation::NBIO::ChannelType::kListen:
-    case Foundation::NBIO::ChannelType::kTimer:
-    case Foundation::NBIO::ChannelType::kNotify:
-    case Foundation::NBIO::ChannelType::kSignal:
-    case Foundation::NBIO::ChannelType::kSend:
-    case Foundation::NBIO::ChannelType::kWrite:
-        return 0;
-    default:
-        throw std::logic_error("EpollMultiplexer::inactive_flags_for: unsupported channel type");
-    }
-}
-
 // run once
 void EpollMultiplexer::run_impl(int timeout_ms)
 {
+	for (const auto& it : updated_flags_)
+	{
+		auto [fd, flags] = it;
+		::epoll_event ev{
+			.events = flags,
+			.data{
+				.fd = fd
+			}
+		};
+		spdlog::debug("[EpollMultiplexer::run_impl] fd=0x{:X} flags updated to {}", fd, flags);
+		if (epoll_ctl(handle_, EPOLL_CTL_MOD, fd, &ev) != 0)
+		{
+			throw std::system_error(errno, std::system_category(), "epoll_ctl(MOD) failed");
+		}
+	}
+	updated_flags_.clear();
+
     // some channels are always ready: ReadChannel; WriteChannel;
-    if (!always_ready_channels_.empty())
+	// always-ready channels are added to active_channels_ in update_channel()
+    if (!active_channels_.empty())
     {
-        auto channels = std::move(always_ready_channels_);
-        always_ready_channels_.clear();
-        for (auto *channel : channels)
-        {
-            if (channel == nullptr) [[unlikely]]
-            {
-                continue;
-            }
-            channel->disarm();
-            channel->handle_event();
-        }
-        return;
+		timeout_ms = 0; // do not block, poll once to collect active channels and return immediately
     }
 
     epoll_event events[1024];
@@ -137,8 +114,6 @@ void EpollMultiplexer::run_impl(int timeout_ms)
             throw std::system_error(errno, std::system_category(), "epoll_wait failed");
         }
 
-        active_channels_.clear();
-
         for (auto i = 0; i < n; ++i)
         {
             const auto fd = events[i].data.fd;
@@ -147,21 +122,16 @@ void EpollMultiplexer::run_impl(int timeout_ms)
             // epoll reports ERR/HUP regardless of the requested interest, and
             // they do not match EPOLLIN bit-wise -- count them as readable, or
             // a failing connection would never wake its receive channel.
-            const bool readable = (ev & (EPOLLIN | EPOLLERR | EPOLLHUP)) != 0;
-            const bool writable = (ev & EPOLLOUT) != 0;
 
-            auto range = registered_channels_.equal_range(fd);
-            for (auto it = range.first; it != range.second; ++it)
+            auto [begin, end] = pollable_channels_.equal_range(fd);
+            for (auto it = begin; it != end; ++it)
             {
                 auto *channel = it->second;
-                if (channel == nullptr)
+
+                const auto flags = native_flags_for(channel->type());
+                if ((flags & ev) != 0)
                 {
-                    continue;
-                }
-                const auto flag = native_flags_for(channel->type());
-                if (((flag == EPOLLIN) && readable) || ((flag == EPOLLOUT) && writable))
-                {
-                    active_channels_.push_back(channel);
+                    active_channels_.insert(channel);
                 }
             }
         }
@@ -171,6 +141,8 @@ void EpollMultiplexer::run_impl(int timeout_ms)
             channel->disarm();
             channel->handle_event();
         }
+
+		active_channels_.clear();
     } while (retry);
 }
 
@@ -199,112 +171,179 @@ void EpollMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
     // calling virtual functions results in runtime error!
 
     auto fd = channel->native_handle();
-    bool always_ready{ false }; // Is this channel always-ready? E.g., ReadChannel & WriteChannel.
+	Channel::IOHandler handler{ nullptr };
 
     switch (channel->type())
     {
     case Foundation::NBIO::ChannelType::kReceive:
-        channel->on_event(do_receive_data);
+        handler = do_receive_data;
         break;
     case Foundation::NBIO::ChannelType::kSend:
-        channel->on_event(do_send_data);
+        handler = do_send_data;
         break;
     case Foundation::NBIO::ChannelType::kListen:
-        channel->on_event(do_accept_connection);
+        handler = do_accept_connection;
         break;
     case Foundation::NBIO::ChannelType::kTimer:
-        channel->on_event(do_wait_timer);
+        handler = do_wait_timer;
         break;
     case Foundation::NBIO::ChannelType::kSignal:
-        channel->on_event(do_drain_signal);
+        handler = do_drain_signal;
         break;
     case Foundation::NBIO::ChannelType::kNotify:
-        channel->on_event(do_wait_notifier);
+        handler = do_wait_notifier;
         break;
     case Foundation::NBIO::ChannelType::kRead:
-        channel->on_event(do_read_file);
-        always_ready = true;
+        handler = do_read_file;
         break;
     case Foundation::NBIO::ChannelType::kWrite:
-        channel->on_event(do_write_file);
-        always_ready = true;
+        handler = do_write_file;
         break;
     default:
         throw std::logic_error("EpollMultiplexer::add_channel: unsupported channel type");
     }
-    if (always_ready)
+
+    if (is_always_ready(channel->type()))
     {
-        return;
+		if (always_channels_.contains(fd))
+		{
+			auto it = always_channels_.find(fd);
+			for (; it != always_channels_.end(); it++)
+			{
+				auto [fd, chan] = *it;
+				if (chan == channel) [[unlikely]]
+				{
+					throw std::logic_error("EpollMultiplexer::add_channel: channel already added");
+				}
+			}
+		}
+		always_channels_.emplace(fd, channel);
+		channel->on_event(handler);
+		return;
     }
 
-    // Register the fd with no interest: the channel is disarmed until its first
-    // arm(), at which point update_channel() applies the real flags.
-    registered_channels_.emplace(fd, channel);
-
-    epoll_event event{};
-    event.events = 0;
-    event.data.fd = fd;
-    if (epoll_ctl(handle_, EPOLL_CTL_ADD, fd, &event) != 0)
-    {
-        throw std::system_error(errno, std::system_category(), "epoll_ctl(ADD) failed");
-    }
+	if (pollable_channels_.contains(fd))
+	{
+		auto it = pollable_channels_.find(fd);
+		for (; it != pollable_channels_.end(); it++)
+		{
+			auto [fd, chan] = *it;
+			if (chan == channel) [[unlikely]]
+			{
+				throw std::logic_error("EpollMultiplexer::add_channel: channel already added");
+			}
+		}
+	}
+	else
+	{
+		epoll_event event{};
+		event.events = 0;
+		event.data.fd = fd;
+		if (epoll_ctl(handle_, EPOLL_CTL_ADD, fd, &event) != 0)
+		{
+			throw std::system_error(errno, std::system_category(), "epoll_ctl(ADD) failed");
+		}
+	}
+    pollable_channels_.emplace(fd, channel);
+	channel->on_event(handler);
 }
 
 void EpollMultiplexer::update_channel(Foundation::NBIO::Channel *channel)
 {
-    if (channel->type() == Foundation::NBIO::ChannelType::kRead ||
-        channel->type() == Foundation::NBIO::ChannelType::kWrite)
+    const int fd = channel->native_handle();
+	const auto type = channel->type();
+    if (is_always_ready(type))
     {
         if (channel->armed())
         {
-            if (std::find(always_ready_channels_.begin(), always_ready_channels_.end(), channel) ==
-                always_ready_channels_.end())
-            {
-                always_ready_channels_.push_back(channel);
-            }
+			active_channels_.insert(channel);
         }
-        else
+        else if (active_channels_.contains(channel))
         {
-            std::erase(always_ready_channels_, channel);
+			active_channels_.erase(channel);
         }
         return;
     }
 
-    const int fd = channel->native_handle();
-    if (!registered_channels_.contains(fd))
+	auto [begin, end] = pollable_channels_.equal_range(fd);
+    if (begin == end)
     {
         throw std::logic_error("channel not added");
     }
 
-    // Armed contributes the channel's interest; disarmed contributes nothing.
-    // epoll_ctl(MOD) with events=0 keeps the fd registered but silent.
-    const std::uint32_t flags =
-        channel->armed() ? active_flags_for(channel->type()) : inactive_flags_for(channel->type());
-
-    epoll_event event{};
-    event.events = flags;
-    event.data.fd = fd;
-    if (epoll_ctl(handle_, EPOLL_CTL_MOD, fd, &event) != 0)
-    {
-        throw std::system_error(errno, std::system_category(), "epoll_ctl(MOD) failed");
-    }
+	std::uint32_t flags{ 0 };
+	for (auto it = begin; it != end; ++it)
+	{
+		auto *chan = it->second;
+		if (chan->armed())
+		{
+			flags |= native_flags_for(chan->type());
+		}
+	}
+	
+	spdlog::debug("[EpollMultiplexer::update_channel] fd=0x{:X} flags updated to {}", fd, flags);
+	updated_flags_[fd] = flags;
 }
 
 void EpollMultiplexer::delete_channel(Foundation::NBIO::Channel *channel) noexcept
 {
-    if (channel->type() == Foundation::NBIO::ChannelType::kRead ||
-        channel->type() == Foundation::NBIO::ChannelType::kWrite)
-    {
-        std::erase(always_ready_channels_, channel);
-        return;
-    }
+	auto fd = channel->native_handle();
+	auto type = channel->type();
+	active_channels_.erase(channel);
 
-    const int fd = channel->native_handle();
-    registered_channels_.erase(fd);
-    if (epoll_ctl(handle_, EPOLL_CTL_DEL, fd, nullptr) != 0)
-    {
-        spdlog::warn("Failed to remove fd from epoll.");
-    }
+	if (is_always_ready(type))
+	{
+		auto [begin, end] = always_channels_.equal_range(fd);
+		for (auto it = begin; it != end; ++it)
+		{
+			if (it->second == channel)
+			{
+				always_channels_.erase(it); // each channel is unique
+				break;
+			}
+		}
+		return;
+	}
+
+	{
+		auto [begin, end] = pollable_channels_.equal_range(fd);
+		auto target = end;
+		for (auto it = begin; it != end; ++it)
+		{
+			if (it->second == channel)
+			{
+				target = it;
+				break;
+			}
+		}
+		if (target == end)
+		{
+			return;
+		}
+		pollable_channels_.erase(target);
+
+	}
+	{
+		auto [begin, end] = pollable_channels_.equal_range(fd);
+		if (begin == end)
+		{
+			epoll_ctl(handle_, EPOLL_CTL_DEL, fd, nullptr);
+			updated_flags_.erase(fd);
+			spdlog::debug("[EpollMultiplexer::delete_channel] fd=0x{:X} deleted", fd);
+			return;
+		}
+		std::uint32_t flags{ 0 };
+		for (auto it = begin; it != end; ++it)
+		{
+			auto *chan = it->second;
+			if (chan->armed())
+			{
+				flags |= native_flags_for(chan->type());
+			}
+		}
+		updated_flags_[fd] = flags;
+		spdlog::debug("[EpollMultiplexer::delete_channel] fd=0x{:X} flags will update to {}", fd, flags);
+	}
 }
 
 EpollMultiplexer::~EpollMultiplexer() noexcept
