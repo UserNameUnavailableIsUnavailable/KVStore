@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 
-function(add_example NAME)
+function(add_example name)
     add_executable(
-        ${NAME}
-        ${NAME}.cpp
+        ${name}
+        ${name}.cpp
     )
     target_link_libraries(
-        ${NAME}
+        ${name}
         PRIVATE
         Foundation
     )
@@ -17,3 +17,8 @@ add_example(Sleep)
 add_example(Grace)
 add_example(ScopedSignalService)
 add_example(Condition)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_example(RDMA_Echo)
+    add_example(RDMA_AsyncEcho)
+endif()

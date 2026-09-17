@@ -18,24 +18,20 @@ class Receiver
     ~Receiver() noexcept;
 
     Foundation::NBIO::Task<std::optional<Object>> receive();
-    std::size_t bytes_received() const noexcept
-    {
-        return bytes_received_;
-    }
+
     std::string decode_error() const
     {
         return decode_error_;
     }
     std::string internal_error() const
     {
-        return internal_error_;
+        return interal_error_;
     }
 
   private:
     Foundation::NBIO::Session &session_;
     Foundation::Core::Buffer &buffer_;
-    std::size_t bytes_received_{0};
     std::string decode_error_;
-    std::string internal_error_;
+    std::string interal_error_;
 };
 } // namespace RESP

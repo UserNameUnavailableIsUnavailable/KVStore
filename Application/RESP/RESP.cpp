@@ -64,7 +64,7 @@ Decoder ReadBytes(::Foundation::Core::Buffer &buffer, std::size_t size, std::str
         {
             co_yield DecodeStatus::kNeedInput;
         }
-        const std::size_t count = std::min(size, buffer.valid_size());
+        const std::size_t count = std::min(size, buffer.readable_size());
         bytes.append(buffer.string_view().data(), count);
         buffer.consume(count);
         size -= count;
@@ -689,22 +689,22 @@ Encoder Encode(const Object &object, ::Foundation::Core::Buffer &buffer)
             frames.pop_back();
             continue;
         }
-        if (buffer.append(bytes.data() + frame.offset, bytes.size() - frame.offset))
+        if (buffer.write(bytes.data() + frame.offset, bytes.size() - frame.offset))
         {
             frames.pop_back();
             continue;
         }
 
-        std::size_t writable = buffer.appendable_size();
-        if (writable == 0 && buffer.valid_size() == 0)
+        std::size_t writable = buffer.writable_size();
+        if (writable == 0 && buffer.readable_size() == 0)
         {
             buffer.clear();
-            writable = buffer.appendable_size();
+            writable = buffer.writable_size();
         }
         if (writable != 0)
         {
             const std::size_t count = std::min(writable, bytes.size() - frame.offset);
-            const bool appended = buffer.append(bytes.data() + frame.offset, count);
+            const bool appended = buffer.write(bytes.data() + frame.offset, count);
             assert(appended);
             frame.offset += count;
             continue;

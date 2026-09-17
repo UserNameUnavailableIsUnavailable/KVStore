@@ -12,7 +12,8 @@ class Channel;
 class Multiplexer
 {
   public:
-    explicit Multiplexer()
+    explicit Multiplexer(MultiplexerType type) :
+		type_(type)
     {
     }
     virtual ~Multiplexer() = default;
@@ -21,6 +22,11 @@ class Multiplexer
     virtual void delete_channel(Channel *channel) noexcept = 0;
     virtual void run_for(std::chrono::milliseconds timeout) = 0;
     virtual void run() = 0;
-    virtual MultiplexerType type() const = 0;
+	MultiplexerType type() const noexcept
+	{
+		return type_;
+	}
+  private:
+	MultiplexerType type_;
 };
 } // namespace Foundation::NBIO

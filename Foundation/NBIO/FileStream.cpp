@@ -37,12 +37,12 @@ void FileStream::close() noexcept
     file_.close();
 }
 
-Foundation::NBIO::Task<Foundation::Core::ReadResult> FileStream::read(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> FileStream::read(std::span<char> buffer)
 {
     co_return co_await read_channel().read(buffer);
 }
 
-Foundation::NBIO::Task<Foundation::Core::WriteResult> FileStream::write(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> FileStream::write(std::span<const char> buffer)
 {
     co_return co_await write_channel().write(buffer);
 }

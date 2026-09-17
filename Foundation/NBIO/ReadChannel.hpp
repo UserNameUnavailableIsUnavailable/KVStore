@@ -8,8 +8,9 @@
 
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/File.hpp>
-#include <coroutine>
 #include <cstdint>
+#include <optional>
+#include <system_error>
 
 
 namespace Foundation::NBIO
@@ -18,7 +19,7 @@ class FileStream;
 
 struct ReadJob
 {
-    Foundation::Core::Buffer *buffer{nullptr};
+    std::span<char> buffer;
     std::uint64_t offset{0};
     Foundation::Core::ReadResult result{};
 };
@@ -29,7 +30,7 @@ class ReadChannel final : public Foundation::NBIO::Channel
     ReadChannel(FileStream &file, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     ~ReadChannel() noexcept override;
 
-    Foundation::NBIO::Task<Foundation::Core::ReadResult> read(Foundation::Core::Buffer &buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> read(std::span<char> buffer);
 
     void handle_event() override;
 
@@ -57,10 +58,10 @@ class ReadChannel final : public Foundation::NBIO::Channel
     }
 
   private:
-    Foundation::Core::ReadResult read_sync(Foundation::Core::Buffer &buffer);
-
+    std::optional<std::size_t> read_sync(std::span<char> buffer);
     FileStream &file_;
     ReadJob job_;
     Foundation::Async::Coroutine waiter_;
+    std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

@@ -14,11 +14,16 @@ using namespace Foundation;
 NBIO::Task<void> Service()
 {
     auto address = Core::Address::from_ipv4("127.0.0.1", 8080);
-    auto listen_service = NBIO::listen_on(address);
+    auto listen_service = NBIO::bind(address);
     while (true)
     {
         auto result = co_await listen_service->accept();
-        auto session = NBIO::establish_with(std::move(result.socket));
+        if (!result)
+        {
+            std::cout << "[conn] failed\n";
+            co_return;
+        }
+        auto session = NBIO::establish(std::move(result->first));
         // A coroutine lambda is fine, but: (1) Spawn takes a Task, so the
         // lambda must be INVOKED here; (2) captures live in the closure, not
         // the coroutine frame -- the temporary closure dies before the lazy
@@ -30,21 +35,33 @@ NBIO::Task<void> Service()
                 while (true)
                 {
                     {
-                        auto res = co_await session->receive(*buffer);
-                        if (res.status != Core::ReceiveStatus::kDone)
+                        auto res = co_await session->receive(buffer->writable_span());
+                        if (!res)
                         {
-                            std::cout << "[conn] closed\n";
+                            std::cout << "[conn] failed\n";
                             co_return;
                         }
-                        std::cout << "[conn] received " << res.bytes_transferred << " bytes: " << buffer->string_view() << std::endl;
+                        if (*res == 0)
+                        {
+                            std::cout << "[conn] peer closed\n";
+                            co_return;
+                        }
+                        buffer->commit(*res);
+                        std::cout << "[conn] received " << *res << " bytes: " << buffer->string_view() << std::endl;
                     }
                     {
-                        auto res = co_await session->send(*buffer);
-                        if (res.status != Core::SendStatus::kDone)
+                        auto res = co_await session->send(buffer->readable_span());
+                        if (!res)
                         {
                             std::cout << "[conn] send failed\n";
                             co_return;
                         }
+                        if (res == 0)
+                        {
+                            std::cout << "[conn] peer closed\n";
+                            co_return;
+                        }
+                        buffer->consume(*res);
                         std::cout << "[conn] sent " << buffer->string_view() << std::endl;
                         buffer->consume_all();
                     }
