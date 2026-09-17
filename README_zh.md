@@ -62,8 +62,7 @@ QUIT
 ## 基础使用说明
 
 - `SAVE` 会将当前数据写入完整转储文件。
-- `APPendONLY YES` 会开启命令追加日志，便于恢复。
-- `APPENDONLY YES` 会开启命令追加日志，便于恢复。
+- `CONFIG SET appendonly yes` 会开启命令追加日志，便于恢复，`CONFIG GET appendonly` 可查询当前状态。
 - `SLAVEOF <host> <port>` 可从另一台服务器进行复制。
 
 ## 测试

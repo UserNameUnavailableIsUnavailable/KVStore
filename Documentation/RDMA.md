@@ -814,7 +814,7 @@ Foundation/RDMA/
   Channel.hpp / .cpp        // channel base (owns its handle)
   SendChannel.hpp / .cpp
   ReceiveChannel.hpp / .cpp
-  ListenChannel.hpp / .cpp  // rdma_cm listener / connector
+  AcceptChannel.hpp / .cpp  // rdma_cm listener / connector
   Connection.hpp / .cpp     // rdma_cm_id + QP (the object a channel pins to)
   Device.hpp / .cpp         // ibv_context + PD
   MemoryRegion.hpp / .cpp   // registered arena + slot pool

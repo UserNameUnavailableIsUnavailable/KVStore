@@ -1,10 +1,13 @@
 #include "WriteChannel.hpp"
 #include <Foundation/Async/Coroutine.hpp>
+#include <Foundation/Core/File.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include "FileStream.hpp"
 
 #include <cerrno>
+#include <optional>
+#include <span>
 #include <system_error>
 #include <utility>
 
@@ -17,7 +20,7 @@ namespace
 struct WriteAwaiter
 {
     WriteChannel &channel;
-    Foundation::Core::Buffer &buffer;
+    std::span<const char> buffer;
 
     bool await_ready() const noexcept
     {
@@ -28,8 +31,12 @@ struct WriteAwaiter
     bool await_suspend(std::coroutine_handle<PromiseType> handle)
     {
         auto coroutine = Async::Coroutine::from_handle(handle);
+        // Arming is what hands the parked write to the multiplexer. Without it
+        // the job is filled in and the coroutine suspends, but nothing ever
+        // submits the write -- so the await never completes.
+        channel.arm();
         channel.park(std::move(coroutine));
-        channel.job() = {.buffer = &buffer,
+        channel.job() = {.buffer = buffer,
                             .offset = channel.file().write_offset(),
                             .result = {.status = Foundation::Core::WriteStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
         return true;
@@ -60,12 +67,12 @@ WriteChannel::~WriteChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-Foundation::Core::WriteResult WriteChannel::write_sync(Foundation::Core::Buffer &buffer)
+Foundation::Core::WriteResult WriteChannel::write_sync(std::span<const char> buffer)
 {
     auto total = std::size_t{0};
-    while (buffer.valid_size() > 0)
+    while (buffer.size() > 0)
     {
-        const auto chunk = buffer.valid_span();
+        const auto chunk = buffer;
         const auto result = ::pwrite(native_handle(), chunk.data(), chunk.size(), static_cast<off_t>(job_.offset));
         if (result < 0)
         {
@@ -82,7 +89,6 @@ Foundation::Core::WriteResult WriteChannel::write_sync(Foundation::Core::Buffer 
                     .error_code = std::make_error_code(std::errc::io_error)};
         }
 
-        buffer.consume(static_cast<std::size_t>(result));
         job_.offset += static_cast<std::uint64_t>(result);
         file_.advance_write_offset(static_cast<std::size_t>(result));
         total += static_cast<std::size_t>(result);
@@ -91,9 +97,19 @@ Foundation::Core::WriteResult WriteChannel::write_sync(Foundation::Core::Buffer 
     return {.status = Foundation::Core::WriteStatus::kDone, .bytes_transferred = total, .error_code = {}};
 }
 
-Foundation::NBIO::Task<Foundation::Core::WriteResult> WriteChannel::write(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> WriteChannel::write(std::span<const char> buffer)
 {
-    co_return co_await WriteAwaiter{*this, buffer};
+    auto result = co_await WriteAwaiter{*this, buffer};
+    std::optional<std::size_t> ret{};
+    if (result.error_code)
+    {
+        error_code_ = std::move(result.error_code);
+    }
+    if (result.status != Core::WriteStatus::kError)
+    {
+        ret = result.bytes_transferred;
+    }
+    co_return ret;
 }
 
 void WriteChannel::handle_event()

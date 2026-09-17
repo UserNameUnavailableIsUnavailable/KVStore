@@ -20,7 +20,7 @@
 #include "Channel.hpp"
 #include "Multiplexer.hpp"
 #include "FileStream.hpp"
-#include "ListenChannel.hpp"
+#include "AcceptChannel.hpp"
 #include "ReadChannel.hpp"
 #include "ReceiveChannel.hpp"
 #include "SendChannel.hpp"
@@ -62,6 +62,12 @@ static constexpr std::uint32_t native_flags_for(Foundation::NBIO::ChannelType ty
     case Foundation::NBIO::ChannelType::kListen:
     case Foundation::NBIO::ChannelType::kTimer:
     case Foundation::NBIO::ChannelType::kNotify:
+    case Foundation::NBIO::ChannelType::kRDMA_Accept:
+    case Foundation::NBIO::ChannelType::kRDMA_Connect:
+    // A stream's completion channel becomes readable when a work completion
+    // lands; both simplex halves watch that same fd.
+    case Foundation::NBIO::ChannelType::kRDMA_Send:
+    case Foundation::NBIO::ChannelType::kRDMA_Receive:
     case Foundation::NBIO::ChannelType::kSignal:
         return EPOLLIN;
     case Foundation::NBIO::ChannelType::kSend:
@@ -137,13 +143,20 @@ void EpollMultiplexer::run_impl(int timeout_ms)
             }
         }
 
-        for (auto *channel : active_channels_)
+        // Take the batch before touching it: disarm() erases an always-ready
+        // channel from active_channels_, and handle_event() may arm one again.
+        // Mutating the set while iterating it invalidates the iterator -- the
+        // increment then walks a freed node. Any channel re-armed here lands in
+        // the now-empty active_channels_ and is picked up on the next pass,
+        // which does not block because the set is non-empty again.
+        std::set<Foundation::NBIO::Channel *> batch;
+        batch.swap(active_channels_);
+
+        for (auto *channel : batch)
         {
             channel->disarm();
             channel->handle_event();
         }
-
-		active_channels_.clear();
     } while (retry);
 }
 
@@ -193,6 +206,15 @@ void EpollMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
         break;
     case Foundation::NBIO::ChannelType::kNotify:
         handler = do_wait_notifier;
+        break;
+    // The RDMA channels have no backend handler: each one reaps its own
+    // completions in handle_event(), because the event only says "something
+    // finished", not which direction or how much.
+    case Foundation::NBIO::ChannelType::kRDMA_Accept:
+    case Foundation::NBIO::ChannelType::kRDMA_Connect:
+    case Foundation::NBIO::ChannelType::kRDMA_Send:
+    case Foundation::NBIO::ChannelType::kRDMA_Receive:
+        handler = nullptr;
         break;
     case Foundation::NBIO::ChannelType::kRead:
         handler = do_read_file;
@@ -356,21 +378,35 @@ static void do_receive_data(Foundation::NBIO::Channel *base)
 {
     auto *channel = static_cast<ReceiveChannel *>(base);
     auto &job = channel->job();
-    job.result = channel->socket().receive(job.buffer->appendable_span());
-    job.buffer->commit(job.result.bytes_transferred);
+    job.result = channel->socket().receive(job.buffer);
 }
 
 static void do_send_data(Foundation::NBIO::Channel *base)
 {
     auto *channel = static_cast<SendChannel *>(base);
     auto &job = channel->job();
-    job.result = channel->socket().send(job.buffer->valid_span());
-    job.buffer->consume(job.result.bytes_transferred);
+    const auto result = channel->socket().send(job.buffer);
+    if (result.status == Foundation::Core::SendStatus::kDone ||
+        result.status == Foundation::Core::SendStatus::kPending)
+    {
+        // Consume what the kernel took: the span is what gets sent again, so a
+        // partial send has to resume with the remainder rather than repeat.
+        // The caller is told the total, because that is how much of its own
+        // buffer it drops.
+        job.buffer = job.buffer.subspan(result.bytes_transferred);
+        job.result.bytes_transferred += result.bytes_transferred;
+        job.result.status = job.buffer.empty() ? Foundation::Core::SendStatus::kDone
+                                               : Foundation::Core::SendStatus::kPending;
+        job.result.error_code = {};
+        return;
+    }
+
+    job.result = result;
 }
 
 static void do_accept_connection(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<ListenChannel *>(base);
+    auto *channel = static_cast<AcceptChannel *>(base);
     auto &job = channel->job();
     job.result = channel->socket().accept();
 }
@@ -399,7 +435,7 @@ static void do_read_file(Foundation::NBIO::Channel *base)
     auto &job = channel->job();
     while (true)
     {
-        const auto chunk = job.buffer->appendable_span();
+        const auto chunk = job.buffer;
         const auto result =
             ::pread(channel->native_handle(), chunk.data(), chunk.size(), static_cast<off_t>(job.offset));
         if (result < 0)
@@ -419,7 +455,6 @@ static void do_read_file(Foundation::NBIO::Channel *base)
             return;
         }
 
-        job.buffer->commit(static_cast<std::size_t>(result));
         job.offset += static_cast<std::uint64_t>(result);
         channel->file_stream().advance_read_offset(static_cast<std::size_t>(result));
         job.result = {.status = Foundation::Core::ReadStatus::kDone,
@@ -434,9 +469,9 @@ static void do_write_file(Foundation::NBIO::Channel *base)
     auto *channel = static_cast<WriteChannel *>(base);
     auto &job = channel->job();
     auto total = std::size_t{0};
-    while (job.buffer->valid_size() > 0)
+    while (job.buffer.size() > 0)
     {
-        const auto chunk = job.buffer->valid_span();
+        const auto chunk = job.buffer;
         const auto result =
             ::pwrite(channel->native_handle(), chunk.data(), chunk.size(), static_cast<off_t>(job.offset));
         if (result < 0)
@@ -458,10 +493,13 @@ static void do_write_file(Foundation::NBIO::Channel *base)
             return;
         }
 
-        job.buffer->consume(static_cast<std::size_t>(result));
         job.offset += static_cast<std::uint64_t>(result);
         channel->file().advance_write_offset(static_cast<std::size_t>(result));
         total += static_cast<std::size_t>(result);
+        // Consume what was written. The job holds a span, so nothing shrinks it
+        // implicitly: without this the loop re-sends the same bytes at
+        // ever-increasing offsets and never terminates.
+        job.buffer = job.buffer.subspan(static_cast<std::size_t>(result));
     }
 
     job.result = {.status = Foundation::Core::WriteStatus::kDone, .bytes_transferred = total, .error_code = {}};

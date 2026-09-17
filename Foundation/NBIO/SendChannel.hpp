@@ -8,14 +8,14 @@
 
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
-#include <coroutine>
-
+#include <span>
+#include <system_error>
 
 namespace Foundation::NBIO
 {
 struct SendJob
 {
-    Foundation::Core::Buffer *buffer{nullptr};
+    std::span<const char> buffer;
     Foundation::Core::SendResult result{};
 };
 // Simplex channel dedicated to sending: one job, one waiter, interested only
@@ -26,7 +26,7 @@ class SendChannel final : public Foundation::NBIO::Channel
     explicit SendChannel(Foundation::Core::Socket &socket, Foundation::Async::Scheduler &scheduler, Foundation::NBIO::Multiplexer &multiplexer);
     ~SendChannel() noexcept override;
 
-    Foundation::NBIO::Task<Foundation::Core::SendResult> send(Foundation::Core::Buffer &buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> send(std::span<const char> buffer);
 
     void handle_event() override;
 
@@ -51,10 +51,15 @@ class SendChannel final : public Foundation::NBIO::Channel
     {
         return socket_;
     }
+    std::error_code last_error() const noexcept
+    {
+        return error_code_;
+    }
 
   private:
     Foundation::Core::Socket &socket_;
     SendJob job_;
     Foundation::Async::Coroutine waiter_;
+    std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

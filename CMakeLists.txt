@@ -9,7 +9,6 @@ set(VCPKG_INSTALLED_DIR "${CMAKE_SOURCE_DIR}/vcpkg_installed" CACHE PATH "vcpkg 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(KVStore)
-
 # TODO: learn the difference between enable_testing() and include(CTest)
 include(CTest)
 

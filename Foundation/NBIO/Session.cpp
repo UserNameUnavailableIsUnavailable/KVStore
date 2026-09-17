@@ -19,12 +19,12 @@ void Session::close() noexcept
     socket_.close();
 }
 
-Foundation::NBIO::Task<Foundation::Core::ReceiveResult> Session::receive(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> Session::receive(std::span<char> buffer)
 {
     return receive_channel_.receive(buffer);
 }
 
-Foundation::NBIO::Task<Foundation::Core::SendResult> Session::send(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> Session::send(std::span<const char> buffer)
 {
     return send_channel_.send(buffer);
 }

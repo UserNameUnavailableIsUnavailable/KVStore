@@ -1,5 +1,4 @@
 #include "Socket.hpp"
-#include "Result.hpp"
 
 #include <cerrno>
 

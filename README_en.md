@@ -62,7 +62,7 @@ QUIT
 ## Basic Usage Notes
 
 - `SAVE` writes a full dump to the persistence directory.
-- `APPENDONLY YES` enables command logging for recovery.
+- `CONFIG SET appendonly yes` enables command logging for recovery, and `CONFIG GET appendonly` reports the current state.
 - `SLAVEOF <host> <port>` starts replication from another server.
 
 ## Test

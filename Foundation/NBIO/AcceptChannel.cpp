@@ -1,10 +1,12 @@
-#include "ListenChannel.hpp"
+#include "AcceptChannel.hpp"
 #include <Foundation/Async/Coroutine.hpp>
+#include <Foundation/Core/Address.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/Core/Socket.hpp>
 #include <cassert>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -12,7 +14,7 @@
 
 namespace Foundation::NBIO
 {
-ListenChannel::ListenChannel(Foundation::Core::Socket socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
+AcceptChannel::AcceptChannel(Foundation::Core::Socket socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
     : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kListen, socket.native_handle(), multiplexer, scheduler),
       socket_(std::move(socket))
 {
@@ -24,7 +26,7 @@ ListenChannel::ListenChannel(Foundation::Core::Socket socket, Foundation::NBIO::
     multiplexer_.add_channel(this);
 }
 
-ListenChannel::~ListenChannel() noexcept
+AcceptChannel::~AcceptChannel() noexcept
 {
     multiplexer_.delete_channel(this);
 }
@@ -34,7 +36,7 @@ namespace
 class AcceptAwaiter
 {
   public:
-    AcceptAwaiter(ListenChannel &channel) : channel_(channel)
+    AcceptAwaiter(AcceptChannel &channel) : channel_(channel)
     {
     }
 
@@ -65,12 +67,12 @@ class AcceptAwaiter
     }
 
   private:
-    ListenChannel &channel_;
+    AcceptChannel &channel_;
     Async::Coroutine coroutine_;
 };
 } // namespace
 
-void ListenChannel::handle_event()
+void AcceptChannel::handle_event()
 {
     // handle the triggered event
     if (handler_ != nullptr) [[likely]]
@@ -94,9 +96,17 @@ void ListenChannel::handle_event()
     scheduler_.submit(std::exchange(waiter_, {}));
 }
 
-Foundation::NBIO::Task<Foundation::Core::AcceptResult> ListenChannel::accept()
+Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> AcceptChannel::accept()
 {
     auto result = co_await AcceptAwaiter(*this);
-    co_return std::move(result);
+    std::optional<std::pair<Core::Socket, Core::Address>> ret{};
+    if (result.status != Core::AcceptStatus::kError)
+    {
+        ret = std::make_pair(
+            std::move(result.socket),
+            std::move(result.address)
+        );
+    }
+    co_return ret;
 }
 } // namespace Foundation::NBIO

@@ -66,6 +66,16 @@ class Channel
         return multiplexer_;
     }
 
+    Foundation::Async::Scheduler &scheduler() noexcept
+    {
+        return scheduler_;
+    }
+
+    const Foundation::Async::Scheduler &scheduler() const noexcept
+    {
+        return scheduler_;
+    }
+
     const Multiplexer &multiplexer() const noexcept
     {
         return multiplexer_;

@@ -29,23 +29,33 @@ Foundation::NBIO::Task<bool> Sender::send()
     auto decoder = RESP::Encode(object_, buffer_);
     while (decoder.poll() == RESP::EncodeStatus::kNeedFlush)
     {
-        auto result = co_await session_.send(buffer_);
-        if (result.status != Foundation::Core::SendStatus::kDone)
+        auto result = co_await session_.send(buffer_.readable_span());
+        if (!result)
         {
-            internal_error_ = result.error_code.message();
+            internal_error_ = session_.send_channel().last_error().message();
             co_return false;
         }
-        bytes_sent_ += result.bytes_transferred;
+        if (*result == 0)
+        {
+            internal_error_ = "stream closed";
+            co_return false;
+        }
+        buffer_.consume(*result);
     }
     if (!buffer_.is_empty())
     {
-        auto result = co_await session_.send(buffer_);
-        if (result.status != Foundation::Core::SendStatus::kDone)
+        auto result = co_await session_.send(buffer_.readable_span());
+        if (!result)
         {
-            internal_error_ = result.error_code.message();
+            internal_error_ = session_.send_channel().last_error().message();
             co_return false;
         }
-        bytes_sent_ += result.bytes_transferred;
+        if (*result == 0)
+        {
+            internal_error_ = "stream closed";
+            co_return false;
+        }
+        buffer_.consume(*result);
     }
     co_return true;
 }

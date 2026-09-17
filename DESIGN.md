@@ -20,7 +20,7 @@ This KVStore design has the following layers:
     - `EXPIRE <key> <ttl>`: Returns the TTL of the key.
     - `TTL <key>`: Returns the TTL of the key.
     - `SAVE`: Trigger a snapshot of the KVStore.
-    - `APPENDONLY YES|NO`: Enables or disables append-only persistence.
+    - `CONFIG GET <parameter>` / `CONFIG SET <parameter> <value>`: Redis-shaped configuration, used to turn append-only persistence on or off (`CONFIG SET appendonly yes|no`).
     - `SLAVEOF`: Create a replica of the master.
     - `PSYNC`: Trigger partial sync between the master and slave.
 - Cache Layer: Responsible for executing commands, lifecycle management.

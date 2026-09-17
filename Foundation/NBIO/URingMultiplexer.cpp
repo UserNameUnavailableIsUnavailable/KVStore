@@ -4,6 +4,7 @@
 
 #include <Foundation/NBIO/Types.hpp>
 #include <liburing.h>
+#include <poll.h>
 #include <sys/socket.h>
 
 #include <Foundation/Core/Socket.hpp>
@@ -16,7 +17,8 @@
 #include <system_error>
 
 #include <Foundation/NBIO/Channel.hpp>
-#include "ListenChannel.hpp"
+#include "AcceptChannel.hpp"
+#include "FileStream.hpp"
 #include "ReadChannel.hpp"
 #include "NotifyChannel.hpp"
 #include "ReceiveChannel.hpp"
@@ -84,29 +86,29 @@ bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
     case Foundation::NBIO::ChannelType::kReceive: {
         auto *receive = static_cast<ReceiveChannel *>(channel);
         auto &job = receive->job();
-        ::io_uring_prep_recv(sqe, fd, job.buffer->appendable_span().data(), job.buffer->appendable_size(), 0);
+        ::io_uring_prep_recv(sqe, fd, job.buffer.data(), job.buffer.size(), 0);
         break;
     }
     case Foundation::NBIO::ChannelType::kSend: {
         auto *send = static_cast<SendChannel *>(channel);
         auto &job = send->job();
-        ::io_uring_prep_send(sqe, fd, job.buffer->valid_span().data(), job.buffer->valid_size(), MSG_NOSIGNAL);
+        ::io_uring_prep_send(sqe, fd, job.buffer.data(), job.buffer.size(), MSG_NOSIGNAL);
         break;
     }
     case Foundation::NBIO::ChannelType::kRead: {
         auto *read = static_cast<ReadChannel *>(channel);
         auto &job = read->job();
-        ::io_uring_prep_read(sqe, fd, job.buffer->appendable_span().data(), job.buffer->appendable_size(), job.offset);
+        ::io_uring_prep_read(sqe, fd, job.buffer.data(), job.buffer.size(), job.offset);
         break;
     }
     case Foundation::NBIO::ChannelType::kWrite: {
         auto *write = static_cast<WriteChannel *>(channel);
         auto &job = write->job();
-        ::io_uring_prep_write(sqe, fd, job.buffer->valid_span().data(), job.buffer->valid_size(), job.offset);
+        ::io_uring_prep_write(sqe, fd, job.buffer.data(), job.buffer.size(), job.offset);
         break;
     }
     case Foundation::NBIO::ChannelType::kListen: {
-        auto *listen = static_cast<ListenChannel *>(channel);
+        auto *listen = static_cast<AcceptChannel *>(channel);
         auto &job = listen->job();
         // Let the kernel write the peer address straight into the job's result.
         job.result.address.length() = job.result.address.capacity();
@@ -131,6 +133,17 @@ bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
         ::io_uring_prep_read(sqe, fd, &count, sizeof(count), 0);
         break;
     }
+    // The RDMA channels move no data through the ring. They wait for an event on
+    // a file descriptor -- a connection-management event, or a work completion
+    // on the stream's completion channel -- and then reap it themselves in
+    // handle_event(). A one-shot poll on that fd is the entire wait; the
+    // channel re-arms it until it has something to report.
+    case Foundation::NBIO::ChannelType::kRDMA_Accept:
+    case Foundation::NBIO::ChannelType::kRDMA_Connect:
+    case Foundation::NBIO::ChannelType::kRDMA_Send:
+    case Foundation::NBIO::ChannelType::kRDMA_Receive:
+        ::io_uring_prep_poll_add(sqe, fd, POLLIN);
+        break;
     default:
         return false;
     }
@@ -178,7 +191,6 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
         auto &job = static_cast<ReceiveChannel *>(channel)->job();
         if (result > 0)
         {
-            job.buffer->commit(static_cast<std::size_t>(result));
             job.result.bytes_transferred = static_cast<std::size_t>(result);
             job.result.status = ::Foundation::Core::ReceiveStatus::kDone;
         }
@@ -199,12 +211,24 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
     }
     case Foundation::NBIO::ChannelType::kSend: {
         auto &job = static_cast<SendChannel *>(channel)->job();
-        if (result >= 0)
+        if (result > 0)
         {
-            job.buffer->consume(static_cast<std::size_t>(result));
-            job.result.bytes_transferred += static_cast<std::size_t>(result);
-            // "write flushes all": done only when nothing is left to send.
-            job.result.status = (job.buffer->valid_size() == 0) ? ::Foundation::Core::SendStatus::kDone : ::Foundation::Core::SendStatus::kPending;
+            const auto written = static_cast<std::size_t>(result);
+            job.result.bytes_transferred += written;
+            // Consume what the kernel took. The span is what gets resubmitted,
+            // so without this a send looks unfinished forever and the same
+            // bytes go out again and again -- and this is also what tells a
+            // completed send apart from a partial one.
+            job.buffer = job.buffer.subspan(written);
+            job.result.status = job.buffer.empty() ? ::Foundation::Core::SendStatus::kDone
+                                                   : ::Foundation::Core::SendStatus::kPending;
+        }
+        else if (result == 0)
+        {
+            // Nothing was taken from a non-empty buffer: resubmitting would
+            // spin forever, so report it instead.
+            job.result.status = ::Foundation::Core::SendStatus::kError;
+            job.result.error_code = std::make_error_code(std::errc::io_error);
         }
         else if (result == -EAGAIN || result == -EWOULDBLOCK)
         {
@@ -218,11 +242,14 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
         break;
     }
     case Foundation::NBIO::ChannelType::kRead: {
-        auto &job = static_cast<ReadChannel *>(channel)->job();
+        auto *read = static_cast<ReadChannel *>(channel);
+        auto &job = read->job();
         if (result > 0)
         {
-            job.buffer->commit(static_cast<std::size_t>(result));
             job.offset += static_cast<std::uint64_t>(result);
+            // Keep the stream's cursor in step, or the next read would return
+            // the same bytes again.
+            read->file_stream().advance_read_offset(static_cast<std::size_t>(result));
             job.result.bytes_transferred = static_cast<std::size_t>(result);
             job.result.status = Foundation::Core::ReadStatus::kDone;
         }
@@ -242,13 +269,28 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
         break;
     }
     case Foundation::NBIO::ChannelType::kWrite: {
-        auto &job = static_cast<WriteChannel *>(channel)->job();
-        if (result >= 0)
+        auto *write = static_cast<WriteChannel *>(channel);
+        auto &job = write->job();
+        if (result > 0)
         {
-            job.buffer->consume(static_cast<std::size_t>(result));
-            job.offset += static_cast<std::uint64_t>(result);
-            job.result.bytes_transferred += static_cast<std::size_t>(result);
-            job.result.status = (job.buffer->valid_size() == 0) ? Foundation::Core::WriteStatus::kDone : Foundation::Core::WriteStatus::kPending;
+            const auto written = static_cast<std::size_t>(result);
+            job.result.bytes_transferred += written;
+            job.offset += static_cast<std::uint64_t>(written);
+            // Consume what the kernel took: a short write has to resubmit only
+            // the remainder, and this is also what tells a completed one apart
+            // from a partial one. The stream's cursor moves with it, otherwise
+            // the next write would land on top of this one.
+            job.buffer = job.buffer.subspan(written);
+            write->file().advance_write_offset(written);
+            job.result.status = job.buffer.empty() ? Foundation::Core::WriteStatus::kDone
+                                                   : Foundation::Core::WriteStatus::kPending;
+        }
+        else if (result == 0)
+        {
+            // Nothing was taken from a non-empty buffer: resubmitting would
+            // spin forever, so report it instead.
+            job.result.status = Foundation::Core::WriteStatus::kError;
+            job.result.error_code = std::make_error_code(std::errc::io_error);
         }
         else if (result == -EAGAIN || result == -EWOULDBLOCK)
         {
@@ -262,7 +304,7 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
         break;
     }
     case Foundation::NBIO::ChannelType::kListen: {
-        auto &job = static_cast<ListenChannel *>(channel)->job();
+        auto &job = static_cast<AcceptChannel *>(channel)->job();
         if (result >= 0)
         {
             // result is the accepted socket fd; the peer address was filled in
@@ -284,6 +326,14 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
     case Foundation::NBIO::ChannelType::kTimer:
         // The read already drained the timerfd; TimerChannel::OnEvent pops the
         // due entries. Nothing to write into a job here.
+        break;
+    // A poll completion only reports that the fd became readable (its result is
+    // a revents mask, not a byte count). The channel reads the event itself, so
+    // there is no job to fill here; handle_event() does the rest.
+    case Foundation::NBIO::ChannelType::kRDMA_Accept:
+    case Foundation::NBIO::ChannelType::kRDMA_Connect:
+    case Foundation::NBIO::ChannelType::kRDMA_Send:
+    case Foundation::NBIO::ChannelType::kRDMA_Receive:
         break;
     default:
         break;
@@ -377,6 +427,11 @@ void URingMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
     case Foundation::NBIO::ChannelType::kListen:
     case Foundation::NBIO::ChannelType::kTimer:
     case Foundation::NBIO::ChannelType::kNotify:
+    // Recognised, but only polled: the channel reaps its own events.
+    case Foundation::NBIO::ChannelType::kRDMA_Accept:
+    case Foundation::NBIO::ChannelType::kRDMA_Connect:
+    case Foundation::NBIO::ChannelType::kRDMA_Send:
+    case Foundation::NBIO::ChannelType::kRDMA_Receive:
         break;
     default:
         throw std::logic_error("URingMultiplexer: unsupported channel type");

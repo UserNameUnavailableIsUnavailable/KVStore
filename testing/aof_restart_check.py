@@ -50,7 +50,7 @@ def start_server(server_path: Path, port: int, cwd: Path, stdout_path: Path, std
     stdout_file = stdout_path.open("w")
     stderr_file = stderr_path.open("w")
     return subprocess.Popen(
-        [str(server_path), str(port)],
+        [str(server_path), "--port", str(port)],
         cwd=str(cwd),
         stdout=stdout_file,
         stderr=stderr_file,
@@ -109,9 +109,9 @@ def run_roundtrip(server_path: Path, port: int, count: int, restart_wait: float,
         wait_for_server(client, restart_wait)
 
         if persist_mode == "aof":
-            response = client.execute_command("APPENDONLY", "yes")
+            response = client.execute_command("CONFIG", "SET", "appendonly", "yes")
             if str(response).upper() != "OK":
-                raise RuntimeError(f"APPENDONLY yes failed: {response!r}")
+                raise RuntimeError(f"CONFIG SET appendonly yes failed: {response!r}")
 
         rng = random.Random(DEFAULT_SEED)
         expected: dict[str, str] = {}
@@ -127,9 +127,11 @@ def run_roundtrip(server_path: Path, port: int, count: int, restart_wait: float,
                 print(f"wrote {index + 1}/{count} key-value pairs", flush=True)
 
         if persist_mode == "rdb":
-            response = client.execute_command("SAVE")
-            if response not in (True, "OK", b"OK"):
-                raise RuntimeError(f"SAVE failed: {response!r}")
+            # The snapshot command forks, so it is named the way Redis names a
+            # fork-then-write.
+            response = client.execute_command("BGSAVE")
+            if str(response).upper() != "BACKGROUND SAVING STARTED":
+                raise RuntimeError(f"BGSAVE failed: {response!r}")
 
         stop_server(process)
 

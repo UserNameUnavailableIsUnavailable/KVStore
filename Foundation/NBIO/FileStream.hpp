@@ -41,8 +41,8 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
     static std::shared_ptr<FileStream> Open(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions,
                                             Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
 
-    Foundation::NBIO::Task<Foundation::Core::ReadResult> read(Foundation::Core::Buffer &buffer);
-    Foundation::NBIO::Task<Foundation::Core::WriteResult> write(Foundation::Core::Buffer &buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> read(std::span<char> buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> write(std::span<const char> buffer);
 
     void close() noexcept;
 
@@ -68,15 +68,15 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
         write_offset_ += static_cast<std::uint64_t>(bytes);
     }
 
-    Core::ReadResult read(std::span<char> buffer)
-    {
-        return file_.read(buffer);
-    }
+    // Core::ReadResult read(std::span<char> buffer)
+    // {
+    //     return file_.read(buffer);
+    // }
 
-    Core::WriteResult write(std::span<char> buffer)
-    {
-        return file_.write(buffer);
-    }
+    // Core::WriteResult write(std::span<const char> buffer)
+    // {
+    //     return file_.write(buffer);
+    // }
 
     ReadChannel &read_channel() noexcept;
     WriteChannel &write_channel() noexcept;
