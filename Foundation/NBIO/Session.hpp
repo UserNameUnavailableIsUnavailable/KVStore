@@ -40,8 +40,8 @@ class Session : protected std::enable_shared_from_this<Session>
 
     // Session is a thin wrapper over the transport layer: it forwards Receive/
     // Send to its simplex channels and owns the connection lifecycle.
-    Foundation::NBIO::Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
-    Foundation::NBIO::Task<Foundation::Core::SendResult> send(Foundation::Core::Buffer &buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> receive(std::span<char> buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> send(std::span<const char> buffer);
 
     ReceiveChannel &receive_channel() noexcept
     {

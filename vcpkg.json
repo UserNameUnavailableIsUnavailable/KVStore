@@ -1,11 +1,23 @@
 {
-	"dependencies": [
-		"cli11",
-		"gtest",
-		"benchmark",
-		"spdlog",
-		"crcpp",
-		"nlohmann-json",
-		"jemalloc"
-	]
+  "dependencies": [
+    "cli11",
+    "gtest",
+    "benchmark",
+    "spdlog",
+    "crcpp",
+    "nlohmann-json",
+    "jemalloc",
+    {
+      "name": "rdma-core",
+      "platform": "linux"
+    },
+    {
+      "name": "liburing",
+      "platform": "linux"
+    },
+    {
+      "name": "libbpf",
+      "platform": "linux"
+    }
+  ]
 }

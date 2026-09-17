@@ -1,4 +1,5 @@
-#include <Foundation/Core/Socket.hpp>
+#include "Socket.hpp"
+
 #include <cerrno>
 
 #if defined(_WIN32)

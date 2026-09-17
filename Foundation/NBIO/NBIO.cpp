@@ -35,17 +35,17 @@ std::shared_ptr<FileStream> open_file(const std::filesystem::path &p)
                             Engine::multiplexer(), Engine::scheduler());
 }
 
-std::unique_ptr<ListenChannel> listen_on(const Foundation::Core::Address &address, int backlog)
+std::unique_ptr<AcceptChannel> bind(const Foundation::Core::Address &address, int backlog)
 {
     Foundation::Core::Socket socket(address.family(), Foundation::Core::Socket::Type::kStream);
     socket.set_non_blocking();
     socket.set_reuse_address(); // enable address reuse for quick restart
     socket.bind(address);
     socket.listen(backlog);
-    return std::make_unique<ListenChannel>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
+    return std::make_unique<AcceptChannel>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
 }
 
-std::shared_ptr<Session> establish_with(Foundation::Core::Socket socket)
+std::shared_ptr<Session> establish(Foundation::Core::Socket socket)
 {
     return std::make_shared<Session>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
 }

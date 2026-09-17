@@ -13,7 +13,8 @@
 #include <memory>
 
 #include "FileStream.hpp"
-#include "ListenChannel.hpp"
+#include "AcceptChannel.hpp"
+#include "RDMA_Session.hpp"
 #include "Runtime.hpp"
 #include "Session.hpp"
 
@@ -47,7 +48,7 @@ Task<void> wait_for_signal();
 
 std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
 
-std::unique_ptr<ListenChannel> listen_on(const Foundation::Core::Address &address, int backlog = 4096);
+std::unique_ptr<AcceptChannel> bind(const Foundation::Core::Address &address, int backlog = 4096);
 
-std::shared_ptr<Session> establish_with(Foundation::Core::Socket socket);
+std::shared_ptr<Session> establish(Foundation::Core::Socket socket);
 } // namespace Foundation::NBIO

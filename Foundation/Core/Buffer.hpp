@@ -6,6 +6,7 @@
 #include <memory>
 #include <span>
 #include <string_view>
+#include <utility>
 
 //   storage_:  [ prependable | valid | appendable ]
 //              ^             ^       ^            ^
@@ -22,22 +23,12 @@ class Buffer
     Buffer &operator=(Buffer &&) = default;
     ~Buffer() noexcept;
 
-    std::size_t prependable_size() const noexcept
-    {
-        return begin_;
-    }
-
-    std::span<const char> prependable_span() const noexcept
-    {
-        return {storage_.get(), storage_.get() + begin_};
-    }
-
-    std::size_t appendable_size() const noexcept
+    std::size_t writable_size() const noexcept
     {
         return capacity_ - end_;
     }
 
-    std::span<char> appendable_span() noexcept
+    std::span<char> writable_span() noexcept
     {
         return {storage_.get() + end_, storage_.get() + capacity_};
     }
@@ -52,28 +43,30 @@ class Buffer
         return {storage_.get() + begin_, storage_.get() + end_};
     }
 
-    std::span<char> valid_span() const noexcept
+    std::span<char> readable_span() noexcept
     {
         return {storage_.get() + begin_, storage_.get() + end_};
     }
 
-    bool reserve_for_prepend(std::size_t size);
-    bool reserve_for_append(std::size_t size);
-    bool prepend(const char *data, std::size_t size);
-    bool prepend(const char *data);
-    bool append(const char *data, std::size_t size);
-    bool append(const char *data);
+    std::span<const char> readable_span() const noexcept
+    {
+        return {storage_.get() + begin_, storage_.get() + end_};
+    }
+
+    bool reserve(std::size_t size);
+    bool write(const char *data, std::size_t size);
+    bool write(const char *data);
 
     void commit(std::size_t size) noexcept
     {
-        assert(size <= appendable_size());
+        assert(size <= writable_size());
         end_ += size;
     }
 
     void consume(std::size_t size) noexcept;
     void consume_all() noexcept
     {
-        begin_ = end_ = base_;
+        begin_ = end_ = 0;
     }
 
     std::size_t capacity() const noexcept
@@ -83,24 +76,26 @@ class Buffer
 
     void clear() noexcept
     {
-        begin_ = base_;
-        end_ = base_;
+        begin_ = end_ = 0;
     }
-
-    std::size_t get_base() const noexcept
-    {
-        return base_;
-    }
-    // changes the base offset of the buffer
-    // if base >= capacity_, the buffer will expand (begin_ & end_ do not change)
-    void set_base(std::size_t base);
 
     // shrink the buffer to the minimum capacity that can hold the data
     void shrink();
 
-    [[nodiscard]] std::size_t valid_size() const noexcept
+    [[nodiscard]] std::size_t readable_size() const noexcept
     {
         return end_ - begin_;
+    }
+
+    std::span<char> span(std::size_t begin, std::size_t end) noexcept
+    {
+        if (begin > end)
+        {
+            std::swap(begin, end);
+        }
+        begin = std::min(begin, capacity_);
+        end = std::min(end, capacity_);
+        return {storage_.get() + begin, storage_.get() + end};
     }
 
   private:
@@ -111,10 +106,9 @@ class Buffer
     // base: initially, where the prependable region ends and the appendable region begins [0,
     // capacity_] if base_ == 0, the prependable region is empty initially if base_ == capacity_,
     // the appendable region is empty initially
-    std::size_t base_;
     std::unique_ptr<char[]> storage_;
     // Invariant: begin_ <= end_ <= storage_.size()
-    std::size_t begin_{base_};
-    std::size_t end_{base_};
+    std::size_t begin_{0};
+    std::size_t end_{0};
 };
 } // namespace Foundation::Core

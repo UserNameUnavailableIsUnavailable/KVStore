@@ -9,7 +9,11 @@ target_sources(
     INTERFACE
     AppendOnlyFile.cpp
     Backup.cpp
+    ConfFile.cpp
+    RDMA_Transfer.cpp
+    ReplicationService.cpp
     Server.cpp
+    WriteHistory.cpp
 )
 
 target_link_libraries(ServerImpl INTERFACE Application)
@@ -19,7 +23,7 @@ add_executable(
     Main.cpp
 )
 
-target_link_libraries(Server PRIVATE ServerImpl)
+target_link_libraries(Server PRIVATE ServerImpl CLI11::CLI11)
 
 if(BUILD_TESTING)
 	add_subdirectory(testing)

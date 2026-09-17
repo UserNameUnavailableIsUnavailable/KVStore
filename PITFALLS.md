@@ -1,0 +1,5 @@
+- siw deadlocks in ibv_destroy_cq when the queue still holds completions or unacked events (captured with gdb). RDMA_Stream::reset() now drains both queues and acks what is left before destroying them.
+- RDMA_Acceptor::accept() returned RDMA_Stream and threw on any non-CONNECT_REQUEST event — but its channel also carries its own connections' disconnects, so one replica hanging up killed the listener. It now returns std::optional, skips those events, and treats "nothing waiting" as nothing waiting.
+- io_uring's kSend completion never consumed its span, so the same reply was written forever (7.5 MB of +PONG in 2 s). redis-cli hides this; redis-py saw "Connection has data". The epoll path consumed nothing on a partial send either — both fixed.
+- RESP::Receiver cleared its buffer per command, silently dropping everything after the first command in a pipeline, and could not grow for a request larger than 512 bytes. Both fixed; the server's buffers are sized for real pipelines.
+- CLIENT SETINFO (redis-py 8 announces itself on connect) is answered, and SAVE is now BGSAVE with Background saving started.

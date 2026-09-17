@@ -8,14 +8,14 @@
 
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
-#include <coroutine>
-
+#include <span>
+#include <system_error>
 
 namespace Foundation::NBIO
 {
 struct ReceiveJob
 {
-    Foundation::Core::Buffer *buffer{nullptr};
+    std::span<char> buffer;
     Foundation::Core::ReceiveResult result{};
 };
 // Simplex channel dedicated to receiving: one job, one waiter, interested only
@@ -26,7 +26,7 @@ class ReceiveChannel : public Foundation::NBIO::Channel
     explicit ReceiveChannel(Foundation::Core::Socket &socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     ~ReceiveChannel() noexcept override;
 
-    Foundation::NBIO::Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> receive(std::span<char> buffer);
 
     void handle_event() override;
 
@@ -51,10 +51,15 @@ class ReceiveChannel : public Foundation::NBIO::Channel
     {
         return socket_;
     }
+    std::error_code last_error() const noexcept
+    {
+        return error_code_;
+    }
 
   private:
     Foundation::Core::Socket &socket_;
     ReceiveJob job_;
     Foundation::Async::Coroutine waiter_;
+    std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

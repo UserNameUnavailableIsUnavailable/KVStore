@@ -1,4 +1,5 @@
 #pragma once
+#if defined(__linux__)
 
 #include <Foundation/NBIO/Channel.hpp>
 #include <Foundation/NBIO/Multiplexer.hpp>
@@ -10,9 +11,6 @@
 
 #include <Foundation/NBIO/Types.hpp>
 
-#if not defined(__linux__)
-#error "URingMultiplexer is only supported on Linux"
-#endif
 
 #include "liburing.h"
 
@@ -34,10 +32,6 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
     void update_channel(Foundation::NBIO::Channel *channel) override;
     void delete_channel(Foundation::NBIO::Channel *channel) noexcept override;
 
-    Foundation::NBIO::MultiplexerType type() const override
-    {
-        return Foundation::NBIO::MultiplexerType::kURing;
-    }
     Handle native_handle() noexcept
     {
         return &ring_;
@@ -63,3 +57,4 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
     std::vector<Foundation::NBIO::Channel *> pending_submissions_;
 };
 } // namespace Foundation::NBIO
+#endif // defined(__linux__)

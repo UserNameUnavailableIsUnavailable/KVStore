@@ -3,6 +3,8 @@
 
 #include <Foundation/Core/Socket.hpp>
 #include <cassert>
+#include <optional>
+#include <span>
 #include <utility>
 
 namespace Foundation::NBIO
@@ -12,7 +14,7 @@ namespace detail
 class SendAwaiter
 {
   public:
-    SendAwaiter(SendChannel &channel, ::Foundation::Core::Buffer &buffer) : channel_(channel), buffer_(buffer)
+    SendAwaiter(SendChannel &channel, std::span<const char> &buffer) : channel_(channel), buffer_(buffer)
     {
     }
 
@@ -32,7 +34,7 @@ class SendAwaiter
     {
         channel_.arm();
         channel_.park(Foundation::Async::Coroutine::from_handle(handle));
-        SendJob job{.buffer = &buffer_,
+        SendJob job{.buffer = buffer_,
                     .result = {.status = Foundation::Core::SendStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
         std::memcpy(&channel_.job(), &job, sizeof(SendJob));
     }
@@ -46,7 +48,7 @@ class SendAwaiter
 
   private:
     SendChannel &channel_;
-    ::Foundation::Core::Buffer &buffer_;
+    std::span<const char> buffer_;
 };
 } // namespace
 
@@ -90,9 +92,18 @@ void SendChannel::handle_event()
     scheduler_.submit(std::move(waiter));
 }
 
-Foundation::NBIO::Task<Foundation::Core::SendResult> SendChannel::send(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> SendChannel::send(std::span<const char> buffer)
 {
     auto result = co_await detail::SendAwaiter(*this, buffer);
-    co_return std::move(result);
+    std::optional<std::size_t> ret{};
+    if (result.status == Core::SendStatus::kError)
+    {
+        error_code_ = std::move(result.error_code);
+    }
+    else
+    {
+        ret = result.bytes_transferred;
+    }
+    co_return ret;
 }
 } // namespace Foundation::NBIO

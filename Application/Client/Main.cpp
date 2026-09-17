@@ -212,7 +212,7 @@ Foundation::NBIO::Task<void> run_client(Foundation::Core::Address address, std::
 {
     Foundation::Core::Socket socket(address.family(), Foundation::Core::Socket::Type::kStream);
     socket.connect(address);
-    auto session = Foundation::NBIO::establish_with(std::move(socket));
+    auto session = Foundation::NBIO::establish(std::move(socket));
 
     std::cout << "connected to " << host << ':' << port << '\n';
 

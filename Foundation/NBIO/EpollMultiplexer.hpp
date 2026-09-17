@@ -1,20 +1,15 @@
 #pragma once
+#if defined(__linux__)
 
-#include <Foundation/NBIO/Channel.hpp>
-#include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/Async/Scheduler.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <chrono>
-#include <cstdint>
+#include <set>
 #include <unordered_map>
-#include <vector>
 
-#include <Foundation/NBIO/Types.hpp>
-
-#if not defined(__linux__)
-#error "EpollMultiplexer is only supported on Linux"
-#endif
+#include "Channel.hpp"
+#include "Multiplexer.hpp"
 
 #include <sys/epoll.h>
 
@@ -35,20 +30,15 @@ class EpollMultiplexer final : public Foundation::NBIO::Multiplexer
     {
         return handle_;
     }
-    virtual Foundation::NBIO::MultiplexerType type() const override
-    {
-        return Foundation::NBIO::MultiplexerType::kEpoll;
-    }
 
   private:
+
     void run_impl(int timeout);
-
-    // Maps a channel type to the corresponding epoll event flag.
-    static std::uint32_t native_flags_for(Foundation::NBIO::ChannelType type);
-
     int handle_{-1}; // epoll file descriptor
-    std::unordered_map<int, Foundation::NBIO::Channel *> registered_channels_;
-    std::vector<Foundation::NBIO::Channel *> active_channels_; // channels that are ready for I/O
-    std::vector<Foundation::NBIO::Channel *> always_ready_channels_; // it is uncommon to add many always ready channels, use cache-friendly continuous storage
+    std::unordered_multimap<int, Foundation::NBIO::Channel *> pollable_channels_; // all pollable channels
+    std::unordered_multimap<int, Foundation::NBIO::Channel *> always_channels_; // channels that are always ready, non-pollable
+	std::unordered_map<int, std::uint32_t> updated_flags_; // delayed update
+	std::set<Foundation::NBIO::Channel *> active_channels_;
 };
 } // namespace Foundation::NBIO
+#endif // defined(__linux__)

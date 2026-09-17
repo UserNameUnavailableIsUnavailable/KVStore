@@ -10,37 +10,6 @@
 #include <utility>
 #include <vector>
 
-// -------- Slab --------
-// An object pool that names its objects with integer handles instead of
-// pointers.
-//
-// It exists because an event-driven server has to name an object in places
-// where a pointer cannot be trusted:
-//   - io_uring carries a 64-bit user_data down into the kernel and back;
-//   - epoll carries a 64-bit epoll_data;
-//   - either one can surface long after the object it referred to is gone.
-//
-// A handle is an index plus a generation. The index locates the slot in O(1);
-// the generation is bumped every time a slot is released, so a handle minted
-// before that release can never resolve to whatever object took its place. A
-// late completion therefore fails a find() lookup instead of silently landing
-// on a live object - which is precisely what a raw pointer, or a recycled file
-// descriptor, cannot express.
-//
-// Objects never move. Slots live in fixed-size blocks and the slab only ever
-// appends block pointers, so a reference handed out by Acquire() stays valid
-// for as long as the object lives, across any number of later Acquire() calls.
-// That is what lets a coroutine frame, an awaiter, or the kernel itself hold on
-// to a buffer that lives inside a slab-allocated object.
-//
-// The slab manages object lifetime and nothing else. It has no idea what makes
-// a particular object safe to release - draining pending I/O, waiting for a
-// cancellation to be acknowledged, letting a coroutine finish - and it stays
-// deliberately out of that decision. Such a policy belongs to the owner of the
-// slab (a SessionManager, say), not here.
-//
-// Not thread safe: one slab belongs to one event loop.
-
 namespace KV
 {
 template <typename T, std::size_t SlotsPerBlock = 512> class Slab

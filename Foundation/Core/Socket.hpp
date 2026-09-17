@@ -19,7 +19,6 @@
 
 namespace Foundation::Core
 {
-
 enum class ReceiveStatus
 {
     kDone,

@@ -184,7 +184,7 @@ bool ValidateChecksum(std::span<const std::uint8_t> bytes)
     return computed == stored_checksum;
 }
 
-bool ReadSnapshotImpl(std::span<const std::uint8_t> bytes, std::vector<LoadedEntry> &entries)
+bool ReadSnapshot(std::span<const std::uint8_t> bytes, std::vector<LoadedEntry> &entries)
 {
     entries.clear();
     if (bytes.empty())
@@ -358,7 +358,40 @@ bool ReadSnapshot(const std::filesystem::path &path, std::vector<LoadedEntry> &e
     }
 
     const auto *bytes_begin = static_cast<const std::uint8_t *>(view.data());
-    return ReadSnapshotImpl(std::span<const std::uint8_t>(bytes_begin, view.size()), entries);
+    return ReadSnapshot(std::span<const std::uint8_t>(bytes_begin, view.size()), entries);
 }
-} // namespace backup_helper
+} // namespace detail
+
+namespace
+{
+// The fork is the whole point of a background save: the child writes the image
+// and the parent only waits, so the event loop never runs the (potentially
+// large) serialisation itself.
+bool WriteSnapshotInChild(const std::filesystem::path &path, const std::vector<detail::SnapshotEntry> &entries)
+{
+    const pid_t child = ::fork();
+    if (child < 0)
+    {
+        return false;
+    }
+    if (child == 0)
+    {
+        _exit(detail::WriteSnapshot(path, entries) ? EXIT_SUCCESS : EXIT_FAILURE);
+    }
+
+    int status = 0;
+    if (::waitpid(child, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS)
+    {
+        return false;
+    }
+    return true;
+}
+} // namespace
+
+Foundation::NBIO::Task<bool> Backup::save(std::vector<detail::SnapshotEntry> entries) const
+{
+    co_return co_await offload([this, entries = std::move(entries)] {
+        return WriteSnapshotInChild(path_, entries);
+    });
+}
 } // namespace KV

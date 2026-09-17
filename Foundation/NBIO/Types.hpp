@@ -17,13 +17,17 @@ enum class MultiplexerType
 // listener owns one (accept).
 enum class ChannelType
 {
+    kListen,
     kReceive,
     kSend,
     kRead,
     kWrite,
-    kListen,
     kTimer,
     kSignal,
     kNotify,
+    kRDMA_Accept,
+    kRDMA_Connect,
+    kRDMA_Send,
+    kRDMA_Receive,
 };
 } // namespace Foundation::NBIO

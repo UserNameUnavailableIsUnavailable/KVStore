@@ -42,48 +42,46 @@ class AppendOnlyFile
 
         std::ifstream file(path_, std::ios::binary);
         if (!file)
-        {
-            return false;
-        }
-
-        const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        Foundation::Core::Buffer buffer(std::max<std::size_t>(512, bytes.size()), std::max<std::size_t>(512, bytes.size()));
-        if (!bytes.empty() && !buffer.append(bytes.data(), bytes.size()))
-        {
-            return false;
-        }
-
-        while (!buffer.is_empty())
-        {
-            auto decoder = RESP::Decode(buffer);
-            while (!decoder.done())
-            {
-                decoder.resume();
-            }
-            if (decoder.status() != RESP::DecodeStatus::kComplete || !decoder.result().object.has_value())
-            {
-                return false;
-            }
-
-            const auto validation = ValidateCommand(*decoder.result().object);
-            if (!validation || !validation.command.has_value())
-            {
-                return false;
-            }
-            if (!apply(*validation.command))
-            {
-                return false;
-            }
-        }
-        return true;
+    {
+        return false;
     }
 
-  private:
-    static RESP::Object to_object(const Command &command);
-    static std::string_view command_name(CommandType type);
+    const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    Foundation::Core::Buffer buffer(std::max<std::size_t>(512, bytes.size()), std::max<std::size_t>(512, bytes.size()));
+    if (!bytes.empty() && !buffer.write(bytes.data(), bytes.size()))
+    {
+        return false;
+    }
+
+    while (!buffer.is_empty())
+    {
+        auto decoder = RESP::Decode(buffer);
+        while (!decoder.done())
+        {
+            decoder.resume();
+        }
+        if (decoder.status() != RESP::DecodeStatus::kComplete || !decoder.result().object.has_value())
+        {
+            return false;
+        }
+
+        const auto validation = ValidateCommand(*decoder.result().object);
+        if (!validation || !validation.command.has_value())
+        {
+            return false;
+        }
+        if (!apply(*validation.command))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+private:
 
     std::filesystem::path path_;
-        std::shared_ptr<Foundation::NBIO::FileStream> file_;
+    std::shared_ptr<Foundation::NBIO::FileStream> file_;
     bool enabled_{false};
 };
 } // namespace KV

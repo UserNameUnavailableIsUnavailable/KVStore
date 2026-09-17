@@ -10,6 +10,7 @@
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/File.hpp>
 #include <cstdint>
+#include <system_error>
 
 
 namespace Foundation::NBIO
@@ -18,7 +19,7 @@ class FileStream;
 
 struct WriteJob
 {
-    Foundation::Core::Buffer *buffer{nullptr};
+    std::span<const char> buffer;
     std::uint64_t offset{0};
     Foundation::Core::WriteResult result{};
 };
@@ -29,7 +30,7 @@ class WriteChannel final : public Foundation::NBIO::Channel
     WriteChannel(FileStream &file, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     ~WriteChannel() noexcept override;
 
-    Foundation::NBIO::Task<Foundation::Core::WriteResult> write(Foundation::Core::Buffer &buffer);
+    Foundation::NBIO::Task<std::optional<std::size_t>> write(std::span<const char> buffer);
 
     void handle_event() override;
 
@@ -55,12 +56,18 @@ class WriteChannel final : public Foundation::NBIO::Channel
     {
         return file_;
     }
+    
+    std::error_code last_error() const noexcept
+    {
+        return error_code_;
+    }
 
   private:
-    Foundation::Core::WriteResult write_sync(Foundation::Core::Buffer &buffer);
+    Foundation::Core::WriteResult write_sync(std::span<const char> buffer);
 
     FileStream &file_;
     WriteJob job_;
     Async::Coroutine waiter_;
+    std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

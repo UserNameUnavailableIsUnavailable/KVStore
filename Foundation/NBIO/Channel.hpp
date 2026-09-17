@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <spdlog/spdlog.h>
 
 #include <Foundation/Async/Scheduler.hpp>
@@ -12,11 +11,11 @@
 namespace Foundation::NBIO
 {
 class Channel;
-using IOHandler = void (*)(Channel *);
-
 class Channel
 {
   public:
+	using IOHandler = void (*)(Channel *);
+
     using Handle = int;
     constexpr static Handle kInvalidHandle = -1;
 
@@ -65,6 +64,16 @@ class Channel
     Multiplexer &multiplexer() noexcept
     {
         return multiplexer_;
+    }
+
+    Foundation::Async::Scheduler &scheduler() noexcept
+    {
+        return scheduler_;
+    }
+
+    const Foundation::Async::Scheduler &scheduler() const noexcept
+    {
+        return scheduler_;
     }
 
     const Multiplexer &multiplexer() const noexcept

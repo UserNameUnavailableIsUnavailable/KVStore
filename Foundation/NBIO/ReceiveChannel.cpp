@@ -1,6 +1,8 @@
 #include "ReceiveChannel.hpp"
 #include <Foundation/NBIO/Runtime.hpp>
 
+#include <optional>
+#include <span>
 #include <spdlog/spdlog.h>
 
 #include <Foundation/Core/Socket.hpp>
@@ -19,7 +21,7 @@ namespace detail
 class ReceiveAwaiter
 {
   public:
-    ReceiveAwaiter(ReceiveChannel &channel, Foundation::Core::Buffer &buffer) : channel_(channel), buffer_(buffer)
+    ReceiveAwaiter(ReceiveChannel &channel, std::span<char> &buffer) : channel_(channel), buffer_(buffer)
     {
     }
 
@@ -46,7 +48,7 @@ class ReceiveAwaiter
                       "ReceiveAwaiter requires a promise derived from Foundation::Async::Promise");
         channel_.arm();
         channel_.park(Foundation::Async::Coroutine::from_handle(handle));
-        ReceiveJob job{.buffer = &buffer_,
+        ReceiveJob job{.buffer = buffer_,
                        .result = {.status = Foundation::Core::ReceiveStatus::kPending, .bytes_transferred = 0, .error_code = {}}};
         std::memcpy(&channel_.job(), &job, sizeof(ReceiveJob));
     }
@@ -60,7 +62,7 @@ class ReceiveAwaiter
 
   private:
     ReceiveChannel &channel_;
-    ::Foundation::Core::Buffer &buffer_;
+    std::span<char> buffer_;
 };
 } // namespace detail
 ReceiveChannel::ReceiveChannel(Foundation::Core::Socket &socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
@@ -103,10 +105,19 @@ void ReceiveChannel::handle_event()
     scheduler_.submit(std::move(waiter));
 }
 
-Foundation::NBIO::Task<Foundation::Core::ReceiveResult> ReceiveChannel::receive(Foundation::Core::Buffer &buffer)
+Foundation::NBIO::Task<std::optional<std::size_t>> ReceiveChannel::receive(std::span<char> buffer)
 {
     auto awaiter = detail::ReceiveAwaiter(*this, buffer);
     auto result = co_await std::move(awaiter);
-    co_return std::move(result);
+    std::optional<std::size_t> ret{};
+    if (result.status == Core::ReceiveStatus::kError)
+    {
+        error_code_ = std::move(result.error_code);
+    }
+    else
+    {
+        ret = result.bytes_transferred;
+    }
+    co_return ret;
 }
 } // namespace Foundation::NBIO
