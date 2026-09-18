@@ -5,7 +5,7 @@
 #include <Foundation/Async/Task.hpp>
 
 #include <chrono>
-#include <set>
+#include <unordered_set>
 #include <unordered_map>
 
 #include "Channel.hpp"
@@ -38,7 +38,7 @@ class EpollMultiplexer final : public Foundation::NBIO::Multiplexer
     std::unordered_multimap<int, Foundation::NBIO::Channel *> pollable_channels_; // all pollable channels
     std::unordered_multimap<int, Foundation::NBIO::Channel *> always_channels_; // channels that are always ready, non-pollable
 	std::unordered_map<int, std::uint32_t> updated_flags_; // delayed update
-	std::set<Foundation::NBIO::Channel *> active_channels_;
+	std::unordered_set<Foundation::NBIO::Channel *> active_channels_;
 };
 } // namespace Foundation::NBIO
 #endif // defined(__linux__)

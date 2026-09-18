@@ -11,8 +11,7 @@
 
 #include <Foundation/NBIO/Types.hpp>
 
-
-#include "liburing.h"
+#include <liburing.h>
 
 namespace Foundation::NBIO
 {
@@ -21,7 +20,7 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
   public:
     using Handle = io_uring *;
 
-    explicit URingMultiplexer(std::uint32_t submission_capacity = 1024, std::uint32_t completion_capacity = 2048);
+    explicit URingMultiplexer(std::uint32_t submission_capacity = 8291, std::uint32_t completion_capacity = 16384);
     URingMultiplexer(const URingMultiplexer &) = delete;
     URingMultiplexer &operator=(const URingMultiplexer &) = delete;
     ~URingMultiplexer() noexcept override;

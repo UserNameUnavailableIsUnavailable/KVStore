@@ -8,13 +8,18 @@
 #include <Foundation/Async/Scheduler.hpp>
 #include <Foundation/Async/Task.hpp>
 #include <Foundation/Core/Socket.hpp>
+#include <deque>
 #include <system_error>
 
 namespace Foundation::NBIO
 {
-struct AcceptJob
+// One wait for a connection. The slot its outcome goes into belongs to the frame
+// that is parked, which is also where the kernel writes the peer address when the
+// accept is submitted.
+struct PendingAccept
 {
-    Foundation::Core::AcceptResult result;
+    Foundation::Core::AcceptResult *result{nullptr};
+    Foundation::Async::Coroutine waiter;
 };
 
 class AcceptChannel final : public Foundation::NBIO::Channel
@@ -26,19 +31,25 @@ class AcceptChannel final : public Foundation::NBIO::Channel
 
     Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> accept();
 
-    void park(Foundation::Async::Coroutine waiter) noexcept
+    // Hands a wait for a connection to the channel. Taking connections is not one
+    // operation that covers several of them the way a writev does, so they are
+    // taken one at a time and answered in the order they queued -- but a readiness
+    // event can satisfy more than one, which is what flush() does.
+    void submit(Foundation::Core::AcceptResult &result, Async::Coroutine waiter);
+
+    // The wait at the front of the queue: the one the kernel is accepting for.
+    Foundation::Core::AcceptResult *front() noexcept
     {
-        waiter_ = std::move(waiter);
+        return pending_.empty() ? nullptr : pending_.front().result;
     }
 
-    AcceptJob &job() noexcept
-    {
-        return job_;
-    }
-    const AcceptJob &job() const noexcept
-    {
-        return job_;
-    }
+    // What one accept returned: an accepted socket, a "not yet", or an error.
+    void accepted(int result) noexcept;
+
+    // Takes connections while there are connections to take and someone waiting for
+    // them. A readiness multiplexer drives this itself; a completion multiplexer
+    // gets its answers one completion at a time instead.
+    void flush() noexcept;
 
     const Foundation::Core::Socket &socket() const noexcept
     {
@@ -55,9 +66,13 @@ class AcceptChannel final : public Foundation::NBIO::Channel
     }
 
   private:
+    // Puts the wait at the front of the queue in front of the kernel.
+    void arm_next();
+
+    void fail(PendingAccept &pending) noexcept;
+
     Foundation::Core::Socket socket_;
-    AcceptJob job_;
-    Foundation::Async::Coroutine waiter_;
+    std::deque<PendingAccept> pending_;
     std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

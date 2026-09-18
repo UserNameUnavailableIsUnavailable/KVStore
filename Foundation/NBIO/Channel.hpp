@@ -54,6 +54,16 @@ class Channel
     // channels (receive, send, listen, read, write, timer, signal) have no
     // sender at all, so an application-triggered event is expressed by a
     // concrete channel that provides one (see NotifyChannel).
+    //
+    // A channel drives ONE job at a time and, unless it says otherwise, wants one
+    // coroutine: the job, the offset it was armed with and the parked coroutine
+    // all live on the channel, so a second coroutine starting the same operation
+    // would write over the first one's job and drop the parked coroutine that
+    // nothing else refers to. A channel that a shared resource makes reachable
+    // from more than one coroutine therefore has to queue its work --
+    // WriteChannel is the one that does, because every client session appends to
+    // the same file through it. SignalChannel and NotifyChannel take many
+    // waiters by design; those wait on an event rather than for a job.
     virtual void handle_event() = 0;
 
     Handle native_handle() const noexcept

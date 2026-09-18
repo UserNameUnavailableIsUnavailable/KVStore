@@ -16,7 +16,7 @@
 #include <string>
 #include <system_error>
 
-#include <Foundation/NBIO/Channel.hpp>
+#include "Channel.hpp"
 #include "AcceptChannel.hpp"
 #include "FileStream.hpp"
 #include "ReadChannel.hpp"
@@ -39,7 +39,8 @@ URingMultiplexer::URingMultiplexer(std::uint32_t submission_capacity, std::uint3
 	Multiplexer(MultiplexerType::kURing)
 {
     // Zero-initialised: only the fields we set may influence setup.
-    io_uring_params parameters{};
+    io_uring_params parameters{
+    };
     parameters.flags = IORING_SETUP_CQSIZE;
     parameters.cq_entries = completion_capacity;
 
@@ -84,35 +85,49 @@ bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
     switch (channel->type())
     {
     case Foundation::NBIO::ChannelType::kReceive: {
+        // Every receive armed right now goes in one submission, and the kernel
+        // fills the buffers in the order they were queued.
         auto *receive = static_cast<ReceiveChannel *>(channel);
-        auto &job = receive->job();
-        ::io_uring_prep_recv(sqe, fd, job.buffer.data(), job.buffer.size(), 0);
+        ::io_uring_prep_recvmsg(sqe, fd, const_cast<msghdr *>(&receive->message_batch()), 0);
         break;
     }
     case Foundation::NBIO::ChannelType::kSend: {
+        // One sendmsg for the whole queue: a stream has to keep the order, so the
+        // sends cannot be submitted as separate operations.
         auto *send = static_cast<SendChannel *>(channel);
-        auto &job = send->job();
-        ::io_uring_prep_send(sqe, fd, job.buffer.data(), job.buffer.size(), MSG_NOSIGNAL);
+        ::io_uring_prep_sendmsg(sqe, fd, const_cast<msghdr *>(&send->message_batch()), MSG_NOSIGNAL);
         break;
     }
     case Foundation::NBIO::ChannelType::kRead: {
+        // Every read armed right now goes in one submission: they cover
+        // consecutive stretches of the file, so the kernel takes them as one
+        // vector.
         auto *read = static_cast<ReadChannel *>(channel);
-        auto &job = read->job();
-        ::io_uring_prep_read(sqe, fd, job.buffer.data(), job.buffer.size(), job.offset);
+        const auto vectors = read->vectors();
+        ::io_uring_prep_readv(sqe, fd, vectors.data(), static_cast<unsigned>(vectors.size()),
+                              static_cast<__u64>(read->front_offset()));
         break;
     }
     case Foundation::NBIO::ChannelType::kWrite: {
+        // Every write armed right now goes in one submission: they follow one
+        // another in the file, so the kernel takes them as one vector.
         auto *write = static_cast<WriteChannel *>(channel);
-        auto &job = write->job();
-        ::io_uring_prep_write(sqe, fd, job.buffer.data(), job.buffer.size(), job.offset);
+        const auto vectors = write->vectors();
+        ::io_uring_prep_writev(sqe, fd, vectors.data(), static_cast<unsigned>(vectors.size()),
+                               static_cast<__u64>(write->front_offset()));
         break;
     }
     case Foundation::NBIO::ChannelType::kListen: {
         auto *listen = static_cast<AcceptChannel *>(channel);
-        auto &job = listen->job();
-        // Let the kernel write the peer address straight into the job's result.
-        job.result.address.length() = job.result.address.capacity();
-        ::io_uring_prep_accept(sqe, fd, job.result.address.storage<sockaddr>(), &job.result.address.length(), 0);
+        auto *accepted = listen->front();
+        if (accepted == nullptr)
+        {
+            return false;
+        }
+        // Let the kernel write the peer address straight into the waiting frame's
+        // result, which is alive for as long as that frame is parked.
+        accepted->address.length() = accepted->address.capacity();
+        ::io_uring_prep_accept(sqe, fd, accepted->address.storage<sockaddr>(), &accepted->address.length(), 0);
         break;
     }
     case Foundation::NBIO::ChannelType::kTimer: {
@@ -188,139 +203,32 @@ void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
     switch (channel->type())
     {
     case Foundation::NBIO::ChannelType::kReceive: {
-        auto &job = static_cast<ReceiveChannel *>(channel)->job();
-        if (result > 0)
-        {
-            job.result.bytes_transferred = static_cast<std::size_t>(result);
-            job.result.status = ::Foundation::Core::ReceiveStatus::kDone;
-        }
-        else if (result == 0)
-        {
-            job.result.status = ::Foundation::Core::ReceiveStatus::kPeerClosed;
-        }
-        else if (result == -EAGAIN || result == -EWOULDBLOCK)
-        {
-            job.result.status = ::Foundation::Core::ReceiveStatus::kPending; // retry later
-        }
-        else
-        {
-            job.result.status = ::Foundation::Core::ReceiveStatus::kError;
-            job.result.error_code = Foundation::Core::Socket::get_last_error();
-        }
+        // The channel turns the byte count into the answers of the receives it
+        // covered: one operation can have filled several of them.
+        static_cast<ReceiveChannel *>(channel)->complete(result);
         break;
     }
     case Foundation::NBIO::ChannelType::kSend: {
-        auto &job = static_cast<SendChannel *>(channel)->job();
-        if (result > 0)
-        {
-            const auto written = static_cast<std::size_t>(result);
-            job.result.bytes_transferred += written;
-            // Consume what the kernel took. The span is what gets resubmitted,
-            // so without this a send looks unfinished forever and the same
-            // bytes go out again and again -- and this is also what tells a
-            // completed send apart from a partial one.
-            job.buffer = job.buffer.subspan(written);
-            job.result.status = job.buffer.empty() ? ::Foundation::Core::SendStatus::kDone
-                                                   : ::Foundation::Core::SendStatus::kPending;
-        }
-        else if (result == 0)
-        {
-            // Nothing was taken from a non-empty buffer: resubmitting would
-            // spin forever, so report it instead.
-            job.result.status = ::Foundation::Core::SendStatus::kError;
-            job.result.error_code = std::make_error_code(std::errc::io_error);
-        }
-        else if (result == -EAGAIN || result == -EWOULDBLOCK)
-        {
-            job.result.status = ::Foundation::Core::SendStatus::kPending;
-        }
-        else
-        {
-            job.result.status = ::Foundation::Core::SendStatus::kError;
-            job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
-        }
+        // As for receiving: one sendmsg can have finished several sends.
+        static_cast<SendChannel *>(channel)->complete(result);
         break;
     }
     case Foundation::NBIO::ChannelType::kRead: {
-        auto *read = static_cast<ReadChannel *>(channel);
-        auto &job = read->job();
-        if (result > 0)
-        {
-            job.offset += static_cast<std::uint64_t>(result);
-            // Keep the stream's cursor in step, or the next read would return
-            // the same bytes again.
-            read->file_stream().advance_read_offset(static_cast<std::size_t>(result));
-            job.result.bytes_transferred = static_cast<std::size_t>(result);
-            job.result.status = Foundation::Core::ReadStatus::kDone;
-        }
-        else if (result == 0)
-        {
-            job.result.status = Foundation::Core::ReadStatus::kEndOfFile;
-        }
-        else if (result == -EAGAIN || result == -EWOULDBLOCK)
-        {
-            job.result.status = Foundation::Core::ReadStatus::kPending;
-        }
-        else
-        {
-            job.result.status = Foundation::Core::ReadStatus::kError;
-            job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
-        }
+        // The channel turns the byte count into the answers of the reads it
+        // covered: one operation can have filled several of them.
+        static_cast<ReadChannel *>(channel)->complete(result);
         break;
     }
     case Foundation::NBIO::ChannelType::kWrite: {
-        auto *write = static_cast<WriteChannel *>(channel);
-        auto &job = write->job();
-        if (result > 0)
-        {
-            const auto written = static_cast<std::size_t>(result);
-            job.result.bytes_transferred += written;
-            job.offset += static_cast<std::uint64_t>(written);
-            // Consume what the kernel took: a short write has to resubmit only
-            // the remainder, and this is also what tells a completed one apart
-            // from a partial one. The stream's cursor moves with it, otherwise
-            // the next write would land on top of this one.
-            job.buffer = job.buffer.subspan(written);
-            write->file().advance_write_offset(written);
-            job.result.status = job.buffer.empty() ? Foundation::Core::WriteStatus::kDone
-                                                   : Foundation::Core::WriteStatus::kPending;
-        }
-        else if (result == 0)
-        {
-            // Nothing was taken from a non-empty buffer: resubmitting would
-            // spin forever, so report it instead.
-            job.result.status = Foundation::Core::WriteStatus::kError;
-            job.result.error_code = std::make_error_code(std::errc::io_error);
-        }
-        else if (result == -EAGAIN || result == -EWOULDBLOCK)
-        {
-            job.result.status = Foundation::Core::WriteStatus::kPending;
-        }
-        else
-        {
-            job.result.status = Foundation::Core::WriteStatus::kError;
-            job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
-        }
+        // The channel turns the byte count into the outcomes of the writes it
+        // covered: one operation can have finished several of them.
+        static_cast<WriteChannel *>(channel)->complete(result);
         break;
     }
     case Foundation::NBIO::ChannelType::kListen: {
-        auto &job = static_cast<AcceptChannel *>(channel)->job();
-        if (result >= 0)
-        {
-            // result is the accepted socket fd; the peer address was filled in
-            // place by the kernel when the operation was submitted.
-            job.result.status = ::Foundation::Core::AcceptStatus::kDone;
-            job.result.socket = Foundation::Core::Socket::Adopt(result);
-        }
-        else if (result == -EAGAIN || result == -EWOULDBLOCK)
-        {
-            job.result.status = ::Foundation::Core::AcceptStatus::kPending;
-        }
-        else
-        {
-            job.result.status = ::Foundation::Core::AcceptStatus::kError;
-            job.result.error_code = MAKE_ERROR_CODE(static_cast<unsigned int>(-result));
-        }
+        // result is the accepted socket fd, or the reason there is none; the
+        // channel turns it into the answer of the wait at the front of its queue.
+        static_cast<AcceptChannel *>(channel)->accepted(result);
         break;
     }
     case Foundation::NBIO::ChannelType::kTimer:

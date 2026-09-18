@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <sys/unistd.h>
 
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <climits>
@@ -105,12 +106,12 @@ void EpollMultiplexer::run_impl(int timeout_ms)
 		timeout_ms = 0; // do not block, poll once to collect active channels and return immediately
     }
 
-    epoll_event events[1024];
+    std::array<::epoll_event, 4096> events;
     bool retry = false;
     do
     {
         retry = false;
-        auto n = epoll_wait(handle_, events, 1024, timeout_ms);
+        auto n = epoll_wait(handle_, events.data(), events.size(), timeout_ms);
         if (n < 0)
         {
             if (errno == EINTR)
@@ -149,7 +150,7 @@ void EpollMultiplexer::run_impl(int timeout_ms)
         // increment then walks a freed node. Any channel re-armed here lands in
         // the now-empty active_channels_ and is picked up on the next pass,
         // which does not block because the set is non-empty again.
-        std::set<Foundation::NBIO::Channel *> batch;
+        std::unordered_set<Foundation::NBIO::Channel *> batch;
         batch.swap(active_channels_);
 
         for (auto *channel : batch)
@@ -376,39 +377,21 @@ EpollMultiplexer::~EpollMultiplexer() noexcept
 
 static void do_receive_data(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<ReceiveChannel *>(base);
-    auto &job = channel->job();
-    job.result = channel->socket().receive(job.buffer);
+    // The channel owns what a batch of receives looks like, so it does the I/O
+    // when this backend has to drive the socket itself.
+    static_cast<ReceiveChannel *>(base)->flush();
 }
 
 static void do_send_data(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<SendChannel *>(base);
-    auto &job = channel->job();
-    const auto result = channel->socket().send(job.buffer);
-    if (result.status == Foundation::Core::SendStatus::kDone ||
-        result.status == Foundation::Core::SendStatus::kPending)
-    {
-        // Consume what the kernel took: the span is what gets sent again, so a
-        // partial send has to resume with the remainder rather than repeat.
-        // The caller is told the total, because that is how much of its own
-        // buffer it drops.
-        job.buffer = job.buffer.subspan(result.bytes_transferred);
-        job.result.bytes_transferred += result.bytes_transferred;
-        job.result.status = job.buffer.empty() ? Foundation::Core::SendStatus::kDone
-                                               : Foundation::Core::SendStatus::kPending;
-        job.result.error_code = {};
-        return;
-    }
-
-    job.result = result;
+    static_cast<SendChannel *>(base)->flush();
 }
 
 static void do_accept_connection(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<AcceptChannel *>(base);
-    auto &job = channel->job();
-    job.result = channel->socket().accept();
+    // One readiness event can mean several connections: the channel takes them
+    // while they last and while somebody is waiting for one.
+    static_cast<AcceptChannel *>(base)->flush();
 }
 
 void do_wait_timer(Foundation::NBIO::Channel *base)
@@ -431,78 +414,17 @@ void do_drain_signal(Foundation::NBIO::Channel *base)
 
 static void do_read_file(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<ReadChannel *>(base);
-    auto &job = channel->job();
-    while (true)
-    {
-        const auto chunk = job.buffer;
-        const auto result =
-            ::pread(channel->native_handle(), chunk.data(), chunk.size(), static_cast<off_t>(job.offset));
-        if (result < 0)
-        {
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            job.result = {.status = Foundation::Core::ReadStatus::kError,
-                          .bytes_transferred = 0,
-                          .error_code = std::error_code(errno, std::system_category())};
-            return;
-        }
-        if (result == 0)
-        {
-            job.result = {.status = Foundation::Core::ReadStatus::kEndOfFile, .bytes_transferred = 0, .error_code = {}};
-            return;
-        }
-
-        job.offset += static_cast<std::uint64_t>(result);
-        channel->file_stream().advance_read_offset(static_cast<std::size_t>(result));
-        job.result = {.status = Foundation::Core::ReadStatus::kDone,
-                      .bytes_transferred = static_cast<std::size_t>(result),
-                      .error_code = {}};
-        return;
-    }
+    // As for writing: the channel owns what a batch of reads looks like, so it
+    // does the I/O when this backend has to drive the file itself.
+    static_cast<ReadChannel *>(base)->flush();
 }
 
 static void do_write_file(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<WriteChannel *>(base);
-    auto &job = channel->job();
-    auto total = std::size_t{0};
-    while (job.buffer.size() > 0)
-    {
-        const auto chunk = job.buffer;
-        const auto result =
-            ::pwrite(channel->native_handle(), chunk.data(), chunk.size(), static_cast<off_t>(job.offset));
-        if (result < 0)
-        {
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            job.result = {.status = Foundation::Core::WriteStatus::kError,
-                          .bytes_transferred = total,
-                          .error_code = std::error_code(errno, std::system_category())};
-            return;
-        }
-        if (result == 0)
-        {
-            job.result = {.status = Foundation::Core::WriteStatus::kError,
-                          .bytes_transferred = total,
-                          .error_code = std::make_error_code(std::errc::io_error)};
-            return;
-        }
-
-        job.offset += static_cast<std::uint64_t>(result);
-        channel->file().advance_write_offset(static_cast<std::size_t>(result));
-        total += static_cast<std::size_t>(result);
-        // Consume what was written. The job holds a span, so nothing shrinks it
-        // implicitly: without this the loop re-sends the same bytes at
-        // ever-increasing offsets and never terminates.
-        job.buffer = job.buffer.subspan(static_cast<std::size_t>(result));
-    }
-
-    job.result = {.status = Foundation::Core::WriteStatus::kDone, .bytes_transferred = total, .error_code = {}};
+    // The channel owns what a batch of writes looks like -- one vector for every
+    // write armed at once -- so it does the I/O when this backend has to drive the
+    // file itself instead of waiting for a completion.
+    static_cast<WriteChannel *>(base)->flush();
 }
 
 } // namespace Foundation::NBIO

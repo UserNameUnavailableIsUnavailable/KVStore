@@ -8,18 +8,26 @@
 
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/Socket.hpp>
+#include <deque>
 #include <span>
+#include <sys/uio.h>
 #include <system_error>
+#include <vector>
 
 namespace Foundation::NBIO
 {
-struct ReceiveJob
+// One receive waiting its turn. The buffer and the slot its outcome is written
+// into belong to the frame that is parked; several of these are filled by one
+// readv, in the order they were queued.
+struct PendingReceive
 {
     std::span<char> buffer;
-    Foundation::Core::ReceiveResult result{};
+    Foundation::Core::ReceiveResult *result{nullptr};
+    Foundation::Async::Coroutine waiter;
 };
-// Simplex channel dedicated to receiving: one job, one waiter, interested only
-// in the "readable" event.
+
+// Simplex channel dedicated to receiving: a queue of receives, one operation, with
+// the channel interested only in the "readable" event.
 class ReceiveChannel : public Foundation::NBIO::Channel
 {
   public:
@@ -30,19 +38,31 @@ class ReceiveChannel : public Foundation::NBIO::Channel
 
     void handle_event() override;
 
-    void park(Foundation::Async::Coroutine waiter) noexcept
+    // Hands a receive to the channel: it joins the readv in flight when there is
+    // one, and starts one otherwise.
+    void submit(std::span<char> buffer, Foundation::Core::ReceiveResult &result, Async::Coroutine waiter);
+
+    // The receives the kernel has been given, in the order they will be filled.
+#if defined(__linux)
+
+    const ::msghdr &message_batch() const noexcept
     {
-        waiter_ = std::move(waiter);
+        return message_;
     }
 
-    ReceiveJob &job() noexcept
+    ::msghdr &message_batch() noexcept
     {
-        return job_;
+        return message_;
     }
-    const ReceiveJob &job() const noexcept
-    {
-        return job_;
-    }
+#endif
+    // What arrived: a byte count, or a negative errno. Nothing at all means the
+    // peer closed, which is the answer to every receive waiting behind it too.
+    void complete(std::ptrdiff_t result) noexcept;
+
+    // Does the armed receives here and now, for a multiplexer that has to drive
+    // the socket itself rather than wait for a completion.
+    void flush() noexcept;
+
     Foundation::Core::Socket &socket() noexcept
     {
         return socket_;
@@ -57,9 +77,17 @@ class ReceiveChannel : public Foundation::NBIO::Channel
     }
 
   private:
+    void arm_batch();
+    void refresh_vectors();
+    void fail(PendingReceive &pending) noexcept;
+
     Foundation::Core::Socket &socket_;
-    ReceiveJob job_;
-    Foundation::Async::Coroutine waiter_;
+    std::deque<PendingReceive> pending_;
+#if defined(__linux__)
+    std::vector<::iovec> vectors_;
+    ::msghdr message_{};
+#endif
+    std::size_t armed_{0};
     std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

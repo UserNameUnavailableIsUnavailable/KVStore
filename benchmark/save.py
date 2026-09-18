@@ -13,16 +13,22 @@ import time
 import socket
 from pathlib import Path
 
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PACKAGE_ROOT))
+from benchmark import PROJECT_ROOT
+
 try:
     import redis
 except ImportError as exc:  # pragma: no cover - runtime dependency guard
-    raise SystemExit("This script requires the 'redis' Python package. Install it with 'pip install redis'.") from exc
+    redis = None
+    REDIS_IMPORT_ERROR = exc
+else:
+    REDIS_IMPORT_ERROR = None
 
-PROJECT_ROOT = Path(__file__).parent.parent
-TEMP_ROOT = PROJECT_ROOT / "temp"
+TEMP_ROOT = PROJECT_ROOT/"temp"
 DEFAULT_SERVER = Path(f"{PROJECT_ROOT}/build/Application/Server/Server")
 DEFAULT_PORT = 0
-DEFAULT_COUNT = 50000
+DEFAULT_COUNT = 100_000
 DEFAULT_RESTART_WAIT = 30.0
 DEFAULT_SEED = 0x6B7673746F7265
 BATCH_SIZE = 1000
@@ -31,6 +37,11 @@ def random_value(rng: random.Random, index: int) -> str:
     alphabet = string.ascii_letters + string.digits
     size = 1 + (index % 7) * 11 + rng.randrange(0, 64)
     return "".join(rng.choice(alphabet) for _ in range(size))
+
+
+def require_redis() -> None:
+    if redis is None:
+        raise RuntimeError("This script requires the 'redis' Python package. Install it with 'pip install redis'.") from REDIS_IMPORT_ERROR
 
 
 def wait_for_server(client: redis.Redis, timeout: float) -> None:
@@ -46,11 +57,15 @@ def wait_for_server(client: redis.Redis, timeout: float) -> None:
     raise RuntimeError(f"server did not become ready within {timeout:.1f}s") from last_error
 
 
-def start_server(server_path: Path, port: int, cwd: Path, stdout_path: Path, stderr_path: Path) -> subprocess.Popen[str]:
+def start_server(server_path: Path, port: int, cwd: Path, stdout_path: Path, stderr_path: Path,
+                 config_path: Path | None = None) -> subprocess.Popen[str]:
     stdout_file = stdout_path.open("w")
     stderr_file = stderr_path.open("w")
+    command = [str(server_path), "--port", str(port)]
+    if config_path is not None:
+        command.extend(("--config", str(config_path)))
     return subprocess.Popen(
-        [str(server_path), "--port", str(port)],
+        command,
         cwd=str(cwd),
         stdout=stdout_file,
         stderr=stderr_file,
@@ -88,7 +103,9 @@ def stop_server(process: subprocess.Popen[str], *, announce: bool = True) -> Non
         process.wait(timeout=10)
 
 
-def run_roundtrip(server_path: Path, port: int, count: int, restart_wait: float, persist_mode: str, *, keep_temp: bool) -> None:
+def run_roundtrip(server_path: Path, port: int, count: int, restart_wait: float, persist_mode: str, *,
+                  keep_temp: bool, config_path: Path | None = None) -> None:
+    require_redis()
     server_path = server_path.resolve()
     TEMP_ROOT.mkdir(parents=True, exist_ok=True)
     cleanup_temp = False
@@ -103,7 +120,7 @@ def run_roundtrip(server_path: Path, port: int, count: int, restart_wait: float,
     stdout_path = temp_dir / "server.out"
     stderr_path = temp_dir / "server.err"
     port = choose_port(port)
-    process = start_server(server_path, port, temp_dir, stdout_path, stderr_path)
+    process = start_server(server_path, port, temp_dir, stdout_path, stderr_path, config_path)
     try:
         client = redis.Redis(host="127.0.0.1", port=port, decode_responses=True, protocol=2)
         wait_for_server(client, restart_wait)
@@ -136,7 +153,7 @@ def run_roundtrip(server_path: Path, port: int, count: int, restart_wait: float,
         stop_server(process)
 
         print("server killed, restarting...", flush=True)
-        process = start_server(server_path, port, temp_dir, stdout_path, stderr_path)
+        process = start_server(server_path, port, temp_dir, stdout_path, stderr_path, config_path)
         wait_for_server(client, restart_wait)
         print("server restored, validating data...", flush=True)
 

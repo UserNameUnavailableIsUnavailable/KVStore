@@ -9,19 +9,26 @@
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/File.hpp>
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <system_error>
+#include <sys/uio.h>
+#include <vector>
 
 
 namespace Foundation::NBIO
 {
 class FileStream;
 
-struct ReadJob
+// One read waiting its turn. The buffer and the slot the outcome is written into
+// belong to the frame that is parked, so several of them can be handed to the
+// kernel at once without the channel owning any of the bytes.
+struct PendingRead
 {
     std::span<char> buffer;
     std::uint64_t offset{0};
-    Foundation::Core::ReadResult result{};
+    Foundation::Core::ReadResult *result{nullptr};
+    Foundation::Async::Coroutine waiter;
 };
 
 class ReadChannel final : public Foundation::NBIO::Channel
@@ -34,19 +41,30 @@ class ReadChannel final : public Foundation::NBIO::Channel
 
     void handle_event() override;
 
-    void park(Foundation::Async::Coroutine waiter) noexcept
+    // Hands a read to the channel: it joins the batch in flight when there is one
+    // and starts one otherwise, with `result` left holding the outcome.
+    void submit(std::span<char> buffer, Foundation::Core::ReadResult &result, Async::Coroutine waiter);
+
+    // The reads the kernel has been given, in the order they will be filled.
+    std::span<const ::iovec> vectors() const noexcept
     {
-        waiter_ = std::move(waiter);
+        return std::span<const ::iovec>{vectors_.data(), armed_};
     }
 
-    ReadJob &job() noexcept
+    std::uint64_t front_offset() const noexcept
     {
-        return job_;
+        return pending_.empty() ? 0 : pending_.front().offset;
     }
-    const ReadJob &job() const noexcept
-    {
-        return job_;
-    }
+
+    // What the kernel took: a byte count, or a negative errno. A read that got
+    // some of what it asked for is complete -- that is what reading is -- and the
+    // reads behind it, which the kernel did not reach, are left for the next
+    // batch. Nothing at all means the file ended.
+    void complete(std::ptrdiff_t result) noexcept;
+
+    // Does the armed reads here and now, for a multiplexer that drives the file
+    // itself rather than waiting for a completion.
+    void flush() noexcept;
 
     FileStream &file_stream() noexcept
     {
@@ -57,11 +75,20 @@ class ReadChannel final : public Foundation::NBIO::Channel
         return file_;
     }
 
+    std::error_code last_error() const noexcept
+    {
+        return error_code_;
+    }
+
   private:
-    std::optional<std::size_t> read_sync(std::span<char> buffer);
+    void arm_batch();
+    void refresh_vectors();
+    void fail(PendingRead &pending) noexcept;
+
     FileStream &file_;
-    ReadJob job_;
-    Foundation::Async::Coroutine waiter_;
+    std::deque<PendingRead> pending_;
+    std::vector<::iovec> vectors_;
+    std::size_t armed_{0};
     std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

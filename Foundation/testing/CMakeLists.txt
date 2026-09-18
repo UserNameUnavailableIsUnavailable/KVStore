@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 
 add_executable(
 	FoundationTesting
+	BufferTesting.cpp
 	ConditionTesting.cpp
+	FramePoolTesting.cpp
+	WriteChannelTesting.cpp
+	SocketChannelTesting.cpp
 )
 
 find_package(GTest REQUIRED)

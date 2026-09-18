@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -14,6 +15,7 @@ namespace KV
 enum class CommandType
 {
     kPing,
+    kInfo,
     kGet,
     kSet,
     kDel,
@@ -43,6 +45,12 @@ bool IsWriteCommand(CommandType type) noexcept;
 bool IsStartupConfigParameter(std::string_view name) noexcept;
 
 struct PingParams
+{
+};
+
+// `INFO` is intentionally tiny here: it answers with the server name and takes
+// no arguments.
+struct InfoParams
 {
 };
 
@@ -124,7 +132,7 @@ struct BgSaveParams
 };
 
 using Parameters = std::variant<PingParams, GetParams, SetParams, DelParams, ExistsParams, DbSizeParams, ExpireParams, TTLParams,
-                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams>;
+                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams, InfoParams>;
 
 struct Command
 {
@@ -134,6 +142,11 @@ struct Command
 
 // The command's name as it appears on the wire, e.g. "BGSAVE".
 std::string_view CommandName(CommandType type);
+
+// Whether `name` names `type`, in whichever case the client wrote it. The
+// server answers the commands it knows by name before it builds anything, so it
+// asks this rather than validating a command it is not going to keep.
+bool IsCommandName(std::string_view name, CommandType type) noexcept;
 
 // The command as the RESP array that would reproduce it.
 RESP::Object CommandToRESP(const Command &command);
@@ -154,4 +167,11 @@ struct CommandValidation
 };
 
 CommandValidation ValidateCommand(const RESP::Object &request);
+
+// The same command, named by the words a client wrote it with -- what a server
+// read straight out of its receive buffer has. A command is worth the same
+// answer however it was read: this is the same validation, and it copies the
+// parameters that have to outlive the bytes (a key, a value) exactly once, where
+// they are stored.
+CommandValidation ValidateCommand(std::span<const std::string_view> arguments);
 } // namespace KV
