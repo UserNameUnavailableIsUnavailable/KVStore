@@ -1,0 +1,6 @@
+{
+    "cmake.configureOnEdit": false,
+    "cmake.configureOnOpen": false,
+    "cmake.automaticReconfigure": false,
+    "perfanno.perfFile": "temp/prof-uring/perf.out"
+}

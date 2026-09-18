@@ -3,7 +3,10 @@
 #include <atomic>
 #include <cassert>
 #include <coroutine>
+#include <cstdio>
+#include <execinfo.h>
 #include <memory>
+#include <unistd.h>
 #include <utility>
 
 namespace Foundation::Async
@@ -26,6 +29,9 @@ struct Coroutine
     template <typename Promise>
     static Coroutine from_handle(std::coroutine_handle<Promise> handle) noexcept
     {
+        // TEMPORARY: which block does this handle think it has?
+        // std::fprintf(stderr, "from_handle handle=%p block=%p\n", handle.address(),
+        //              static_cast<const void *>(handle.promise().control_block));
         return Coroutine{handle, handle.promise().control_block->shared_from_this()};
     }
 };

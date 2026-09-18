@@ -243,8 +243,8 @@ Foundation::NBIO::Task<void> run_client(Foundation::Core::Address address, std::
         }
 
         ::Foundation::Core::Buffer send_buffer;
-        RESP::Sender sender(*session, send_buffer, *request);
-        if (!co_await sender.send())
+        RESP::Sender sender(*session, send_buffer);
+        if (!co_await sender.send(*request))
         {
             const std::string reason = sender.internal_error().empty() ? "failed to send command" : sender.internal_error();
             std::cerr << reason << '\n';

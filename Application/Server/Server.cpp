@@ -1,5 +1,6 @@
 #include "Server.hpp"
 #include "ConfFile.hpp"
+#include <Foundation/NBIO/EpollMultiplexer.hpp>
 #include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/NBIO/NBIO.hpp>
@@ -14,7 +15,9 @@
 #include <Application/RESP/Sender.hpp>
 
 
+#include <Foundation/NBIO/Types.hpp>
 #include <Foundation/NBIO/URingMultiplexer.hpp>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <spdlog/spdlog.h>
@@ -136,7 +139,30 @@ void Server::run(const ServerOptions &options)
     // for one is what brings it up -- with a fallback multiplexer, since nobody
     // has said which one to use yet. Initialize it here, deliberately, and the
     // service is built on the one this server chose.
-    auto mux = std::make_unique<Foundation::NBIO::URingMultiplexer>();
+    const std::string_view multiplexer = options.multiplexer;
+
+    std::unique_ptr<Foundation::NBIO::Multiplexer> mux;
+    if (multiplexer == "epoll")
+    {
+        mux = std::make_unique<Foundation::NBIO::EpollMultiplexer>();
+    }
+    else if (multiplexer == "io_uring")
+    {
+        mux = std::make_unique<Foundation::NBIO::URingMultiplexer>();
+    }
+    else
+    {
+        throw std::invalid_argument("--multiplexer must be 'epoll' or 'io_uring'");
+    }
+    switch (mux->type())
+    {
+    case Foundation::NBIO::MultiplexerType::kEpoll:
+        spdlog::info("Multiplexer: epoll");
+        break;
+    case Foundation::NBIO::MultiplexerType::kURing:
+        spdlog::info("Multiplexer: io_uring");
+        break;
+    }
     Foundation::NBIO::initialize(std::move(mux));
 
     replication_ = std::make_unique<ReplicationService>(std::move(replication_options), std::move(host));
@@ -224,49 +250,138 @@ Foundation::NBIO::Task<void> Server::accept_clients(std::unique_ptr<Foundation::
     }
 }
 
+namespace
+{
+// How much of a batch may pile up before it is written. A client that pipelines
+// a million commands and never reads the answers must not be able to make the
+// server buffer without limit, and a batch past this size is not going to leave
+// in one write anyway.
+constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
+} // namespace
+
     Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<Session> session)
 {
     // A pipeline can hold more than one command, and a single command can be
     // larger than a socket read, so the receive buffer starts roomy and is
     // allowed to grow: the decoder needs the whole command before it can hand
-    // one over. The send buffer only ever has to hold what one flush takes, so
-    // it stays small.
+    // one over. The send buffer holds the replies of one batch, which is what a
+    // pipeline is answered with, so it grows to the size of that batch.
     auto recv_buffer = std::make_unique<::Foundation::Core::Buffer>(64U * 1024U, 16U * 1024U * 1024U);
-    auto send_buffer = std::make_unique<::Foundation::Core::Buffer>(16U * 1024U, 16U * 1024U);
+    auto send_buffer = std::make_unique<::Foundation::Core::Buffer>(16U * 1024U, 16U * 1024U * 1024U);
+
+    RESP::Receiver receiver(session->transport(), *recv_buffer);
     while (true)
     {
-        RESP::Receiver receiver(session->transport(), *recv_buffer);
-        auto object = co_await receiver.receive();
-        if (object) [[likely]]
+        // Waiting for input is the only place this coroutine blocks, and it never
+        // does so with replies still in hand: what the client has already sent is
+        // answered first.
+        auto command = co_await receiver.receive_command();
+        if (receiver.no_command())
         {
-            const KV::CommandValidation validation = KV::ValidateCommand(*object);
-            RESP::Object response = validation ? co_await dispatch(*session, std::move(*validation.command))
-                                               : detail::Error(validation.error);
-            RESP::Sender sender(session->transport(), *send_buffer, response);
-            auto ok = co_await sender.send();
-            if (!ok)
+            // A line with no command on it: nothing is owed to the client for
+            // it, and the connection stays up for the command that follows.
+            continue;
+        }
+        if (!command)
+        {
+            RESP::Sender sender(session->transport(), *send_buffer);
+            if (!receiver.decode_error().empty())
             {
-                co_return;
+                // The bytes that did not parse are already dropped, so the
+                // commands behind them are still decodable: the client is told
+                // and the connection goes on.
+                (void)co_await sender.send(RESP::Object(RESP::SimpleError{
+                    .value = receiver.decode_error()
+                }));
+                continue;
             }
-        }
-        else if (!receiver.decode_error().empty())
-        {
-            RESP::Object response(RESP::SimpleError{
-                .value = receiver.decode_error()
-            });
-            RESP::Sender sender(session->transport(), *send_buffer, response);
-            (void)co_await sender.send();
-        }
-        else // internal server error
-        {
-            RESP::Object response(RESP::SimpleError{
+            (void)co_await sender.send(RESP::Object(RESP::SimpleError{
                 .value = "internal error"
-            });
-            RESP::Sender sender(session->transport(), *send_buffer, response);
-            (void)co_await sender.send();
+            }));
+            co_return;
+        }
+
+        // The batch: this command, and every command already buffered behind it.
+        // Replies are appended rather than written, so a pipeline leaves in one
+        // write instead of one write per command.
+        RESP::Sender sender(session->transport(), *send_buffer);
+        while (true)
+        {
+            // A single-key read is answered out of the words it was read with,
+            // before any of this: see answer_read.
+            std::optional<RESP::Object> answered =
+                command->object ? std::nullopt : answer_read(command->words, *session);
+            if (!answered)
+            {
+                // A command the client wrote as an array of bulk strings is
+                // answered out of the words read where they lie; anything else --
+                // an inline line, an argument that is not a string -- was decoded
+                // into an object and is answered from that.
+                const KV::CommandValidation validation = command->object ? KV::ValidateCommand(*command->object)
+                                                                        : KV::ValidateCommand(command->words);
+                if (validation)
+                {
+                    answered = co_await dispatch(*session, std::move(*validation.command));
+                }
+                else
+                {
+                    answered = detail::Error(validation.error);
+                }
+            }
+            sender.append(*answered);
+            if (sender.pending() >= kReplyBatchBytes)
+            {
+                if (!co_await sender.flush())
+                {
+                    co_return;
+                }
+            }
+
+            auto next = receiver.try_receive_command();
+            if (next)
+            {
+                command = std::move(next);
+                continue;
+            }
+            if (!receiver.decode_error().empty())
+            {
+                sender.append(RESP::Object(RESP::SimpleError{
+                    .value = receiver.decode_error()
+                }));
+            }
+            break;
+        }
+
+        if (!co_await sender.flush())
+        {
             co_return;
         }
     }
+}
+
+std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, Session &session)
+{
+    // A read of one key is most of what a server is asked, and it is worth
+    // answering without building a command for it. The answer needs the key the
+    // client wrote -- which is already here, in the words the request was read
+    // as -- and what the store holds under it. Built as a command, that key
+    // becomes a string of its own, which is an allocation for every key longer
+    // than the small-string case (a benchmark key is), and the answer then
+    // travels out through a validation, a dispatch, a coroutine at every step and
+    // a variant, none of which is what looking a key up takes.
+    //
+    // A transaction is the one case where the command has to be built anyway: a
+    // command inside a MULTI is not run when it arrives but when EXEC does, so it
+    // has to be kept, with a key that outlives the request it was read from.
+    if (session.is_multi || words.size() != 2 || !KV::IsCommandName(words.front(), KV::CommandType::kGet))
+    {
+        return std::nullopt;
+    }
+
+    // The key is copied into the connection's own buffer, which grows to the
+    // longest key once and is reused for every lookup after that.
+    session.lookup_key.assign(words[1].data(), words[1].size());
+    return RESP::Object(RESP::BulkString{.value = store_.get(session.lookup_key)});
 }
 
 Foundation::NBIO::Task<RESP::Object> Server::dispatch(Session &session, KV::Command command)
@@ -317,9 +432,16 @@ Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command &command)
     case KV::CommandType::kPing:
         response = co_await execute_ping(command);
         break;
+    case KV::CommandType::kInfo:
+        response = co_await execute_info(command);
+        break;
     case KV::CommandType::kGet:
         response = co_await execute_get(command);
         break;
+    {
+        (void)command;
+        co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
+    }
     case KV::CommandType::kSet:
         response = co_await execute_set(command);
         break;
@@ -498,6 +620,12 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_command_info(const KV::Comm
     // No command metadata to publish. An empty array is a well-formed answer,
     // which is all redis-cli needs to stop reporting the probe as an error.
     co_return RESP::Object(RESP::Array{});
+}
+
+Foundation::NBIO::Task<RESP::Object> Server::execute_info(const KV::Command &command)
+{
+    (void)command;
+    co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
 }
 
 Foundation::NBIO::Task<RESP::Object> Server::execute_client(const KV::Command &command)

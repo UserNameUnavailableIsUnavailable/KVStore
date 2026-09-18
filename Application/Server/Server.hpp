@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,6 +44,8 @@ struct ServerOptions
     std::optional<std::string> replication_address{};
     // Set to make this instance a read-only replica of that master.
     std::optional<Foundation::Core::Address> master{};
+    // The event multiplexer that drives this server instance.
+    std::string multiplexer{"epoll"};
     // The startup command file, if one was given: each line is a command, applied
     // exactly as a client's would be, apart from the lines that are settings.
     std::optional<std::filesystem::path> config_file{};
@@ -62,6 +65,10 @@ class Session
 
     bool is_multi{false};
     std::vector<KV::Command> queued_commands;
+    // The key of a single-key read, copied here rather than into a string of its
+    // own: the connection reuses this buffer for every lookup, so the key of a
+    // GET costs no allocation once it has grown to the longest one seen.
+    std::string lookup_key;
 
   private:
     std::shared_ptr<Foundation::NBIO::Session> transport_;
@@ -90,11 +97,17 @@ class Server
     Foundation::NBIO::Task<void> serve_client(std::shared_ptr<Session> session);
 
   private:
+    // The answer to a command that reads one key, or nothing when the request is
+    // not one: see the definition for why it is worth answering before a command
+    // is built for it.
+    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words, Session &session);
+
     Foundation::NBIO::Task<RESP::Object> dispatch(Session &session, KV::Command command);
     Foundation::NBIO::Task<RESP::Object> execute(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_set(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_info(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_del(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_exists(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_dbsize(const KV::Command &command);
