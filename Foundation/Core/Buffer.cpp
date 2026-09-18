@@ -21,19 +21,7 @@ bool Buffer::reserve(std::size_t size)
     {
         return true;
     }
-    const std::size_t held = readable_size();
-    const std::size_t extra = size - writable_size();
-    if (capacity_ - held >= size)
-    {
-        // Reclaim the whole consumed prefix: slide the live bytes all the way
-        // to the front (the reserved prefix is fair game here -- base_ only
-        // matters for Clear/Rebase). Compaction beats reallocation.
-        std::memmove(storage_.get() + begin_ - extra, storage_.get() + begin_, held);
-        begin_ = begin_ - extra;
-        end_ = end_ - extra;
-        return true;
-    }
-    const std::size_t minimal = held + size;
+    const std::size_t minimal = capacity_ + size;
     if (minimal > max_capacity_)
     {
         return false;
@@ -44,10 +32,18 @@ bool Buffer::reserve(std::size_t size)
     {
         capacity = capacity + capacity / 2;
     }
-    auto storage = std::make_unique<char[]>(capacity);
     // move the existing data to the beginning of the new storage, leaving no space for prepending
-    // since appending is more frequent
-    std::memcpy(storage.get(), storage_.get() + begin_, held);
+    // since appending is more frequent. The region the buffer describes moves
+    // with it: bytes that are read but not yet consumed sit at the front of the
+    // new storage now, so begin_ and end_ follow them there. Leaving them where
+    // they were would have the buffer read a part of the new storage its bytes
+    // were never copied to.
+    const std::size_t held = readable_size();
+    auto storage = std::make_unique<char[]>(capacity);
+    if (held != 0)
+    {
+        std::memcpy(storage.get(), storage_.get() + begin_, held);
+    }
     storage_ = std::move(storage);
     capacity_ = capacity;
     begin_ = 0;

@@ -53,6 +53,8 @@ int main(int argc, char *argv[])
     app.add_option("--replication-address", options.replication_address,
                    "local address the replication listener binds (default 0.0.0.0)");
     app.add_option("--replicaof", replicaof, "RDMA <ip>:<port> of the master to replicate");
+    app.add_option("--multiplexer", options.multiplexer, "I/O multiplexer: epoll or io_uring")
+        ->check(CLI::IsMember({"epoll", "io_uring"}));
     app.add_option("-c,--config", options.config_file, "command file to run at startup, one command per line")
         ->check(CLI::ExistingFile);
 

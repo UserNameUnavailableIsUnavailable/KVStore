@@ -4,7 +4,9 @@
 #include <cassert>
 #include <charconv>
 #include <concepts>
+#include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -70,6 +72,174 @@ Decoder ReadBytes(::Foundation::Core::Buffer &buffer, std::size_t size, std::str
         size -= count;
     }
     co_return CompleteDecode();
+}
+
+// An inline command is the other dialect of the protocol, and the one redis-cli
+// and redis-benchmark's PING_INLINE test speak when they are not sending a
+// multi-bulk: a line of whitespace separated words, with quotes around a word
+// that has a space in it. It means exactly what the multi-bulk that spelled
+// those words out as bulk strings means, which is why it becomes one here and
+// nothing above this point ever learns the difference.
+bool IsInlineSpace(char character)
+{
+    return character == ' ' || character == '\t' || character == '\r' || character == '\n' || character == '\v' ||
+           character == '\f';
+}
+
+bool IsTypeMarker(char character)
+{
+    switch (character)
+    {
+    case '+':
+    case '-':
+    case ':':
+    case ',':
+    case '_':
+    case '#':
+    case '(':
+    case '$':
+    case '!':
+    case '=':
+    case '*':
+    case '~':
+    case '%':
+    case '|':
+    case '>':
+        return true;
+    default:
+        return false;
+    }
+}
+
+int HexDigit(char character)
+{
+    if (character >= '0' && character <= '9')
+        return character - '0';
+    if (character >= 'a' && character <= 'f')
+        return character - 'a' + 10;
+    if (character >= 'A' && character <= 'F')
+        return character - 'A' + 10;
+    return -1;
+}
+
+// Reads one quoted word, `index` on its opening quote, and leaves the index just
+// past the closing one. Double quotes take the escapes a configuration line
+// would; single quotes take only a quoted quote, the way redis reads them.
+bool ReadQuotedWord(std::string_view line, std::size_t &index, std::string &word)
+{
+    const char quote = line[index];
+    ++index;
+    while (index < line.size())
+    {
+        const char character = line[index];
+        if (character == '\\' && quote == '"' && index + 1 < line.size())
+        {
+            const char escape = line[index + 1];
+            index += 2;
+            switch (escape)
+            {
+            case 'n':
+                word.push_back('\n');
+                break;
+            case 'r':
+                word.push_back('\r');
+                break;
+            case 't':
+                word.push_back('\t');
+                break;
+            case 'b':
+                word.push_back('\b');
+                break;
+            case 'a':
+                word.push_back('\a');
+                break;
+            case 'x':
+            {
+                unsigned value = 0;
+                std::size_t digits = 0;
+                while (digits < 2 && index < line.size() && HexDigit(line[index]) >= 0)
+                {
+                    value = value * 16U + static_cast<unsigned>(HexDigit(line[index]));
+                    ++index;
+                    ++digits;
+                }
+                if (digits == 0)
+                {
+                    return false;
+                }
+                word.push_back(static_cast<char>(value));
+                break;
+            }
+            default:
+                word.push_back(escape);
+                break;
+            }
+            continue;
+        }
+        if (character == '\\' && quote == '\'' && index + 1 < line.size() && line[index + 1] == '\'')
+        {
+            word.push_back('\'');
+            index += 2;
+            continue;
+        }
+        if (character == quote)
+        {
+            ++index;
+            return true;
+        }
+        word.push_back(character);
+        ++index;
+    }
+    // The quote is never closed: the line is not a command, it is a mistake.
+    return false;
+}
+
+std::optional<std::vector<std::string>> SplitInlineCommand(std::string_view line)
+{
+    std::vector<std::string> words;
+    std::size_t index = 0;
+    while (index < line.size())
+    {
+        while (index < line.size() && IsInlineSpace(line[index]))
+        {
+            ++index;
+        }
+        if (index == line.size())
+        {
+            break;
+        }
+
+        std::string word;
+        bool ended = false;
+        while (!ended && index < line.size())
+        {
+            const char character = line[index];
+            if (character == '"' || character == '\'')
+            {
+                if (!ReadQuotedWord(line, index, word))
+                {
+                    return std::nullopt;
+                }
+                // A word has to end where its quote does: `"a"b` is a client
+                // mistake rather than two words glued together.
+                if (index < line.size() && !IsInlineSpace(line[index]))
+                {
+                    return std::nullopt;
+                }
+                ended = true;
+                continue;
+            }
+            if (IsInlineSpace(character))
+            {
+                ended = true;
+                continue;
+            }
+            word.push_back(character);
+            ++index;
+        }
+        words.push_back(std::move(word));
+    }
+    return words;
 }
 
 Decoder ParseObject(::Foundation::Core::Buffer &buffer, std::optional<Object> &output, std::size_t depth);
@@ -442,10 +612,210 @@ void ExpandObject(std::vector<EncodeFrame> &frames, const Object &object)
         },
         object.value);
 }
+
+// The same bytes, written straight into a buffer.
+//
+// A reply is a handful of bytes that are on their way to a socket, and the way
+// above builds four things to get them there: a string for every number, a
+// string for every length, a list of those strings, and a coroutine frame to
+// yield out of when the buffer is full. Each of those is an allocation, and the
+// server answers a million replies a second, so the allocator was 20% of the
+// profile with the reply path inside it.
+//
+// Nothing below allocates. A short line is spelled out in one piece on the
+// stack; a long one is copied once, in the order it goes out. The buffer grows
+// instead of yielding, because a batch has no other way out than the buffer it
+// is being written into.
+constexpr std::size_t kMaximumEncodeDepth = 128;
+
+// `marker`, then `text`, then CRLF.
+bool AppendLine(::Foundation::Core::Buffer &buffer, char marker, std::string_view text)
+{
+    char line[64];
+    if (text.size() + 3U <= sizeof(line))
+    {
+        line[0] = marker;
+        std::memcpy(line + 1, text.data(), text.size());
+        line[text.size() + 1] = '\r';
+        line[text.size() + 2] = '\n';
+        return buffer.write(line, text.size() + 3U);
+    }
+    return buffer.write(&marker, 1) && buffer.write(text.data(), text.size()) && buffer.write("\r\n", 2);
+}
+
+// `marker`, then a number, then CRLF: the header of every typed reply and the
+// length of everything that is sent in bulk.
+bool AppendNumberedLine(::Foundation::Core::Buffer &buffer, char marker, std::int64_t number)
+{
+    char line[32];
+    line[0] = marker;
+    const auto [end, error] = std::to_chars(line + 1, line + sizeof(line) - 2, number);
+    if (error != std::errc{})
+    {
+        return false;
+    }
+    *end = '\r';
+    *(end + 1) = '\n';
+    return buffer.write(line, static_cast<std::size_t>(end - line) + 2U);
+}
+
+// `marker`, the length of the payload as a decimal number, CRLF, the payload,
+// CRLF.
+bool AppendBulk(::Foundation::Core::Buffer &buffer, char marker, std::string_view payload)
+{
+    return AppendNumberedLine(buffer, marker, static_cast<std::int64_t>(payload.size())) &&
+           buffer.write(payload.data(), payload.size()) && buffer.write("\r\n", 2);
+}
+
+bool AppendValue(::Foundation::Core::Buffer &buffer, const Object &object, std::size_t depth);
+
+bool AppendValues(::Foundation::Core::Buffer &buffer, const std::vector<Object> &values, std::size_t depth)
+{
+    for (const Object &value : values)
+    {
+        if (!AppendValue(buffer, value, depth))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AppendPairs(::Foundation::Core::Buffer &buffer, const std::vector<std::pair<Object, Object>> &values, std::size_t depth)
+{
+    for (const auto &[key, value] : values)
+    {
+        if (!AppendValue(buffer, key, depth) || !AppendValue(buffer, value, depth))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AppendValue(::Foundation::Core::Buffer &buffer, const Object &object, std::size_t depth)
+{
+    if (depth > kMaximumEncodeDepth)
+    {
+        return false;
+    }
+
+    return std::visit(
+        [&buffer, depth](const auto &value) {
+            using Type = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<Type, SimpleString>)
+            {
+                return AppendLine(buffer, '+', value.value);
+            }
+            else if constexpr (std::same_as<Type, SimpleError>)
+            {
+                return AppendLine(buffer, '-', value.value);
+            }
+            else if constexpr (std::same_as<Type, Integer>)
+            {
+                return AppendNumberedLine(buffer, ':', value.value);
+            }
+            else if constexpr (std::same_as<Type, BulkString>)
+            {
+                return value.value ? AppendBulk(buffer, '$', *value.value) : AppendLine(buffer, '$', "-1");
+            }
+            else if constexpr (std::same_as<Type, Null>)
+            {
+                return AppendLine(buffer, '_', {});
+            }
+            else if constexpr (std::same_as<Type, Boolean>)
+            {
+                return AppendLine(buffer, '#', value.value ? "t" : "f");
+            }
+            else if constexpr (std::same_as<Type, Double>)
+            {
+                const std::string text = std::to_string(value.value);
+                return AppendLine(buffer, ',', text);
+            }
+            else if constexpr (std::same_as<Type, BigNumber>)
+            {
+                return AppendLine(buffer, '(', value.value);
+            }
+            else if constexpr (std::same_as<Type, BulkError>)
+            {
+                return AppendBulk(buffer, '!', value.value);
+            }
+            else if constexpr (std::same_as<Type, VerbatimString>)
+            {
+                // `format:value` without joining them into a string first: the
+                // length is known before either part is written.
+                const std::size_t length = value.format.size() + 1U + value.value.size();
+                return AppendNumberedLine(buffer, '=', static_cast<std::int64_t>(length)) &&
+                       buffer.write(value.format.data(), value.format.size()) && buffer.write(":", 1) &&
+                       buffer.write(value.value.data(), value.value.size()) && buffer.write("\r\n", 2);
+            }
+            else if constexpr (std::same_as<Type, Array> || std::same_as<Type, Set> || std::same_as<Type, Push>)
+            {
+                constexpr char marker = std::same_as<Type, Array> ? '*' : (std::same_as<Type, Set> ? '~' : '>');
+                return AppendNumberedLine(buffer, marker, static_cast<std::int64_t>(value.values.size())) &&
+                       AppendValues(buffer, value.values, depth + 1);
+            }
+            else
+            {
+                constexpr char marker = std::same_as<Type, Map> ? '%' : '|';
+                return AppendNumberedLine(buffer, marker, static_cast<std::int64_t>(value.values.size())) &&
+                       AppendPairs(buffer, value.values, depth + 1);
+            }
+        },
+        object.value);
+}
 } // namespace
 
-Decoder Decode(::Foundation::Core::Buffer &buffer)
+Decoder Decode(::Foundation::Core::Buffer &buffer, Dialect dialect)
 {
+    if (dialect == Dialect::kMultibulkAndInline)
+    {
+        // Nothing can be said about the message until its first byte is here:
+        // that byte is what says which dialect it is written in.
+        while (buffer.is_empty())
+        {
+            co_yield DecodeStatus::kNeedInput;
+        }
+        if (!IsTypeMarker(buffer.string_view().front()))
+        {
+            // A line that starts with something other than a type marker is an
+            // inline command. Its words become the bulk strings of the
+            // multi-bulk it stands for, so the server answers it with the code
+            // that answers every other command.
+            std::string line;
+            auto inline_reader = ReadLine(buffer, line);
+            while (!inline_reader.done())
+            {
+                inline_reader.resume();
+                if (!inline_reader.done())
+                    co_yield inline_reader.status();
+            }
+            if (inline_reader.result().status == DecodeStatus::kProtocolError)
+                co_return inline_reader.result();
+
+            const std::optional<std::vector<std::string>> words = SplitInlineCommand(line);
+            if (!words)
+            {
+                co_return ErrorDecode("unbalanced quotes in inline command");
+            }
+            std::optional<Object> command;
+            if (!words->empty())
+            {
+                std::vector<Object> values;
+                values.reserve(words->size());
+                for (const std::string &word : *words)
+                {
+                    values.push_back(RESP::Object(BulkString{word}));
+                }
+                command = RESP::Object(Array{.values = std::move(values)});
+            }
+            // A line with no command on it is not an error and gets no answer:
+            // the line is complete and there is nothing in it, which is what the
+            // client that sent a blank line is owed.
+            co_return DecodeResult{.status = DecodeStatus::kComplete, .object = std::move(command), .error = {}};
+        }
+    }
+
     std::optional<Object> object;
     auto parser = ParseObject(buffer, object, 0);
     while (!parser.done())
@@ -643,6 +1013,12 @@ const DecodeResult &Decoder::result() const noexcept
     return handle_.promise().result_;
 }
 
+DecodeResult &Decoder::result() noexcept
+{
+    assert(handle_ && handle_.done());
+    return handle_.promise().result_;
+}
+
 Encoder Encode(const Object &object, ::Foundation::Core::Buffer &buffer)
 {
     std::vector<EncodeFrame> frames;
@@ -711,5 +1087,117 @@ Encoder Encode(const Object &object, ::Foundation::Core::Buffer &buffer)
         }
         co_yield EncodeStatus::kNeedFlush;
     }
+}
+
+bool AppendObject(const Object &object, ::Foundation::Core::Buffer &buffer)
+{
+    return AppendValue(buffer, object, 0);
+}
+
+namespace
+{
+// The number that follows a type marker: how many elements an array has, or how
+// long a bulk string is. Both are written the same way, and neither can be
+// negative in a command -- a `-1` length is a bulk string that is not there,
+// which is a reply's shape and not a command's.
+//
+// The number is read without being copied, and a number too long to be a length
+// is not a length: refusing it here hands the bytes to the decoder, which says
+// what is wrong with them.
+ScanStatus ScanNumber(std::string_view bytes, std::size_t &index, std::int64_t &number)
+{
+    const std::size_t digits = index;
+    while (index < bytes.size() && bytes[index] >= '0' && bytes[index] <= '9')
+    {
+        const std::int64_t digit = bytes[index] - '0';
+        if (number > (std::numeric_limits<std::int64_t>::max() - digit) / 10)
+        {
+            return ScanStatus::kNotACommand;
+        }
+        number = number * 10 + digit;
+        ++index;
+    }
+
+    if (index == digits)
+    {
+        // A byte that is not a digit says these bytes are not a command; no byte
+        // at all says the number has not arrived yet.
+        return index == bytes.size() ? ScanStatus::kNeedInput : ScanStatus::kNotACommand;
+    }
+    if (bytes.size() - index < 2U)
+    {
+        return ScanStatus::kNeedInput;
+    }
+    if (bytes[index] != '\r' || bytes[index + 1] != '\n')
+    {
+        return ScanStatus::kNotACommand;
+    }
+    index += 2U;
+    return ScanStatus::kComplete;
+}
+} // namespace
+
+ScanStatus ScanCommand(const ::Foundation::Core::Buffer &buffer, std::vector<std::string_view> &words, std::size_t &size)
+{
+    const std::string_view bytes = buffer.string_view();
+    words.clear();
+    size = 0;
+
+    std::size_t index = 0;
+    if (index == bytes.size())
+    {
+        return ScanStatus::kNeedInput;
+    }
+    if (bytes[index] != '*')
+    {
+        return ScanStatus::kNotACommand;
+    }
+    ++index;
+
+    std::int64_t count = 0;
+    const ScanStatus count_status = ScanNumber(bytes, index, count);
+    if (count_status != ScanStatus::kComplete)
+    {
+        return count_status;
+    }
+
+    for (std::int64_t element = 0; element < count; ++element)
+    {
+        if (index == bytes.size())
+        {
+            return ScanStatus::kNeedInput;
+        }
+        if (bytes[index] != '$')
+        {
+            return ScanStatus::kNotACommand;
+        }
+        ++index;
+
+        std::int64_t length = 0;
+        const ScanStatus length_status = ScanNumber(bytes, index, length);
+        if (length_status != ScanStatus::kComplete)
+        {
+            return length_status;
+        }
+        const std::size_t payload = static_cast<std::size_t>(length);
+        // The payload and the CRLF that ends it have to be here, whole, before
+        // a word can be pointed at: half a word is not a word.
+        if (bytes.size() - index < payload + 2U)
+        {
+            return ScanStatus::kNeedInput;
+        }
+        if (bytes[index + payload] != '\r' || bytes[index + payload + 1] != '\n')
+        {
+            return ScanStatus::kNotACommand;
+        }
+        words.emplace_back(bytes.data() + index, payload);
+        index += payload + 2U;
+    }
+
+    // The command is over where its last element ends: a multi-bulk carries
+    // nothing after its elements, unlike the inline line, whose CRLF is the
+    // decoder's to read.
+    size = index;
+    return ScanStatus::kComplete;
 }
 } // namespace RESP

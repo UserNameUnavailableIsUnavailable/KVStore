@@ -115,21 +115,26 @@ TEST(ConfFileTesting, TheEndOfALineDoesNotBecomeAnArgument)
 
 TEST(ConfFileTesting, TheLinesAreCommandsTheServerKnows)
 {
-    const std::vector<CommandLine> lines = ReadLines("set greeting \"hello world\"\n"
+    const std::vector<CommandLine> lines = ReadLines("info\n"
+                                                     "set greeting \"hello world\"\n"
                                                      "del greeting\n"
                                                      "config appendonly no\n");
-    ASSERT_EQ(lines.size(), 3u);
+    ASSERT_EQ(lines.size(), 4u);
 
-    const auto set = CommandOf(lines, 0);
+    const auto info = CommandOf(lines, 0);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->type, KV::CommandType::kInfo);
+
+    const auto set = CommandOf(lines, 1);
     ASSERT_TRUE(set.has_value());
     ASSERT_EQ(set->type, KV::CommandType::kSet);
     EXPECT_EQ(std::get<KV::SetParams>(set->parameters).value, "hello world") << "quoting survives into the command";
 
-    const auto del = CommandOf(lines, 1);
+    const auto del = CommandOf(lines, 2);
     ASSERT_TRUE(del.has_value());
     EXPECT_EQ(del->type, KV::CommandType::kDel);
 
-    const auto config = CommandOf(lines, 2);
+    const auto config = CommandOf(lines, 3);
     ASSERT_TRUE(config.has_value());
     ASSERT_EQ(config->type, KV::CommandType::kConfig);
     const auto &parameters = std::get<KV::ConfigParams>(config->parameters);

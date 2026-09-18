@@ -19,6 +19,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
+# jemalloc can replace the process allocator: its archive defines malloc/free/
+# realloc and the C++ operator new/delete, so it is force-linked -- whole
+# archive -- because otherwise the linker would satisfy those from libc and the
+# archive would contribute nothing. The flags are threaded through Foundation,
+# which every executable links.
+#
+option(KVSTORE_USE_JEMALLOC "Link jemalloc as the process allocator" ON)
+if(KVSTORE_USE_JEMALLOC)
+    find_library(JEMALLOC_LIBRARY NAMES jemalloc REQUIRED)
+endif()
+
 include_directories(
 	SYSTEM
 	${CMAKE_SOURCE_DIR}
@@ -28,4 +39,21 @@ include_directories(
 add_subdirectory(Tutorial)
 add_subdirectory(Foundation)
 add_subdirectory(Application)
+
+set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")
+if(FIND_TARGET)
+	if(NOT TARGET "${FIND_TARGET}")
+		message(FATAL_ERROR "FIND_TARGET names an unknown target: ${FIND_TARGET}")
+	endif()
+	add_custom_target(FindTarget
+		COMMAND ${CMAKE_COMMAND} -E echo "TARGET_FILE=$<TARGET_FILE:${FIND_TARGET}>"
+		DEPENDS "${FIND_TARGET}"
+		VERBATIM
+	)
+else()
+	add_custom_target(FindTarget
+		COMMAND ${CMAKE_COMMAND} -E echo "Set FIND_TARGET to the target whose file path should be printed"
+		VERBATIM
+	)
+endif()
 

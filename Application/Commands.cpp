@@ -12,7 +12,11 @@ namespace KV
 {
 namespace
 {
-using Arguments = std::vector<std::string_view>;
+// The words of the command, however they were obtained: decoded out of a request
+// into strings, or read where they lie in the receive buffer as views. Everything
+// below asks the same questions of them, so a command is answered the same way
+// whichever of the two paths read it.
+using Arguments = std::span<const std::string_view>;
 using Validator = CommandValidation (*)(const Arguments &);
 
 struct ValidatorEntry
@@ -45,6 +49,11 @@ template <typename Parameters> CommandValidation NoArguments(const Arguments &ar
 CommandValidation ValidatePing(const Arguments &arguments)
 {
 	return NoArguments<PingParams>(arguments, CommandType::kPing, "PING");
+}
+
+CommandValidation ValidateInfo(const Arguments &arguments)
+{
+	return NoArguments<InfoParams>(arguments, CommandType::kInfo, "INFO");
 }
 
 CommandValidation ValidateGet(const Arguments &arguments)
@@ -175,7 +184,8 @@ CommandValidation ValidateCommandInfo(const Arguments &arguments)
 // a parameter takes, and what the message is when it is given something else.
 CommandValidation ValidateConfigWrite(const Arguments &arguments, std::size_t parameter_index)
 {
-	ConfigParams parameters{ .parameter = Lowercase(arguments[parameter_index]) };
+	ConfigParams parameters;
+	parameters.parameter = Lowercase(arguments[parameter_index]);
 	for (std::size_t index = parameter_index + 1; index < arguments.size(); ++index)
 	{
 		parameters.values.emplace_back(Lowercase(arguments[index]));
@@ -252,7 +262,8 @@ CommandValidation ValidateConfig(const Arguments &arguments)
 	{
 		// An unknown name is not an error for the read form: Redis answers it with
 		// an empty array, and only the server knows which names it has.
-		ConfigParams parameters{.parameter = Lowercase(arguments[2])};
+		ConfigParams parameters;
+		parameters.parameter = Lowercase(arguments[2]);
 		return {.command = Command{.type = CommandType::kConfig, .parameters = std::move(parameters)}, .error = {}};
 	}
 	return ValidateConfigWrite(arguments, 2);
@@ -306,7 +317,8 @@ CommandValidation ValidateClient(const Arguments &arguments)
 		return *wrong;
 	}
 
-	ClientParams parameters{.subcommand = subcommand};
+	ClientParams parameters;
+	parameters.subcommand = subcommand;
 	for (std::size_t index = 2; index < arguments.size(); ++index)
 	{
 		parameters.arguments.emplace_back(arguments[index]);
@@ -321,17 +333,42 @@ CommandValidation ValidateBgSave(const Arguments &arguments)
 	return NoArguments<BgSaveParams>(arguments, CommandType::kBgSave, "BGSAVE");
 }
 
-constexpr std::array<ValidatorEntry, 12> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
-													   {"DEL", ValidateDel}, {"EXISTS", ValidateExists}, {"MULTI", ValidateMulti},
-													   {"EXEC", ValidateExec}, {"COMMAND", ValidateCommandInfo}, {"CLIENT", ValidateClient},
-													   {"DBSIZE", ValidateDbSize},
-													   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}}};
+constexpr std::array<ValidatorEntry, 13> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
+										   {"DEL", ValidateDel}, {"EXISTS", ValidateExists}, {"MULTI", ValidateMulti},
+										   {"EXEC", ValidateExec}, {"COMMAND", ValidateCommandInfo}, {"CLIENT", ValidateClient},
+										   {"DBSIZE", ValidateDbSize}, {"INFO", ValidateInfo},
+										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}}};
+
+// The case of one ASCII letter, without the C library. `std::toupper` is a call
+// through the locale for every character, and this comparison runs for every
+// character of every command a client sends -- a hundred times a microsecond at
+// the rates this server answers at, where the profile put it at 3-4% on its own.
+// The protocol is ASCII, so folding the case is an add.
+constexpr char FoldCase(char character) noexcept
+{
+	return character >= 'a' && character <= 'z' ? static_cast<char>(character - ('a' - 'A')) : character;
+}
 
 bool SameCommand(std::string_view left, std::string_view right)
 {
-	return left.size() == right.size() && std::ranges::equal(left, right, [](unsigned char a, unsigned char b) {
-		return std::toupper(a) == std::toupper(b);
-	});
+	if (left.size() != right.size())
+	{
+		return false;
+	}
+	// A command name is at least one character, so the first one decides most of
+	// the comparisons the table makes before the loop is entered at all.
+	if (left.empty() || FoldCase(left.front()) != FoldCase(right.front()))
+	{
+		return false;
+	}
+	for (std::size_t index = 1; index < left.size(); ++index)
+	{
+		if (FoldCase(left[index]) != FoldCase(right[index]))
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 std::optional<std::string_view> Text(const RESP::Object &object)
@@ -346,26 +383,14 @@ std::optional<std::string_view> Text(const RESP::Object &object)
 	}
 	return std::nullopt;
 }
-} // namespace
 
-CommandValidation ValidateCommand(const RESP::Object &request)
+// The command a list of words asks for. A word that names no command is the
+// error, not an exception: the client is told, and told what it said.
+CommandValidation Validate(Arguments arguments)
 {
-	const auto *array = std::get_if<RESP::Array>(&request.value);
-	if (array == nullptr || array->values.empty())
+	if (arguments.empty())
 	{
 		return Error("ERR command must be a non-empty RESP array");
-	}
-
-	Arguments arguments;
-	arguments.reserve(array->values.size());
-	for (const RESP::Object &argument : array->values)
-	{
-		const auto text = Text(argument);
-		if (!text)
-		{
-			return Error("ERR command arguments must be strings");
-		}
-		arguments.push_back(*text);
 	}
 
 	for (const ValidatorEntry &entry : kValidators)
@@ -376,6 +401,34 @@ CommandValidation ValidateCommand(const RESP::Object &request)
 		}
 	}
 	return Error("ERR unknown command '" + std::string(arguments.front()) + "'");
+}
+} // namespace
+
+CommandValidation ValidateCommand(const RESP::Object &request)
+{
+	const auto *array = std::get_if<RESP::Array>(&request.value);
+	if (array == nullptr)
+	{
+		return Error("ERR command must be a non-empty RESP array");
+	}
+
+	std::vector<std::string_view> arguments;
+	arguments.reserve(array->values.size());
+	for (const RESP::Object &argument : array->values)
+	{
+		const auto text = Text(argument);
+		if (!text)
+		{
+			return Error("ERR command arguments must be strings");
+		}
+		arguments.push_back(*text);
+	}
+	return Validate(arguments);
+}
+
+CommandValidation ValidateCommand(std::span<const std::string_view> arguments)
+{
+	return Validate(arguments);
 }
 
 bool IsWriteCommand(CommandType type) noexcept
@@ -402,6 +455,8 @@ std::string_view CommandName(CommandType type)
 	{
 	case CommandType::kPing:
 		return "PING";
+	case CommandType::kInfo:
+		return "INFO";
 	case CommandType::kGet:
 		return "GET";
 	case CommandType::kSet:
@@ -486,6 +541,11 @@ void AppendRESP(std::string &out, const RESP::Object &object)
 }
 } // namespace
 
+bool IsCommandName(std::string_view name, CommandType type) noexcept
+{
+	return SameCommand(name, CommandName(type));
+}
+
 RESP::Object CommandToRESP(const Command &command)
 {
 	RESP::Array array;
@@ -497,6 +557,7 @@ RESP::Object CommandToRESP(const Command &command)
 	switch (command.type)
 	{
 	case CommandType::kPing:
+	case CommandType::kInfo:
 	case CommandType::kMulti:
 	case CommandType::kExec:
 	case CommandType::kBgSave:

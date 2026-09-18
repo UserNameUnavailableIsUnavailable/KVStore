@@ -16,7 +16,7 @@ namespace Foundation::Core
 class Buffer
 {
   public:
-    explicit Buffer(std::size_t initial_capacity = 512, std::size_t max_capacity = 4096);
+    explicit Buffer(std::size_t initial_capacity = 1 << 14, std::size_t max_capacity = 1 << 20);
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
     Buffer(Buffer &&) noexcept = default;

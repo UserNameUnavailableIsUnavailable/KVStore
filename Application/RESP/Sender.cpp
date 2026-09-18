@@ -10,8 +10,8 @@
 
 namespace RESP
 {
-Sender::Sender(Foundation::NBIO::Session &session, Foundation::Core::Buffer &buffer, const Object &object)
-    : session_(session), buffer_(buffer), object_(object)
+Sender::Sender(Foundation::NBIO::Session &session, Foundation::Core::Buffer &buffer)
+    : session_(session), buffer_(buffer)
 {
     if (!buffer.is_empty())
     {
@@ -24,25 +24,20 @@ Sender::~Sender() noexcept
     buffer_.clear();
 }
 
-Foundation::NBIO::Task<bool> Sender::send()
+void Sender::append(const Object &object)
 {
-    auto decoder = RESP::Encode(object_, buffer_);
-    while (decoder.poll() == RESP::EncodeStatus::kNeedFlush)
+    // Written straight into the buffer, which grows to hold it. Encoding is the
+    // hot path of a server that answers a million replies a second, so it builds
+    // nothing on the way: no string per number, no piece list, no coroutine.
+    if (!RESP::AppendObject(object, buffer_))
     {
-        auto result = co_await session_.send(buffer_.readable_span());
-        if (!result)
-        {
-            internal_error_ = session_.send_channel().last_error().message();
-            co_return false;
-        }
-        if (*result == 0)
-        {
-            internal_error_ = "stream closed";
-            co_return false;
-        }
-        buffer_.consume(*result);
+        throw std::runtime_error("reply batch is larger than the send buffer can hold");
     }
-    if (!buffer_.is_empty())
+}
+
+Foundation::NBIO::Task<bool> Sender::flush()
+{
+    while (!buffer_.is_empty())
     {
         auto result = co_await session_.send(buffer_.readable_span());
         if (!result)
@@ -58,5 +53,11 @@ Foundation::NBIO::Task<bool> Sender::send()
         buffer_.consume(*result);
     }
     co_return true;
+}
+
+Foundation::NBIO::Task<bool> Sender::send(const Object &object)
+{
+    append(object);
+    co_return co_await flush();
 }
 } // namespace RESP

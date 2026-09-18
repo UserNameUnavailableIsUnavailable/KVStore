@@ -8,6 +8,9 @@ add_executable(
 	ReplicationServiceTesting.cpp
 	WriteHistoryTesting.cpp
 	ConfFileTesting.cpp
+	EncoderTesting.cpp
+	ScannerTesting.cpp
+	RESPTesting.cpp
 )
 
 find_package(GTest REQUIRED)

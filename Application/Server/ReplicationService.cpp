@@ -92,8 +92,13 @@ void ReplicationService::record(const Command &command)
 
     // A stream that found nothing to send is waiting for exactly this. Nothing is
     // handed over here -- whoever wakes looks at its own place in the log -- so a
-    // stream that is not waiting pays nothing for the wake-up.
-    writes_.notify_all();
+    // stream that is not waiting pays nothing for the wake-up, and with no
+    // replica attached there is nobody to wake: the call itself was 1.6% of the
+    // server on every write, which is what asking first avoids.
+    if (history_.recording())
+    {
+        writes_.notify_all();
+    }
 }
 
 WriteHistory::Cursor *ReplicationService::attach() noexcept

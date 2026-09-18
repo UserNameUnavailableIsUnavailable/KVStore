@@ -3,11 +3,14 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
+#include <cstdint>
 #include <exception>
+#include <new>
 #include <utility>
 #include <variant>
 
 #include "Coroutine.hpp"
+#include "FramePool.hpp"
 #include "Scheduler.hpp"
 
 namespace Foundation::Async
@@ -19,6 +22,50 @@ class Scheduler;
 // object itself still lives inside that very frame.
 struct Promise
 {
+    // Frames are pooled by size class and reused, so the many small frames an
+    // await chain creates per request stop paying malloc/free each time. A frame
+    // is always destroyed through the promise's operator delete (via
+    // coroutine_handle::destroy), so every destruction path reaches the pool.
+    //
+    // The aligned overloads fall back to the global allocator: an over-aligned
+    // promise needs alignment the pool does not provide, and must be paired with
+    // the matching global aligned delete.
+    //
+    // DISABLED, and measured: the pool is slower than the default path it
+    // replaces. With 1000 clients pipelined 64 deep, the prediction-based pool
+    // reaches 129k SET / 134k GET against 148k / 154k with no pool at all (and
+    // 176k / 257k against 454k / 322k when it still used a share of the
+    // high-water mark). glibc's and jemalloc's per-thread caches already make
+    // these frame allocations cheap, so the pooling is bookkeeping on top: what
+    // the pool saves in allocator calls it pays back in class lookup, counters,
+    // an out-of-line call per frame, and chunks rounded up to a power of two.
+    // Re-enable only with a measurement that says otherwise.
+#if 1
+    static void *operator new(std::size_t size)
+    {
+        return Foundation::Async::frame_allocate(size);
+    }
+    static void *operator new(std::size_t size, std::align_val_t alignment)
+    {
+        return ::operator new(size, alignment);
+    }
+    static void operator delete(void *pointer, std::size_t size) noexcept
+    {
+        Foundation::Async::frame_deallocate(pointer, size);
+    }
+    static void operator delete(void *pointer) noexcept
+    {
+        ::operator delete(pointer);
+    }
+    static void operator delete(void *pointer, std::size_t size, std::align_val_t alignment) noexcept
+    {
+        ::operator delete(pointer, size, alignment);
+    }
+    static void operator delete(void *pointer, std::align_val_t alignment) noexcept
+    {
+        ::operator delete(pointer, alignment);
+    }
+#endif
     struct FinalAwaiter
     {
         bool await_ready() noexcept
@@ -64,11 +111,6 @@ struct Promise
     }
 
     std::coroutine_handle<> continuation;
-    // Non-owning. Names the control block of the tree this frame belongs to:
-    // set on a root by spawn(), and inherited from the caller by every awaited
-    // child. Non-null on every schedulable frame, which is what lets a parked
-    // descendant read its tree's cancellation state.
-    CoroutineControlBlock *control_block = nullptr;
 };
 
 template <typename RuntimeTag, typename T> class Task
@@ -80,6 +122,19 @@ template <typename RuntimeTag, typename T> class Task
         // the caller's, so a cross-runtime co_await is a compile error rather
         // than the callee running on the wrong thread.
         using Runtime = RuntimeTag;
+
+        // The compiler lays a member coroutine's object parameter (this) over the
+        // promise's own storage right after Promise::continuation, so the first
+        // slot here is deliberate padding: nothing of ours may sit where that
+        // parameter lands, or inheriting the block would clobber this. It is
+        // deliberately left uninitialized and is never read.
+        std::uint64_t object_parameter_reserved_;
+
+        // Non-owning. Names the control block of the tree this frame belongs to:
+        // set on a root by spawn(), and inherited from the caller by every
+        // awaited child. Non-null on every schedulable frame, which is what lets
+        // a parked descendant read its tree's cancellation state.
+        CoroutineControlBlock *control_block = nullptr;
 
         std::variant<std::monostate, T, std::exception_ptr> result_;
 
@@ -208,6 +263,13 @@ template <typename RuntimeTag> class Task<RuntimeTag, void>
     struct promise_type : Promise
     {
         using Runtime = RuntimeTag;
+
+        // See the note in the primary template: this reserves the slot a member
+        // coroutine's object parameter is laid out in.
+        std::uint64_t object_parameter_reserved_;
+
+        // Non-owning. Names the control block of the tree this frame belongs to.
+        CoroutineControlBlock *control_block = nullptr;
 
         std::exception_ptr error_;
 
