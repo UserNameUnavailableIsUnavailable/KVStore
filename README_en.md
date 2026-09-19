@@ -13,7 +13,7 @@ writes reach the replicas as they happen.
 - **Operating system**: Linux (x86-64). The server, replication and the io_uring backend
   all sit behind `#if defined(__linux__)`; on other platforms only part of `Foundation`
   compiles.
-- **CMake ≥ 3.10** (declared at the top of `CMakeLists.txt`; 4.2.3 on the development
+- **CMake ≥ 3.20** (declared at the top of `CMakeLists.txt`; 4.2.3 on the development
   machine).
 - **A C++20 compiler**: the code uses coroutines, ranges, designated initializers and
   concepts (Clang 21.1.8 on the development machine; GCC 11+ / Clang 14+ have what it

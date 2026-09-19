@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
 
 message(STATUS "vcpkg root: $ENV{VCPKG_ROOT}")
 # vcpkg toolchain must be loaded before project definition for hooks to add the package paths
