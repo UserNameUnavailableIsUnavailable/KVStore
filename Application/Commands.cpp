@@ -326,18 +326,25 @@ CommandValidation ValidateClient(const Arguments &arguments)
 	return {.command = Command{.type = CommandType::kClient, .parameters = std::move(parameters)}, .error = {}};
 }
 
-// `SAVE` forks a child to write the snapshot, which is what Redis calls
-// `BGSAVE`, so that is the name this server answers to.
+// `BGSAVE` forks a child to write the snapshot, so it is named the way Redis
+// names a fork-then-write, and it answers the way Redis answers one.
 CommandValidation ValidateBgSave(const Arguments &arguments)
 {
 	return NoArguments<BgSaveParams>(arguments, CommandType::kBgSave, "BGSAVE");
 }
 
-constexpr std::array<ValidatorEntry, 13> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
+// `SAVE` takes nothing either: it is the same snapshot, written here instead of
+// in a child, and it says so once the file is in place.
+CommandValidation ValidateSave(const Arguments &arguments)
+{
+	return NoArguments<SaveParams>(arguments, CommandType::kSave, "SAVE");
+}
+
+constexpr std::array<ValidatorEntry, 14> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
 										   {"DEL", ValidateDel}, {"EXISTS", ValidateExists}, {"MULTI", ValidateMulti},
 										   {"EXEC", ValidateExec}, {"COMMAND", ValidateCommandInfo}, {"CLIENT", ValidateClient},
 										   {"DBSIZE", ValidateDbSize}, {"INFO", ValidateInfo},
-										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}}};
+										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}, {"SAVE", ValidateSave}}};
 
 // The case of one ASCII letter, without the C library. `std::toupper` is a call
 // through the locale for every character, and this comparison runs for every
@@ -483,6 +490,8 @@ std::string_view CommandName(CommandType type)
 		return "CLIENT";
 	case CommandType::kBgSave:
 		return "BGSAVE";
+	case CommandType::kSave:
+		return "SAVE";
 	}
 	return "";
 }
@@ -561,6 +570,7 @@ RESP::Object CommandToRESP(const Command &command)
 	case CommandType::kMulti:
 	case CommandType::kExec:
 	case CommandType::kBgSave:
+	case CommandType::kSave:
 	case CommandType::kCommand:
 	case CommandType::kTTL:
 	case CommandType::kDbSize:

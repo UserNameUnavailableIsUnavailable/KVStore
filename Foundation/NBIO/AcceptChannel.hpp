@@ -66,35 +66,23 @@ class AcceptChannel final : public Foundation::NBIO::Channel
 
     Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> accept();
 
-    // Decides what the backend owes next. One accept covers one wait, so a
-    // completion retires its wait as it answers it and there is nothing left to
-    // wake here.
+    // The batch protocol (see Channel.hpp). Taking a connection is not something
+    // the kernel can vectorise, so one operation covers one wait: submit_jobs()
+    // hands over the wait at the front of the queue and answers it, or nothing when
+    // there is nobody waiting or a wait is already out there.
+    PendingAccept *submit_jobs();
+
+    // The backend's own outcome: the descriptor it accepted, or -errno. The peer
+    // address was written into the wait when the operation was built, so it is
+    // already in place.
+    void advance_job(std::ptrdiff_t result) noexcept;
+
+    // The connection a readiness backend took itself: the whole outcome arrives at
+    // once, and the peer address did not come from the kernel.
+    void advance_job(Foundation::Core::AcceptResult accepted) noexcept;
+
+    void complete_jobs() noexcept;
     void handle_completion();
-
-    // Work the backend could take right now: there is a wait queued and none of
-    // ours is with the kernel.
-    bool has_prepared() const noexcept
-    {
-        return submitted_ == 0 && !pending_.empty();
-    }
-
-    // Hands the wait at the front over and answers one, or zero when there is
-    // nothing to hand over.
-    std::size_t count_prepared() noexcept;
-
-    // The operation in flight reported its outcome.
-    void complete_tasks(std::ptrdiff_t result) noexcept;
-
-    // The wait the kernel is accepting for, or nothing when none is with it. Its
-    // peer address is written in place when the operation is built.
-    PendingAccept *submitted_front() noexcept
-    {
-        return submitted_ == 0 ? nullptr : &pending_.front();
-    }
-
-    // The connection a readiness backend took itself: it fills the result the
-    // kernel did not, and the channel retires the wait like any other.
-    void commit_result(Foundation::Core::AcceptResult accepted) noexcept;
 
     Foundation::Core::Socket &socket() noexcept
     {
@@ -113,26 +101,24 @@ class AcceptChannel final : public Foundation::NBIO::Channel
   private:
     friend class AcceptAwaiter;
 
-    // A wait is prepared when it is awaited. Whether it also becomes submitted
-    // right away is the backend's business, not the awaiter's.
+    // Queues the wait and arms the channel: this is the suspension point, and being
+    // armed is what tells the backend to look at the channel.
     void prepare(Foundation::Async::Coroutine waiter, Foundation::Core::AcceptResult &result);
 
-    // Arms or disarms the channel according to what the backend still owes.
-    void refresh_arming() noexcept;
-
-    // Answers the wait at the front and hands its waiter to the scheduler. One
-    // accept covers one wait, so an answered wait is always finished.
-    void wake_front() noexcept;
+    // Gives the wait at the front its answer and moves it to the completed queue.
+    void retire_front(Foundation::Core::AcceptResult result) noexcept;
 
     // Leaves a waiting frame with an outcome, so that nothing is ever parked for a
     // completion that cannot come. Used when the channel goes away.
     void drop(PendingAccept &pending) noexcept;
 
     Foundation::Core::Socket listener_;
-    std::deque<PendingAccept> pending_;
-    // Whether the wait at the front has been handed to the kernel. One accept
-    // covers one wait, so this is never more than one.
-    std::size_t submitted_{0};
+    // The queue, in the order the waits were awaited. One accept covers one wait, so
+    // what is in `submitted_waits_` is at most the one wait the backend is
+    // accepting for.
+    std::deque<PendingAccept> prepared_waits_;
+    std::deque<PendingAccept> submitted_waits_;
+    std::deque<PendingAccept> completed_waits_;
     std::error_code error_code_;
 };
 } // namespace Foundation::NBIO

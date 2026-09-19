@@ -38,9 +38,6 @@ namespace Foundation::NBIO
 static void do_receive_data(Foundation::NBIO::Channel *base);
 static void do_send_data(Foundation::NBIO::Channel *base);
 static void do_accept_connection(Foundation::NBIO::Channel *base);
-static void do_wait_timer(Foundation::NBIO::Channel *base);
-static void do_wait_notifier(Foundation::NBIO::Channel *base);
-static void do_drain_signal(Foundation::NBIO::Channel *base);
 static void do_read_file(Foundation::NBIO::Channel *base);
 static void do_write_file(Foundation::NBIO::Channel *base);
 
@@ -188,16 +185,15 @@ void EpollMultiplexer::run_impl(int timeout_ms)
                 do_write_file(channel);
                 static_cast<WriteChannel *>(channel)->handle_completion();
                 break;
+            // Readiness is the whole wait for these: each one arms while it has
+            // something to watch, and its completion drains the fd itself.
             case Foundation::NBIO::ChannelType::kTimer:
-                do_wait_timer(channel);
                 static_cast<TimerChannel *>(channel)->handle_completion();
                 break;
             case Foundation::NBIO::ChannelType::kNotify:
-                do_wait_notifier(channel);
                 static_cast<NotifyChannel *>(channel)->handle_completion();
                 break;
             case Foundation::NBIO::ChannelType::kSignal:
-                do_drain_signal(channel);
                 static_cast<SignalChannel *>(channel)->handle_completion();
                 break;
             case Foundation::NBIO::ChannelType::kRDMA_Accept:
@@ -411,128 +407,113 @@ EpollMultiplexer::~EpollMultiplexer() noexcept
 
 static void do_receive_data(Foundation::NBIO::Channel *base)
 {
-    // The readiness of the socket is the submission: the channel handed its
-    // prepared receives over already, so this only has to drive the operation.
+    // Readiness is the operation: what the channel is waiting with is the batch it
+    // just handed over, and one recvmsg answers as much of it as the kernel has.
     auto *channel = static_cast<ReceiveChannel *>(base);
-    if (!channel->has_submitted())
+    ::msghdr *message = channel->submit_jobs();
+    if (message == nullptr)
     {
-        return;
+        return; // nothing to receive for
     }
 
-    ::msghdr &message = channel->message_batch();
     ssize_t result = 0;
     do
     {
-        result = ::recvmsg(channel->native_handle(), &message, 0);
+        result = ::recvmsg(channel->native_handle(), message, 0);
     } while (result < 0 && errno == EINTR);
 
-    channel->complete_tasks(result < 0 ? -errno : result);
+    channel->advance_job(result < 0 ? -errno : result);
+    channel->complete_jobs();
 }
 
 static void do_send_data(Foundation::NBIO::Channel *base)
 {
-    // As for receiving: the channel handed its prepared sends over already.
+    // As for receiving: the batch the channel handed over is the operation.
     auto *channel = static_cast<SendChannel *>(base);
-    if (!channel->has_submitted())
+    ::msghdr *message = channel->submit_jobs();
+    if (message == nullptr)
     {
-        return;
+        return; // nothing to send
     }
 
-    ::msghdr &message = channel->message_batch();
     ssize_t result = 0;
     do
     {
-        result = ::sendmsg(channel->native_handle(), &message, MSG_NOSIGNAL);
+        result = ::sendmsg(channel->native_handle(), message, MSG_NOSIGNAL);
     } while (result < 0 && errno == EINTR);
 
-    channel->complete_tasks(result < 0 ? -errno : result);
+    channel->advance_job(result < 0 ? -errno : result);
+    channel->complete_jobs();
 }
 
 static void do_accept_connection(Foundation::NBIO::Channel *base)
 {
     auto *channel = static_cast<AcceptChannel *>(base);
 
-    // One readiness event can mean several connections: take them while they last
-    // and while somebody is waiting for one.
+    // One readiness event can mean several connections, and one accept covers one
+    // wait: take them while they last and while somebody is waiting for one. Each
+    // one is an operation of its own, so the batch is concluded once, at the end.
     while (true)
     {
-        if (channel->submitted_front() == nullptr)
+        if (channel->submit_jobs() == nullptr)
         {
-            // The channel hands exactly one wait over at a time, because the
-            // answer names the channel and not the wait it belongs to.
-            if (channel->count_prepared() == 0 || channel->submitted_front() == nullptr)
-            {
-                break;
-            }
+            break; // nobody waiting, or a wait is still out there
         }
 
         Foundation::Core::AcceptResult accepted = channel->socket().accept();
         if (accepted.status == Foundation::Core::AcceptStatus::kPending)
         {
-            break;
+            break; // no more connections to take right now
         }
 
-        channel->commit_result(std::move(accepted));
+        channel->advance_job(std::move(accepted));
     }
-}
 
-void do_wait_timer(Foundation::NBIO::Channel *base)
-{
-    // The read drains the timerfd; handle_completion() then pops the entries that
-    // have come due.
-    static_cast<TimerChannel *>(base)->timer().wait();
-}
-
-void do_wait_notifier(Foundation::NBIO::Channel *base)
-{
-    static_cast<NotifyChannel *>(base)->notifier().wait();
-}
-
-void do_drain_signal(Foundation::NBIO::Channel *base)
-{
-    static_cast<SignalChannel *>(base)->signal().drain();
+    channel->complete_jobs();
 }
 
 static void do_read_file(Foundation::NBIO::Channel *base)
 {
-    // A file is always ready, so the channel handed its prepared reads over the
-    // moment they were awaited; this drives the operation they describe.
+    // A file is always ready, so the batch the channel hands over here is the
+    // operation: the reads cover consecutive stretches of it.
     auto *channel = static_cast<ReadChannel *>(base);
-    if (!channel->has_submitted())
+    const auto vectors = channel->submit_jobs();
+    if (vectors.empty())
     {
-        return;
+        return; // nothing to read for
     }
 
-    const auto vectors = channel->vectors();
     ssize_t result = 0;
     do
     {
         result = ::preadv(channel->native_handle(), vectors.data(), static_cast<int>(vectors.size()),
-                          static_cast<off_t>(channel->front_offset()));
+                          static_cast<off_t>(channel->batch_offset()));
     } while (result < 0 && errno == EINTR);
 
-    channel->complete_tasks(result < 0 ? -errno : result);
+    channel->advance_job(result < 0 ? -errno : result);
+    channel->complete_jobs();
 }
 
 static void do_write_file(Foundation::NBIO::Channel *base)
 {
-    // As for reading: the channel owns what a batch of writes looks like. A file
-    // is always ready, so the operation it describes is driven here.
+    // As for reading: the batch is the operation, and the writes follow one another
+    // in the file.
     auto *channel = static_cast<WriteChannel *>(base);
-    if (!channel->has_submitted())
+    const auto vectors = channel->submit_jobs();
+    if (vectors.empty())
     {
-        return;
+        return; // nothing to write
     }
 
-    const auto vectors = channel->vectors();
     ssize_t result = 0;
     do
     {
         result = ::pwritev(channel->native_handle(), vectors.data(), static_cast<int>(vectors.size()),
-                           static_cast<off_t>(channel->front_offset()));
+                           static_cast<off_t>(channel->batch_offset()));
     } while (result < 0 && errno == EINTR);
 
-    channel->complete_tasks(result < 0 ? -errno : result);
+    channel->advance_job(result < 0 ? -errno : result);
+    channel->complete_jobs();
 }
 
 } // namespace Foundation::NBIO

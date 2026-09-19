@@ -20,6 +20,32 @@ void TimerChannel::park(Async::Coroutine coroutine_view, std::chrono::steady_clo
     timer_.fire_at(queue_.top().timepoint);
 }
 
+bool TimerChannel::submit_job()
+{
+    if (submitted_)
+    {
+        return false; // the poll is already out there
+    }
+    if (queue_.is_empty())
+    {
+        return false; // nothing to wait for
+    }
+
+    submitted_ = true;
+    return true;
+}
+
+void TimerChannel::advance_job(std::ptrdiff_t) noexcept
+{
+    // A poll's answer says only that the timerfd became readable; the expirations
+    // are drained in handle_completion().
+}
+
+void TimerChannel::complete_job() noexcept
+{
+    submitted_ = false;
+}
+
 bool TimerChannel::remove(Async::Coroutine coroutine_view)
 {
     const bool removed = queue_.remove_if([&](const detail::TimerEntry &entry) {
@@ -45,6 +71,10 @@ bool TimerChannel::remove(Async::Coroutine coroutine_view)
 
 void TimerChannel::handle_completion()
 {
+    // Take the expirations out first: that is what makes the timerfd stop
+    // reporting, and the entries below are the ones it is reporting for.
+    timer_.wait();
+
     while (!queue_.is_empty()) [[likely]]
     {
         const auto &top = queue_.top();
@@ -67,6 +97,11 @@ void TimerChannel::handle_completion()
         }
         timer_.fire_after(dur);
         arm();
+    }
+    else
+    {
+        // Nothing left to wait for.
+        disarm();
     }
 }
 } // namespace Foundation::NBIO

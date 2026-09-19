@@ -7,6 +7,7 @@
 #include <Foundation/Async/Task.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 
 #include <Foundation/NBIO/Types.hpp>
@@ -34,13 +35,14 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
   private:
     void run_impl(int timeout_ms);
 
-    // Turn the channel's armed operation into a submission queue entry.
-    // Returns false when the submission queue is full; the caller retries later.
-    bool prepare(Foundation::NBIO::Channel *channel);
+    // Turn the channel's next operation into a submission queue entry. Answers
+    // false when the channel has nothing to hand over or the submission queue is
+    // full; the caller asks again on a later pass. `unpublished` is how many entries
+    // this pass has filled in but not handed to the kernel yet.
+    bool prepare(Foundation::NBIO::Channel *channel, std::size_t &unpublished);
     void submit();
-    // Write one completion's outcome into the channel's job.
-    static void complete(Foundation::NBIO::Channel *channel, int result);
-    // Reap every ready completion: fill the job, then dispatch to the channel.
+    // Reap every ready completion: advance each channel's batch first, then
+    // conclude and wake it, once no completion is left to write into it.
     void handle_completions();
     io_uring ring_;
     // fd -> channels living on that fd (simplex channels share a socket).

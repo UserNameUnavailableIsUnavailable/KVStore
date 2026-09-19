@@ -9,6 +9,7 @@
 #include <Foundation/Core/Timer.hpp>
 #include <chrono>
 #include <coroutine>
+#include <cstddef>
 #include <Foundation/Async/Coroutine.hpp>
 
 namespace Foundation::NBIO
@@ -79,6 +80,14 @@ class TimerChannel final : public Foundation::NBIO::Channel
         return timer_;
     }
 
+    // The one-job protocol (see Channel.hpp), as the channels that carry a single
+    // wait keep it. The backend is asked for a poll, not a read: the expirations
+    // stay in the timerfd until this channel drains them, so the wait itself is
+    // what is prepared and a job has nothing to hold.
+    bool submit_job();
+    void advance_job(std::ptrdiff_t result) noexcept;
+    void complete_job() noexcept;
+
     void handle_completion();
 
     // Sleep 原语：挂起当前协程直到 due，定时器触发后由调度器恢复。
@@ -88,22 +97,16 @@ class TimerChannel final : public Foundation::NBIO::Channel
         return detail::SleepAwaiter{*this, due};
     }
 
-    const std::size_t &last_expirations() const noexcept
-    {
-        return last_expirations_;
-    }
-    std::size_t &last_expirations() noexcept
-    {
-        return last_expirations_;
-    }
-
   private:
     void park(Async::Coroutine coroutine_view, std::chrono::steady_clock::time_point due);
     bool remove(Async::Coroutine coroutine_view);
 
     Foundation::Core::Timer &timer_;
     Foundation::Core::PriorityQueue<detail::TimerEntry, detail::TimerEntryComparator> queue_;
-    std::size_t last_expirations_{0};
+    // Whether the poll that reports the timer is out there. Only the engine thread
+    // touches it: the backend asks while submitting, and the channel clears it when
+    // the poll completes.
+    bool submitted_{false};
 };
 
 template <typename PromiseType>

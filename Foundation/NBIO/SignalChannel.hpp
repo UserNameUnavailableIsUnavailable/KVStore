@@ -7,6 +7,7 @@
 
 #include <Foundation/Core/Signal.hpp>
 #include <coroutine>
+#include <cstddef>
 #include <list>
 
 
@@ -46,6 +47,14 @@ class SignalChannel final : public Foundation::NBIO::Channel
 
     void handle_completion();
 
+    // The one-job protocol (see Channel.hpp), as the channels that carry a single
+    // wait keep it. The backend is asked for a poll, not a read: the signals stay in
+    // the signalfd until this channel drains them, so the wait itself is what is
+    // prepared and a job has nothing to hold.
+    bool submit_job();
+    void advance_job(std::ptrdiff_t result) noexcept;
+    void complete_job() noexcept;
+
     void park(Foundation::Async::Coroutine coroutine);
 
     const Core::Signal &signal() const noexcept
@@ -58,17 +67,6 @@ class SignalChannel final : public Foundation::NBIO::Channel
         return signal_;
     }
 
-    std::size_t &count() noexcept
-    {
-        return count_;
-    }
-
-    const std::size_t &count() const noexcept
-    {
-        return count_;
-    }
-
-
     SignalAwaiter wait() noexcept
     {
         return SignalAwaiter{*this};
@@ -77,7 +75,8 @@ class SignalChannel final : public Foundation::NBIO::Channel
   private:
     Foundation::Core::Signal &signal_;
     std::list<Foundation::Async::Coroutine> waiters_;
-    std::size_t count_;
+    // Whether the poll that reports a signal is out there.
+    bool submitted_{false};
 };
 
 template <typename PromiseType>

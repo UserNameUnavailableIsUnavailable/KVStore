@@ -466,6 +466,9 @@ Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command &command)
     case KV::CommandType::kBgSave:
         response = co_await execute_bgsave(command);
         break;
+    case KV::CommandType::kSave:
+        response = co_await execute_save(command);
+        break;
     default:
         break;
     }
@@ -712,5 +715,19 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_bgsave(const KV::Command &c
         co_return detail::Error("ERR failed to save RDB snapshot");
     }
     co_return RESP::Object(RESP::SimpleString{.value = "Background saving started"});
+}
+
+Foundation::NBIO::Task<RESP::Object> Server::execute_save(const KV::Command &command)
+{
+    (void)command;
+    // The image is written in this process, so this frame's thread -- the one the
+    // event loop runs on -- is busy until the file is in place. That is what SAVE
+    // is for: the snapshot on disk before the answer, with the server standing
+    // still in the meantime, where BGSAVE hands the writing to a child.
+    if (!backup_.save_now(store_))
+    {
+        co_return detail::Error("ERR failed to save RDB snapshot");
+    }
+    co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 } // namespace KV

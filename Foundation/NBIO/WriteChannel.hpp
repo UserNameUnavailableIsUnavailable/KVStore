@@ -89,41 +89,18 @@ class WriteChannel final : public Foundation::NBIO::Channel
 
     Foundation::NBIO::Task<std::optional<std::size_t>> write(std::span<const char> buffer);
 
-    // Wakes what the operation finished and decides what the backend owes next.
+    // The batch protocol (see Channel.hpp). One operation is one pwritev over the
+    // whole prepared prefix: the writes follow one another in the file, so where the
+    // first of them lands is where the batch starts.
+    std::span<const ::iovec> submit_jobs();
+    void advance_job(std::ptrdiff_t result) noexcept;
+    void complete_jobs() noexcept;
     void handle_completion();
 
-    // Work the backend could take right now: there is something queued and no
-    // operation of ours is with the kernel.
-    bool has_prepared() const noexcept
+    // Where the batch that is out there starts in the file.
+    std::uint64_t batch_offset() const noexcept
     {
-        return submitted_ == 0 && !pending_.empty();
-    }
-
-    // Hands the prepared prefix over as one operation: fills each write's offset
-    // from the file's cursor, builds the iovecs, and answers how many writes it
-    // covers.
-    std::size_t count_prepared() noexcept;
-
-    // The operation in flight reported its outcome.
-    void complete_tasks(std::ptrdiff_t result) noexcept;
-
-    // Is an operation of this channel's with the kernel? The writes of one
-    // operation follow one another in the file, so there is at most one
-    // outstanding.
-    bool has_submitted() const noexcept
-    {
-        return submitted_ != 0;
-    }
-
-    std::span<const ::iovec> vectors() const noexcept
-    {
-        return std::span<const ::iovec>{vectors_.data(), submitted_};
-    }
-
-    // Where the first of them lands.
-    std::uint64_t front_offset() const noexcept
-    {
-        return pending_.empty() ? 0 : pending_.front().offset();
+        return submitted_jobs_.empty() ? 0 : submitted_jobs_.front().offset();
     }
 
     FileStream &file() noexcept
@@ -143,22 +120,27 @@ class WriteChannel final : public Foundation::NBIO::Channel
   private:
     friend class WriteAwaiter;
 
+    // Queues the write and arms the channel: this is the suspension point, and
+    // being armed is what tells the backend to look at the channel.
     void prepare(std::span<const char> buffer, Foundation::Core::WriteResult &result, Foundation::Async::Coroutine waiter);
 
-    void refresh_arming() noexcept;
-
-    // Retires the finished writes at the front of the queue, in the order the file
-    // took them, and hands their waiters back to the scheduler.
-    void retire_answered() noexcept;
+    // Gives one job its verdict and moves it to the completed queue. How much of it
+    // went out is already counted in its outcome slot by the time this runs.
+    void retire(PendingWrite job, Foundation::Core::WriteStatus status, std::error_code error) noexcept;
 
     // Leaves a waiting frame with an outcome, so that nothing is ever parked for a
     // completion that cannot come. Used when the channel goes away.
     void drop(PendingWrite &pending) noexcept;
 
     FileStream &file_;
-    std::deque<PendingWrite> pending_;
-    // How many of `pending_`, from the front, the kernel has been given.
-    std::size_t submitted_{0};
+    // The queue, in the order the writes were awaited. What one operation covers is
+    // a prefix of it: those jobs are held in `submitted_jobs_` while the operation
+    // is out there, and in `completed_jobs_` once they are whole. A write the
+    // operation stopped inside stays in `submitted_jobs_`, at the front, holding
+    // what is left of its buffer.
+    std::deque<PendingWrite> prepared_jobs_;
+    std::deque<PendingWrite> submitted_jobs_;
+    std::deque<PendingWrite> completed_jobs_;
     std::vector<::iovec> vectors_;
     std::error_code error_code_;
 };

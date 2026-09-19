@@ -10,6 +10,7 @@
 #include <Foundation/Core/Socket.hpp>
 #include <deque>
 #include <span>
+#include <sys/socket.h>
 #include <sys/uio.h>
 #include <system_error>
 #include <vector>
@@ -61,12 +62,11 @@ class PendingReceive
 // Simplex channel dedicated to receiving: a queue of receives, one operation, with
 // the channel interested only in the "readable" event.
 //
-// There is one queue, not three. A queued receive is never dropped until it has an
-// answer, so the receives the backend has been given are simply the first
-// `submitted_` entries of `pending_` -- a prefix, which is exactly what a
-// vectorised read needs, because the kernel fills the buffers in the order they are
-// given and answers with one total. Keeping that prefix implicit is what lets a
-// short read land in the middle of the queue without anything being moved.
+// The queue is explicit: a receive waits in `prepared_jobs_`, the prefix one
+// operation covers is held in `submitted_jobs_` while it is out there, and what it
+// answered is in `completed_jobs_` waiting to be woken. A short read answers the
+// front of the batch and leaves the rest where they are -- the socket is a stream,
+// and not having more to give is not the end of it.
 class ReceiveChannel : public Foundation::NBIO::Channel
 {
   public:
@@ -75,38 +75,12 @@ class ReceiveChannel : public Foundation::NBIO::Channel
 
     Foundation::NBIO::Task<std::optional<std::size_t>> receive(std::span<char> buffer);
 
-    // Wakes what the operation answered and decides what the backend owes next.
+    // The batch protocol (see Channel.hpp). One operation is one recvmsg over the
+    // whole prepared prefix, because a stream is read in order.
+    ::msghdr *submit_jobs();
+    void advance_job(std::ptrdiff_t result) noexcept;
+    void complete_jobs() noexcept;
     void handle_completion();
-
-    // Work the backend could take right now: there is something queued and no
-    // operation of ours is with the kernel.
-    bool has_prepared() const noexcept
-    {
-        return submitted_ == 0 && !pending_.empty();
-    }
-
-    // Hands the prepared prefix over as one operation: builds the iovecs, records
-    // how many receives it covers, and answers that count. Zero means there was
-    // nothing to hand over.
-    std::size_t count_prepared() noexcept;
-
-    // The operation in flight reported its outcome.
-    void complete_tasks(std::ptrdiff_t result) noexcept;
-
-    // Is an operation of this channel's with the kernel?
-    bool has_submitted() const noexcept
-    {
-        return submitted_ != 0;
-    }
-
-    const ::msghdr &message_batch() const noexcept
-    {
-        return message_header_;
-    }
-    ::msghdr &message_batch() noexcept
-    {
-        return message_header_;
-    }
 
     Foundation::Core::Socket &socket() noexcept
     {
@@ -125,22 +99,22 @@ class ReceiveChannel : public Foundation::NBIO::Channel
   private:
     friend class ReceiveAwaiter;
 
+    // Queues the receive and arms the channel: this is the suspension point, and
+    // being armed is what tells the backend to look at the channel.
     void prepare(std::span<char> buffer, Foundation::Core::ReceiveResult &result, Foundation::Async::Coroutine waiter);
 
-    // Arms or disarms according to what the backend still owes. A readiness
-    // backend hands the work over here, because its readiness is the submission.
-    void refresh_arming() noexcept;
-
-    // Retires the answered receives at the front of the queue, in the order the
-    // stream filled them, and hands their waiters back to the scheduler.
-    void retire_answered() noexcept;
+    // Gives one job its answer and moves it to the completed queue.
+    void retire(PendingReceive job, Foundation::Core::ReceiveResult result) noexcept;
 
     void drop(PendingReceive &pending) noexcept;
 
     Foundation::Core::Socket &socket_;
-    std::deque<PendingReceive> pending_;
-    // How many of `pending_`, from the front, the kernel has been given.
-    std::size_t submitted_{0};
+    // The queue, in the order the receives were awaited. What one operation covers
+    // is a prefix of it: those jobs are held in `submitted_jobs_` while the
+    // operation is out there, and in `completed_jobs_` once they have an answer.
+    std::deque<PendingReceive> prepared_jobs_;
+    std::deque<PendingReceive> submitted_jobs_;
+    std::deque<PendingReceive> completed_jobs_;
     std::vector<::iovec> io_vectors_;
     ::msghdr message_header_{};
     std::error_code error_code_;

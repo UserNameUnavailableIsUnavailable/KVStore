@@ -27,8 +27,38 @@ void SignalChannel::park(Async::Coroutine coroutine)
     arm();
 }
 
+bool SignalChannel::submit_job()
+{
+    if (submitted_)
+    {
+        return false; // the poll is already out there
+    }
+    if (waiters_.empty())
+    {
+        return false; // nothing to wait for
+    }
+
+    submitted_ = true;
+    return true;
+}
+
+void SignalChannel::advance_job(std::ptrdiff_t) noexcept
+{
+    // A poll's answer says only that the signalfd became readable; the signals are
+    // drained in handle_completion().
+}
+
+void SignalChannel::complete_job() noexcept
+{
+    submitted_ = false;
+}
+
 void SignalChannel::handle_completion()
 {
+    // Take the signals out first: that is what makes the signalfd stop reporting,
+    // and the waiters below are who they were for.
+    signal_.drain();
+
     for (auto &waiter : waiters_)
     {
         // is_dead() first: it is what makes done() safe, since the frame may have
@@ -40,5 +70,10 @@ void SignalChannel::handle_completion()
     }
 
     waiters_.clear();
+
+    // Every waiter is resumed above, so there is nothing left for a read to
+    // report: a signalfd's read delivers the signals that are pending, and each
+    // one is handed to all of them.
+    disarm();
 }
 } // namespace Foundation::NBIO

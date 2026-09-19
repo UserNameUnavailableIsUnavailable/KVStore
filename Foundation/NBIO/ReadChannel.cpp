@@ -47,9 +47,6 @@ class ReadAwaiter
   private:
     ReadChannel &channel_;
     std::span<char> buffer_;
-    // Where this read's outcome is left when its turn comes: it belongs to the
-    // frame that is waiting, which is how several reads of one batch each get
-    // their own answer.
     Foundation::Core::ReadResult result_{};
 };
 
@@ -66,153 +63,147 @@ ReadChannel::~ReadChannel() noexcept
 
     // Whatever is still queued has nowhere to land now: every waiting frame gets an
     // outcome and a wake-up rather than being left parked for a completion that
-    // cannot come.
-    for (PendingRead &pending : pending_)
+    // cannot come. A read that already has its answer keeps it -- only the wake-up
+    // is still owed to it.
+    for (PendingRead &pending : prepared_jobs_)
     {
         drop(pending);
     }
-    pending_.clear();
+    for (PendingRead &pending : submitted_jobs_)
+    {
+        drop(pending);
+    }
+    for (PendingRead &done : completed_jobs_)
+    {
+        if (done.waiter())
+        {
+            scheduler_.submit(std::move(done.waiter()));
+        }
+    }
+    prepared_jobs_.clear();
+    submitted_jobs_.clear();
+    completed_jobs_.clear();
     vectors_.clear();
-    submitted_ = 0;
 }
 
-void ReadChannel::prepare(std::span<char> buffer, Foundation::Core::ReadResult &result, Foundation::Async::Coroutine waiter)
+std::span<const ::iovec> ReadChannel::submit_jobs()
 {
-    result = {.status = Foundation::Core::ReadStatus::kPending, .bytes_transferred = 0, .error_code = {}};
-    pending_.emplace_back(buffer, result, std::move(waiter));
-    refresh_arming();
-}
-
-void ReadChannel::refresh_arming() noexcept
-{
-    const bool can_hand_over = has_prepared();
-
-    if (submits_immediately())
+    if (!submitted_jobs_.empty())
     {
-        // Readiness is the submission: the work goes over now, and the channel
-        // stays armed while there is anything to wait for.
-        if (can_hand_over)
-        {
-            count_prepared();
-        }
-
-        if (submitted_ == 0 && pending_.empty())
-        {
-            disarm();
-            return;
-        }
-        arm();
-        return;
+        // A batch is out there already. The backend asks again once it is
+        // concluded, so there is nothing to hand over now. The reads of one batch
+        // cover consecutive stretches of the file, so they cannot be split up.
+        return {};
     }
-
-    // A completion backend runs the submission phase itself, so the channel is
-    // armed exactly while it has something for that phase to hand over.
-    if (can_hand_over)
+    if (prepared_jobs_.empty())
     {
-        arm();
-        return;
-    }
-    disarm();
-}
-
-std::size_t ReadChannel::count_prepared() noexcept
-{
-    if (submitted_ != 0 || pending_.empty())
-    {
-        // The reads of one operation cover consecutive stretches of the file, so
-        // what follows has to wait for it to come back.
-        return 0;
+        return {}; // nothing to submit
     }
 
     // The offsets come from the file's own cursor, which is where the next read
     // starts, and the reads cover consecutive stretches of it. Both the offset and
     // the iovec are recorded now, in queue order, because that is the order the
-    // kernel fills them in and the array is what the completion is walked against.
+    // kernel fills them in and the array the outcome is spread over.
     std::uint64_t offset = file_.read_offset();
-    const std::size_t count = std::min(pending_.size(), kMaximumBatch);
+    const std::size_t count = std::min(prepared_jobs_.size(), kMaximumBatch);
     vectors_.resize(count);
     for (std::size_t index = 0; index < count; ++index)
     {
-        PendingRead &read = pending_[index];
+        submitted_jobs_.push_back(std::move(prepared_jobs_.front()));
+        prepared_jobs_.pop_front();
+
+        PendingRead &read = submitted_jobs_.back();
         read.set_offset(offset);
         offset += read.buffer().size();
         const std::span<char> &buffer = read.buffer();
         vectors_[index] = ::iovec{.iov_base = buffer.data(), .iov_len = buffer.size()};
     }
-    submitted_ = count;
-    return count;
+
+    return std::span<const ::iovec>{vectors_.data(), count};
 }
 
-void ReadChannel::complete_tasks(std::ptrdiff_t result) noexcept
+void ReadChannel::advance_job(std::ptrdiff_t result) noexcept
 {
-    if (submitted_ == 0)
-    {
-        return;
-    }
-
+    // One operation's outcome, spread over the jobs it covered: the kernel fills
+    // the buffers in the order they were queued, so the front of the batch takes
+    // the bytes.
     if (result < 0)
     {
         const int error = -static_cast<int>(result);
-        if (error != EAGAIN && error != EWOULDBLOCK)
+        if (error == EAGAIN || error == EWOULDBLOCK)
         {
-            // The backend refused the operation: every read in it fails together,
-            // the same way they were made together.
-            const std::error_code failure{error, std::system_category()};
-            for (std::size_t index = 0; index < submitted_; ++index)
-            {
-                pending_[index].result().status = Foundation::Core::ReadStatus::kError;
-                pending_[index].result().error_code = failure;
-            }
+            // Not ready is not an answer: every job in the batch keeps waiting.
+            return;
         }
-        // Not ready leaves them waiting and an error answers them; either way the
-        // operation is over and what it covered keeps its place in the queue.
-        submitted_ = 0;
+
+        // The backend refused the operation: every read in it fails together, the
+        // same way they were made together.
+        const std::error_code failure{error, std::system_category()};
+        while (!submitted_jobs_.empty())
+        {
+            PendingRead read = std::move(submitted_jobs_.front());
+            submitted_jobs_.pop_front();
+            retire(std::move(read), {.status = Foundation::Core::ReadStatus::kError, .bytes_transferred = 0, .error_code = failure});
+        }
         return;
     }
 
-    std::size_t remaining = static_cast<std::size_t>(result);
-    for (std::size_t index = 0; index < submitted_; ++index)
+    const auto read_bytes = static_cast<std::size_t>(result);
+    std::size_t remaining = read_bytes;
+    while (!submitted_jobs_.empty())
     {
-        PendingRead &read = pending_[index];
+        PendingRead read = std::move(submitted_jobs_.front());
+        submitted_jobs_.pop_front();
+
         if (remaining == 0)
         {
             // The backend stopped before this read, and a short read is a read: it
             // is the backend saying it has nothing more for now. For a file that
-            // means the end, which is also what the reads behind it get, because
-            // they would read at or past that end.
-            read.result().status = Foundation::Core::ReadStatus::kEndOfFile;
-            read.result().bytes_transferred = 0;
-            read.buffer() = {};
+            // means the end -- and it is the end for the reads behind it too,
+            // because they would read at or past where it stopped.
+            retire(std::move(read), {.status = Foundation::Core::ReadStatus::kEndOfFile, .bytes_transferred = 0, .error_code = {}});
             continue;
         }
 
         const std::size_t taken = std::min(remaining, read.buffer().size());
-        read.result().status = Foundation::Core::ReadStatus::kDone;
-        read.result().bytes_transferred = taken;
-        read.buffer() = {};
+        retire(std::move(read), {.status = Foundation::Core::ReadStatus::kDone, .bytes_transferred = taken, .error_code = {}});
         remaining -= taken;
     }
 
-    if (result != 0)
+    if (read_bytes != 0)
     {
         // The file's cursor moves with what was read, so the next batch starts
         // where this one stopped.
-        file_.advance_read_offset(static_cast<std::size_t>(result));
+        file_.advance_read_offset(read_bytes);
     }
-    submitted_ = 0;
 }
 
-void ReadChannel::retire_answered() noexcept
+void ReadChannel::complete_jobs() noexcept
 {
-    while (!pending_.empty() && pending_.front().result().status != Foundation::Core::ReadStatus::kPending)
-    {
-        PendingRead finished = std::move(pending_.front());
-        pending_.pop_front();
-        if (finished.waiter())
-        {
-            scheduler_.submit(std::move(finished.waiter()));
-        }
-    }
+    // The operation is over. What it did not answer goes back to the front of the
+    // queue, in its original order, so the next operation starts where this one
+    // stopped.
+    prepared_jobs_.insert(prepared_jobs_.begin(), std::make_move_iterator(submitted_jobs_.begin()),
+                          std::make_move_iterator(submitted_jobs_.end()));
+    submitted_jobs_.clear();
+    vectors_.clear();
+}
+
+void ReadChannel::prepare(std::span<char> buffer, Foundation::Core::ReadResult &result, Foundation::Async::Coroutine waiter)
+{
+    result = {.status = Foundation::Core::ReadStatus::kPending, .bytes_transferred = 0, .error_code = {}};
+    prepared_jobs_.emplace_back(buffer, result, std::move(waiter));
+
+    // Armed from the moment there is something to wait for: an armed channel is one
+    // the backend looks at, and it stays armed until the queue runs dry.
+    arm();
+}
+
+void ReadChannel::retire(PendingRead job, Foundation::Core::ReadResult result) noexcept
+{
+    job.result() = result;
+    job.buffer() = {};
+    completed_jobs_.push_back(std::move(job));
 }
 
 void ReadChannel::drop(PendingRead &pending) noexcept
@@ -243,9 +234,29 @@ Foundation::NBIO::Task<std::optional<std::size_t>> ReadChannel::read(std::span<c
 
 void ReadChannel::handle_completion()
 {
-    // Wake every read that has an answer: they were given to the backend together,
-    // so one operation can have finished several of them.
-    retire_answered();
-    refresh_arming();
+    // Every read that has an answer wakes here, in the order the file was read:
+    // they were given to the backend together, so one operation can have finished
+    // several of them. This runs once the batch's completions have all been
+    // advanced, so a resumed read cannot queue work behind a job that is still
+    // being answered.
+    for (PendingRead &job : completed_jobs_)
+    {
+        if (job.waiter())
+        {
+            scheduler_.submit(std::move(job.waiter()));
+        }
+    }
+    completed_jobs_.clear();
+
+    // Armed while there is anything left to wait for, disarmed otherwise: the
+    // backend submits for an armed channel and leaves a disarmed one alone.
+    if (prepared_jobs_.empty())
+    {
+        disarm();
+    }
+    else
+    {
+        arm();
+    }
 }
 } // namespace Foundation::NBIO

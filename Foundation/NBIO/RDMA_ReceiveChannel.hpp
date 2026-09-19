@@ -20,7 +20,7 @@ class RDMA_ReceiveChannel final : public Channel
   public:
     using Handle = int;
 
-        struct ReceiveJob
+        struct PendingReceive
         {
                 std::optional<std::span<char>> chunk{};
         };
@@ -37,6 +37,29 @@ class RDMA_ReceiveChannel final : public Channel
 
     void handle_completion();
 
+    // The one-job protocol (see Channel.hpp): the parked wait is the job, submitting
+    // hands its poll to the backend, and the poll's completion erases it.
+    bool submit_job() noexcept
+    {
+        if (submitted_)
+        {
+            return false; // its poll is already out there
+        }
+        submitted_ = true;
+        return true;
+    }
+
+    void advance_job(std::ptrdiff_t) noexcept
+    {
+        // A poll's answer says only that the fd became readable; what that means is
+        // reaped in handle_completion().
+    }
+
+    void complete_job() noexcept
+    {
+        submitted_ = false;
+    }
+
     void park(Foundation::Async::Coroutine waiter) noexcept
     {
         waiter_ = std::move(waiter);
@@ -47,20 +70,21 @@ class RDMA_ReceiveChannel final : public Channel
         return stream_;
     }
 
-    ReceiveJob &job() noexcept
+    PendingReceive &job() noexcept
     {
         return job_;
     }
 
-    const ReceiveJob &job() const noexcept
+    const PendingReceive &job() const noexcept
     {
         return job_;
     }
 
     private:
     Foundation::Core::RDMA_Stream &stream_;
-    ReceiveJob job_{};
+    PendingReceive job_{};
     Foundation::Async::Coroutine waiter_{};
+    bool submitted_{false};
 };
 } // namespace Foundation::NBIO
 

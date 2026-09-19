@@ -2,6 +2,12 @@
 
 namespace Foundation::NBIO
 {
+enum class EventModelType
+{
+    kReactor,
+    kProactor,
+};
+
 enum class MultiplexerType
 {
 #if defined(__linux__)

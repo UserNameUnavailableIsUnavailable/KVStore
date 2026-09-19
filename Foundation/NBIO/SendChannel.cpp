@@ -94,161 +94,163 @@ SendChannel::~SendChannel() noexcept
 
     // Whatever is still queued has nowhere to go now: every waiting frame gets an
     // outcome and a wake-up rather than being left parked for a completion that
-    // cannot come.
-    for (PendingSend &pending : pending_)
+    // cannot come. A send that already has its answer keeps it -- only the wake-up
+    // is still owed to it.
+    for (PendingSend &pending : prepared_jobs_)
     {
         drop(pending);
     }
-    pending_.clear();
+    for (PendingSend &pending : submitted_jobs_)
+    {
+        drop(pending);
+    }
+    for (PendingSend &done : completed_jobs_)
+    {
+        if (done.waiter())
+        {
+            scheduler_.submit(std::move(done.waiter()));
+        }
+    }
+    prepared_jobs_.clear();
+    submitted_jobs_.clear();
+    completed_jobs_.clear();
     vectors_.clear();
     message_header_ = {};
-    submitted_ = 0;
+}
+
+::msghdr *SendChannel::submit_jobs()
+{
+    if (!submitted_jobs_.empty())
+    {
+        // A batch is out there already. The backend asks again once it is
+        // concluded, so there is nothing to hand over now.
+        return nullptr;
+    }
+    if (prepared_jobs_.empty())
+    {
+        return nullptr; // nothing to submit
+    }
+
+    // The batch is the prepared prefix, in queue order -- which is the order the
+    // stream has to keep. The iovecs are what says so to the kernel, and they are
+    // the array its one answer is spread over.
+    const std::size_t count = std::min(prepared_jobs_.size(), kMaximumBatch);
+    vectors_.resize(count);
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        submitted_jobs_.push_back(std::move(prepared_jobs_.front()));
+        prepared_jobs_.pop_front();
+
+        const std::span<const char> &buffer = submitted_jobs_.back().buffer();
+        vectors_[index] = ::iovec{.iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size()};
+    }
+
+    message_header_ = ::msghdr{.msg_iov = vectors_.data(), .msg_iovlen = count};
+    return &message_header_;
+}
+
+void SendChannel::advance_job(std::ptrdiff_t result) noexcept
+{
+    // One operation's outcome, spread over the jobs it covered: the stream takes
+    // them in the order they were queued, so the front of the batch takes the bytes
+    // and a send the operation stopped inside keeps its place, holding what is left
+    // of it.
+    if (result < 0)
+    {
+        const int error = -static_cast<int>(result);
+        if (error == EAGAIN || error == EWOULDBLOCK)
+        {
+            // Not ready is not an answer: every job in the batch keeps waiting.
+            return;
+        }
+
+        // A stream that cannot be written to is one stream: every send in the
+        // operation fails, because the ones behind it would follow the same
+        // connection.
+        const std::error_code failure{error, std::system_category()};
+        while (!submitted_jobs_.empty())
+        {
+            PendingSend send = std::move(submitted_jobs_.front());
+            submitted_jobs_.pop_front();
+            retire(std::move(send), Foundation::Core::SendStatus::kError, failure);
+        }
+        return;
+    }
+
+    const auto written = static_cast<std::size_t>(result);
+    if (written == 0)
+    {
+        // Nothing was taken from bytes that were there to send. Asking again would
+        // spin forever, so the front is told instead.
+        if (!submitted_jobs_.empty() && !submitted_jobs_.front().buffer().empty())
+        {
+            PendingSend send = std::move(submitted_jobs_.front());
+            submitted_jobs_.pop_front();
+            send.result().status = Foundation::Core::SendStatus::kError;
+            send.result().error_code = std::make_error_code(std::errc::io_error);
+            completed_jobs_.push_back(std::move(send));
+        }
+        return;
+    }
+
+    std::size_t remaining = written;
+    while (remaining > 0 && !submitted_jobs_.empty())
+    {
+        PendingSend send = std::move(submitted_jobs_.front());
+        submitted_jobs_.pop_front();
+        const std::size_t size = send.buffer().size();
+        const std::size_t taken = std::min(remaining, size);
+
+        // The outcome slot already holds whatever the fast path sent, so this adds
+        // to it rather than replacing it.
+        send.result().bytes_sent += taken;
+
+        if (taken == size)
+        {
+            retire(std::move(send), Foundation::Core::SendStatus::kDone, {});
+        }
+        else
+        {
+            // The operation stopped inside this send: what is left of it goes first
+            // next time, and it keeps its place at the front of the queue.
+            send.buffer() = send.buffer().subspan(taken);
+            submitted_jobs_.push_front(std::move(send));
+        }
+        remaining -= taken;
+    }
+}
+
+void SendChannel::complete_jobs() noexcept
+{
+    // The operation is over. Whatever it did not finish goes back to the front of
+    // the queue, in its original order, so the next operation starts where this one
+    // stopped.
+    prepared_jobs_.insert(prepared_jobs_.begin(), std::make_move_iterator(submitted_jobs_.begin()),
+                          std::make_move_iterator(submitted_jobs_.end()));
+    submitted_jobs_.clear();
+    vectors_.clear();
+    message_header_ = {};
 }
 
 void SendChannel::prepare(std::span<const char> buffer, Foundation::Core::SendResult &result, Foundation::Async::Coroutine waiter)
 {
     // The outcome slot already holds whatever the fast path sent, so it is not
     // reset here: only the bytes still to go are queued.
-    pending_.emplace_back(buffer, result, std::move(waiter));
-    refresh_arming();
+    prepared_jobs_.emplace_back(buffer, result, std::move(waiter));
+
+    // Armed from the moment there is something to wait for: an armed channel is one
+    // the backend looks at, and it stays armed until the queue runs dry.
+    arm();
 }
 
-void SendChannel::refresh_arming() noexcept
+void SendChannel::retire(PendingSend job, Foundation::Core::SendStatus status, std::error_code error) noexcept
 {
-    const bool can_hand_over = has_prepared();
-
-    if (submits_immediately())
-    {
-        // Readiness is the submission: the work goes over now, and the channel
-        // stays armed while there is anything to wait for.
-        if (can_hand_over)
-        {
-            count_prepared();
-        }
-
-        if (submitted_ == 0 && pending_.empty())
-        {
-            disarm();
-            return;
-        }
-        arm();
-        return;
-    }
-
-    // A completion backend runs the submission phase itself, so the channel is
-    // armed exactly while it has something for that phase to hand over.
-    if (can_hand_over)
-    {
-        arm();
-        return;
-    }
-    disarm();
-}
-
-std::size_t SendChannel::count_prepared() noexcept
-{
-    if (submitted_ != 0 || pending_.empty())
-    {
-        // A stream is written in order, so one operation is with the backend at a
-        // time: the sends behind it wait their turn.
-        return 0;
-    }
-
-    // The bytes are described as iovecs in queue order, which is the order the
-    // stream has to keep, and the array is what the completion is walked against
-    // to decide how many sends it finished.
-    const std::size_t count = std::min(pending_.size(), kMaximumBatch);
-    vectors_.resize(count);
-    for (std::size_t index = 0; index < count; ++index)
-    {
-        const std::span<const char> &buffer = pending_[index].buffer();
-        vectors_[index] = ::iovec{.iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size()};
-    }
-    message_header_ = ::msghdr{.msg_iov = vectors_.data(), .msg_iovlen = count};
-    submitted_ = count;
-    return count;
-}
-
-void SendChannel::complete_tasks(std::ptrdiff_t result) noexcept
-{
-    if (submitted_ == 0)
-    {
-        return;
-    }
-
-    if (result < 0)
-    {
-        const int error = -static_cast<int>(result);
-        if (error != EAGAIN && error != EWOULDBLOCK)
-        {
-            // A stream that cannot be written to is one stream: every send in the
-            // operation fails, because the ones behind it would follow the same
-            // connection.
-            const std::error_code failure{error, std::system_category()};
-            for (std::size_t index = 0; index < submitted_; ++index)
-            {
-                pending_[index].result().status = Foundation::Core::SendStatus::kError;
-                pending_[index].result().error_code = failure;
-            }
-        }
-        // Not ready leaves them waiting and an error answers them; either way the
-        // operation is over and what it covered keeps its place in the queue.
-        submitted_ = 0;
-        return;
-    }
-
-    std::size_t remaining = static_cast<std::size_t>(result);
-    if (remaining == 0 && !pending_.front().buffer().empty())
-    {
-        // Nothing was taken from bytes that were there to send. Asking again would
-        // spin forever, so it is reported instead.
-        pending_.front().result().status = Foundation::Core::SendStatus::kError;
-        pending_.front().result().error_code = std::make_error_code(std::errc::io_error);
-        submitted_ = 0;
-        return;
-    }
-
-    for (std::size_t index = 0; index < submitted_; ++index)
-    {
-        PendingSend &send = pending_[index];
-        const std::size_t size = send.buffer().size();
-        const std::size_t taken = std::min(remaining, size);
-        send.result().bytes_sent += taken;
-
-        if (taken == size)
-        {
-            send.buffer() = {};
-            send.result().status = Foundation::Core::SendStatus::kDone;
-        }
-        else
-        {
-            // The operation stopped inside this send: what is left of it goes
-            // first next time, and the sends behind it keep their order.
-            send.buffer() = send.buffer().subspan(taken);
-        }
-
-        remaining -= taken;
-        if (taken != size)
-        {
-            break;
-        }
-    }
-    submitted_ = 0;
-}
-
-void SendChannel::retire_answered() noexcept
-{
-    // The finished sends are at the front, in the order the stream took them; the
-    // one the operation stopped inside keeps its place, with what is left of it.
-    while (!pending_.empty() && pending_.front().result().status != Foundation::Core::SendStatus::kPending)
-    {
-        PendingSend finished = std::move(pending_.front());
-        pending_.pop_front();
-        if (finished.waiter())
-        {
-            scheduler_.submit(std::move(finished.waiter()));
-        }
-    }
+    // Only the verdict is written here: how much of this send went out is already
+    // in its outcome slot, counted by the fast path or by advance_job().
+    job.result().status = status;
+    job.result().error_code = std::move(error);
+    job.buffer() = {};
+    completed_jobs_.push_back(std::move(job));
 }
 
 void SendChannel::drop(PendingSend &pending) noexcept
@@ -264,10 +266,29 @@ void SendChannel::drop(PendingSend &pending) noexcept
 
 void SendChannel::handle_completion()
 {
-    // Wake every send that has an answer, in the order the stream took them: one
-    // sendmsg can have finished several.
-    retire_answered();
-    refresh_arming();
+    // Every send that has an answer wakes here, in the order the stream took them:
+    // one sendmsg can have finished several. This runs once the batch's completions
+    // have all been advanced, so a resumed send cannot queue work behind a job that
+    // is still being answered.
+    for (PendingSend &job : completed_jobs_)
+    {
+        if (job.waiter())
+        {
+            scheduler_.submit(std::move(job.waiter()));
+        }
+    }
+    completed_jobs_.clear();
+
+    // Armed while there is anything left to wait for, disarmed otherwise: the
+    // backend submits for an armed channel and leaves a disarmed one alone.
+    if (prepared_jobs_.empty())
+    {
+        disarm();
+    }
+    else
+    {
+        arm();
+    }
 }
 
 Foundation::NBIO::Task<std::optional<std::size_t>> SendChannel::send(std::span<const char> buffer)
@@ -287,10 +308,11 @@ Foundation::NBIO::Task<std::optional<std::size_t>> SendChannel::send(std::span<c
 
 std::ptrdiff_t SendChannel::send_now(std::span<const char> buffer) noexcept
 {
-    // Order is what a stream is, so this only applies when nothing is in flight:
-    // a send that arrives while an operation is outstanding takes its place behind
-    // it rather than jumping ahead of the bytes already promised to the socket.
-    if (submitted_ != 0 || !pending_.empty())
+    // Order is what a stream is, so this only applies when nothing of ours is in
+    // flight: a send that arrives while an operation is outstanding -- or while
+    // other sends are queued -- takes its place behind them rather than jumping
+    // ahead of the bytes already promised to the socket.
+    if (!submitted_jobs_.empty() || !prepared_jobs_.empty())
     {
         return -1;
     }

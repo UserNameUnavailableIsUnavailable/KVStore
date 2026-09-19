@@ -65,8 +65,11 @@ Server --port 8081 --replicaof 192.168.0.201:9000
    transfer complete. The link stays up afterwards: that is what the incremental
    stream will be pushed over.
 
-`BGSAVE` is the only snapshot command; it forks a child, which is why it is not
-called `SAVE`.
+`BGSAVE` forks a child, which writes the RDB while the server keeps serving, and
+`SAVE` writes the same image in the server's own process, so the server stands
+still until it is on disk and answers `+OK` when it is. Neither runs on a
+schedule: a snapshot is asked for by name, and `BGSAVE` is the one to ask for
+while clients are being served.
 
 Because the transfer is a file and the store is only replaced after the file
 validates, an interrupted full sync leaves the replica exactly as it was.

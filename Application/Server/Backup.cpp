@@ -394,4 +394,11 @@ Foundation::NBIO::Task<bool> Backup::save(std::vector<detail::SnapshotEntry> ent
         return WriteSnapshotInChild(path_, entries);
     });
 }
+
+bool Backup::save_now(std::vector<detail::SnapshotEntry> entries) const
+{
+    // No child and no offload: the image is serialised on the caller's thread, so
+    // the caller waits for it and nothing of the server runs while it is written.
+    return detail::WriteSnapshot(path_, entries);
+}
 } // namespace KV

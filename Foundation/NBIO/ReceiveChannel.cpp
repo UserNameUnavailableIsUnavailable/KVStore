@@ -1,7 +1,10 @@
 #include "ReceiveChannel.hpp"
+#include <Foundation/Async/Coroutine.hpp>
+#include <Foundation/NBIO/ReadChannel.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <spdlog/spdlog.h>
@@ -10,6 +13,7 @@
 #include <cassert>
 #include <cerrno>
 #include <stdexcept>
+#include <sys/socket.h>
 #include <utility>
 
 #include <Foundation/Async/Task.hpp>
@@ -48,9 +52,7 @@ class ReceiveAwaiter
     // support derived-to-base).
     template <typename PromiseType> void await_suspend(std::coroutine_handle<PromiseType> handle) noexcept
     {
-        static_assert(std::is_base_of_v<Foundation::Async::Promise, PromiseType>,
-                      "ReceiveAwaiter requires a promise derived from Foundation::Async::Promise");
-        channel_.prepare(buffer_, result_, Foundation::Async::Coroutine::from_handle(handle));
+        channel_.prepare(buffer_, result_, Async::Coroutine::from_handle(handle));
     }
 
     Foundation::Core::ReceiveResult await_resume() noexcept
@@ -82,104 +84,85 @@ ReceiveChannel::~ReceiveChannel() noexcept
 
     // Whatever is still queued has nowhere to land now: every waiting frame gets an
     // outcome and a wake-up rather than being left parked for a completion that
-    // cannot come.
-    for (PendingReceive &pending : pending_)
+    // cannot come. A job that already has its answer keeps it -- only the wake-up
+    // is still owed to it.
+    for (PendingReceive &pending : prepared_jobs_)
     {
         drop(pending);
     }
-    pending_.clear();
+    for (PendingReceive &pending : submitted_jobs_)
+    {
+        drop(pending);
+    }
+    for (PendingReceive &done : completed_jobs_)
+    {
+        if (done.waiter())
+        {
+            scheduler_.submit(std::move(done.waiter()));
+        }
+    }
+    prepared_jobs_.clear();
+    submitted_jobs_.clear();
+    completed_jobs_.clear();
     io_vectors_.clear();
-    submitted_ = 0;
 }
 
-void ReceiveChannel::prepare(std::span<char> buffer, Foundation::Core::ReceiveResult &result, Foundation::Async::Coroutine waiter)
+::msghdr *ReceiveChannel::submit_jobs()
 {
-    result = {.status = Foundation::Core::ReceiveStatus::kPending, .bytes_received = 0, .error_code = {}};
-    pending_.emplace_back(buffer, result, std::move(waiter));
-    refresh_arming();
-}
-
-void ReceiveChannel::refresh_arming() noexcept
-{
-    const bool can_hand_over = has_prepared();
-
-    if (submits_immediately())
+    if (!submitted_jobs_.empty())
     {
-        // Readiness is the submission: the work goes over now, and the channel
-        // stays armed while there is anything to wait for.
-        if (can_hand_over)
-        {
-            count_prepared();
-        }
-
-        if (submitted_ == 0 && pending_.empty())
-        {
-            disarm();
-            return;
-        }
-        arm();
-        return;
+        // A batch is out there already. The backend asks again once it is
+        // concluded, so there is nothing to hand over now.
+        return nullptr;
+    }
+    if (prepared_jobs_.empty())
+    {
+        return nullptr; // nothing to submit
     }
 
-    // A completion backend runs the submission phase itself, so the channel is
-    // armed exactly while it has something for that phase to hand over.
-    if (can_hand_over)
-    {
-        arm();
-        return;
-    }
-    disarm();
-}
-
-std::size_t ReceiveChannel::count_prepared() noexcept
-{
-    if (submitted_ != 0 || pending_.empty())
-    {
-        // A stream is read in order, so one operation is with the backend at a
-        // time: the receives behind it wait their turn.
-        return 0;
-    }
-
-    // The buffers are pushed as iovecs now, in queue order: that is the order the
-    // kernel fills them in, and the array is what the completion is walked against
-    // to decide how many receives it answered.
-    const std::size_t count = std::min(pending_.size(), kMaximumBatch);
+    // The batch is the prepared prefix, in queue order. The iovecs say how much
+    // each receive offered, which is both the order the kernel fills them in and
+    // the array its one answer is spread over.
+    const std::size_t count = std::min(prepared_jobs_.size(), kMaximumBatch);
     io_vectors_.resize(count);
     for (std::size_t index = 0; index < count; ++index)
     {
-        const std::span<char> &buffer = pending_[index].buffer();
+        submitted_jobs_.push_back(std::move(prepared_jobs_.front()));
+        prepared_jobs_.pop_front();
+
+        const std::span<char> &buffer = submitted_jobs_.back().buffer();
         io_vectors_[index] = ::iovec{.iov_base = buffer.data(), .iov_len = buffer.size()};
     }
+
     message_header_ = ::msghdr{.msg_iov = io_vectors_.data(), .msg_iovlen = count};
-    submitted_ = count;
-    return count;
+    return &message_header_;
 }
 
-void ReceiveChannel::complete_tasks(std::ptrdiff_t result) noexcept
+void ReceiveChannel::advance_job(std::ptrdiff_t result) noexcept
 {
-    if (submitted_ == 0)
-    {
-        return;
-    }
-
+    // One operation's outcome, spread over the jobs it covered: the kernel fills
+    // the buffers in the order they were queued, so the front of the batch takes
+    // the bytes and whatever it did not reach keeps its place for complete_jobs().
     if (result < 0)
     {
         const int error = -static_cast<int>(result);
-        if (error != EAGAIN && error != EWOULDBLOCK)
+        if (error == EAGAIN || error == EWOULDBLOCK)
         {
-            // A socket that cannot be read from is one socket: every receive in the
-            // operation fails, because the ones behind it would follow the same
-            // connection.
-            const std::error_code failure{error, std::system_category()};
-            for (std::size_t index = 0; index < submitted_; ++index)
-            {
-                pending_[index].result().status = Foundation::Core::ReceiveStatus::kError;
-                pending_[index].result().error_code = failure;
-            }
+            // Not ready is not an answer: every job in the batch keeps waiting.
+            return;
         }
-        // Not ready leaves them waiting and an error answers them; either way the
-        // operation is over and what it covered keeps its place in the queue.
-        submitted_ = 0;
+
+        // A socket that cannot be read from is one socket: every receive in the
+        // operation fails, because the ones behind it would follow the same
+        // connection.
+        const std::error_code failure{error, std::system_category()};
+        while (!submitted_jobs_.empty())
+        {
+            PendingReceive receive = std::move(submitted_jobs_.front());
+            submitted_jobs_.pop_front();
+            retire(std::move(receive),
+                   {.status = Foundation::Core::ReceiveStatus::kError, .bytes_received = 0, .error_code = failure});
+        }
         return;
     }
 
@@ -187,49 +170,55 @@ void ReceiveChannel::complete_tasks(std::ptrdiff_t result) noexcept
     {
         // The peer closed, and it closed for every receive waiting: a stream that
         // has ended has ended for all of them.
-        for (std::size_t index = 0; index < submitted_; ++index)
+        while (!submitted_jobs_.empty())
         {
-            pending_[index].result().status = Foundation::Core::ReceiveStatus::kPeerClosed;
-            pending_[index].result().bytes_received = 0;
+            PendingReceive receive = std::move(submitted_jobs_.front());
+            submitted_jobs_.pop_front();
+            retire(std::move(receive),
+                   {.status = Foundation::Core::ReceiveStatus::kPeerClosed, .bytes_received = 0, .error_code = {}});
         }
-        submitted_ = 0;
         return;
     }
 
-    // The kernel filled the buffers in order and stopped when the socket had no
-    // more data: what it reached is answered, what it did not is still waiting for
-    // the next batch -- the socket is a stream, and a short read is not the end.
     std::size_t remaining = static_cast<std::size_t>(result);
-    for (std::size_t index = 0; index < submitted_; ++index)
+    while (remaining > 0 && !submitted_jobs_.empty())
     {
-        if (remaining == 0)
-        {
-            break;
-        }
-
-        PendingReceive &receive = pending_[index];
+        PendingReceive receive = std::move(submitted_jobs_.front());
+        submitted_jobs_.pop_front();
         const std::size_t taken = std::min(remaining, receive.buffer().size());
-        receive.result().status = Foundation::Core::ReceiveStatus::kDone;
-        receive.result().bytes_received = taken;
-        receive.buffer() = {};
+        retire(std::move(receive),
+               {.status = Foundation::Core::ReceiveStatus::kDone, .bytes_received = taken, .error_code = {}});
         remaining -= taken;
     }
-    submitted_ = 0;
 }
 
-void ReceiveChannel::retire_answered() noexcept
+void ReceiveChannel::complete_jobs() noexcept
 {
-    // The answered receives are at the front, in the order the stream filled them;
-    // the ones that were not reached keep their places and their buffers.
-    while (!pending_.empty() && pending_.front().result().status != Foundation::Core::ReceiveStatus::kPending)
-    {
-        PendingReceive finished = std::move(pending_.front());
-        pending_.pop_front();
-        if (finished.waiter())
-        {
-            scheduler_.submit(std::move(finished.waiter()));
-        }
-    }
+    // The operation is over. What it did not answer goes back to the front of the
+    // queue, in its original order, so the next operation starts where this one
+    // stopped.
+    prepared_jobs_.insert(prepared_jobs_.begin(), std::make_move_iterator(submitted_jobs_.begin()),
+                          std::make_move_iterator(submitted_jobs_.end()));
+    submitted_jobs_.clear();
+    io_vectors_.clear();
+    message_header_ = ::msghdr{};
+}
+
+void ReceiveChannel::prepare(std::span<char> buffer, Foundation::Core::ReceiveResult &result, Foundation::Async::Coroutine waiter)
+{
+    result = {.status = Foundation::Core::ReceiveStatus::kPending, .bytes_received = 0, .error_code = {}};
+    prepared_jobs_.emplace_back(buffer, result, std::move(waiter));
+
+    // Armed from the moment there is something to wait for: an armed channel is one
+    // the backend looks at, and it stays armed until the queue runs dry.
+    arm();
+}
+
+void ReceiveChannel::retire(PendingReceive job, Foundation::Core::ReceiveResult result) noexcept
+{
+    job.result() = result;
+    job.buffer() = {};
+    completed_jobs_.push_back(std::move(job));
 }
 
 void ReceiveChannel::drop(PendingReceive &pending) noexcept
@@ -245,8 +234,28 @@ void ReceiveChannel::drop(PendingReceive &pending) noexcept
 
 void ReceiveChannel::handle_completion()
 {
-    retire_answered();
-    refresh_arming();
+    // Every job that has an answer wakes here, in the order the stream filled them.
+    // This runs once every completion of the batch has been advanced, so a resumed
+    // receive cannot queue work behind a job that is still being answered.
+    for (PendingReceive &job : completed_jobs_)
+    {
+        if (job.waiter())
+        {
+            scheduler_.submit(std::move(job.waiter()));
+        }
+    }
+    completed_jobs_.clear();
+
+    // Armed while there is anything left to wait for, disarmed otherwise: the
+    // backend submits for an armed channel and leaves a disarmed one alone.
+    if (prepared_jobs_.empty())
+    {
+        disarm();
+    }
+    else
+    {
+        arm();
+    }
 }
 
 Foundation::NBIO::Task<std::optional<std::size_t>> ReceiveChannel::receive(std::span<char> buffer)

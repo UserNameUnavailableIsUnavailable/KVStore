@@ -27,10 +27,7 @@ class Multiplexer
 		return type_;
 	}
 
-    // Does this backend hand work to the kernel the moment it is prepared, so
-    // that the readiness of the descriptor is the submission? A completion
-    // backend answers no: it runs a submission phase of its own.
-    bool submits_immediately() const noexcept
+    bool event_model() const noexcept
     {
 #if defined(__linux__)
         return type_ == MultiplexerType::kEpoll;

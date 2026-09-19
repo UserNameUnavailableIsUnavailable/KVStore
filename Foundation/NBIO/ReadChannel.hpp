@@ -83,40 +83,18 @@ class ReadChannel final : public Foundation::NBIO::Channel
 
     Foundation::NBIO::Task<std::optional<std::size_t>> read(std::span<char> buffer);
 
-    // Wakes what the operation answered and decides what the backend owes next.
+    // The batch protocol (see Channel.hpp). One operation is one preadv over the
+    // whole prepared prefix: the reads cover consecutive stretches of the file, so
+    // where the first of them lands is where the batch starts.
+    std::span<const ::iovec> submit_jobs();
+    void advance_job(std::ptrdiff_t result) noexcept;
+    void complete_jobs() noexcept;
     void handle_completion();
 
-    // Work the backend could take right now: there is something queued and no
-    // operation of ours is with the kernel.
-    bool has_prepared() const noexcept
+    // Where the batch that is out there starts in the file.
+    std::uint64_t batch_offset() const noexcept
     {
-        return submitted_ == 0 && !pending_.empty();
-    }
-
-    // Hands the prepared prefix over as one operation: fills each read's offset
-    // from the file's cursor, builds the iovecs, and answers how many reads it
-    // covers.
-    std::size_t count_prepared() noexcept;
-
-    // The operation in flight reported its outcome.
-    void complete_tasks(std::ptrdiff_t result) noexcept;
-
-    // Is an operation of this channel's with the kernel? The reads of one
-    // operation cover consecutive stretches, so there is at most one outstanding.
-    bool has_submitted() const noexcept
-    {
-        return submitted_ != 0;
-    }
-
-    std::span<const ::iovec> vectors() const noexcept
-    {
-        return std::span<const ::iovec>{vectors_.data(), submitted_};
-    }
-
-    // Where the first of them lands.
-    std::uint64_t front_offset() const noexcept
-    {
-        return pending_.empty() ? 0 : pending_.front().offset();
+        return submitted_jobs_.empty() ? 0 : submitted_jobs_.front().offset();
     }
 
     FileStream &file_stream() noexcept
@@ -136,20 +114,22 @@ class ReadChannel final : public Foundation::NBIO::Channel
   private:
     friend class ReadAwaiter;
 
+    // Queues the read and arms the channel: this is the suspension point, and
+    // being armed is what tells the backend to look at the channel.
     void prepare(std::span<char> buffer, Foundation::Core::ReadResult &result, Foundation::Async::Coroutine waiter);
 
-    void refresh_arming() noexcept;
-
-    // Retires the answered reads at the front of the queue, in the order the file
-    // was read, and hands their waiters back to the scheduler.
-    void retire_answered() noexcept;
+    // Gives one job its answer and moves it to the completed queue.
+    void retire(PendingRead job, Foundation::Core::ReadResult result) noexcept;
 
     void drop(PendingRead &pending) noexcept;
 
     FileStream &file_;
-    std::deque<PendingRead> pending_;
-    // How many of `pending_`, from the front, the kernel has been given.
-    std::size_t submitted_{0};
+    // The queue, in the order the reads were awaited. What one operation covers is
+    // a prefix of it: those jobs are held in `submitted_jobs_` while the operation
+    // is out there, and in `completed_jobs_` once they have an answer.
+    std::deque<PendingRead> prepared_jobs_;
+    std::deque<PendingRead> submitted_jobs_;
+    std::deque<PendingRead> completed_jobs_;
     std::vector<::iovec> vectors_;
     std::error_code error_code_;
 };

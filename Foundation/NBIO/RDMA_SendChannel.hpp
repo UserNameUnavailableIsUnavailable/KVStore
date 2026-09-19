@@ -19,7 +19,7 @@ class RDMA_SendChannel final : public Channel
   public:
     using Handle = int;
 
-    struct SendJob
+    struct PendingSend
     {
         // How many sends may still be in flight for the parked poll to be met.
         std::size_t target{0};
@@ -60,6 +60,29 @@ class RDMA_SendChannel final : public Channel
 
     void handle_completion();
 
+    // The one-job protocol (see Channel.hpp): the parked wait is the job, submitting
+    // hands its poll to the backend, and the poll's completion erases it.
+    bool submit_job() noexcept
+    {
+        if (submitted_)
+        {
+            return false; // its poll is already out there
+        }
+        submitted_ = true;
+        return true;
+    }
+
+    void advance_job(std::ptrdiff_t) noexcept
+    {
+        // A poll's answer says only that the fd became readable; what that means is
+        // reaped in handle_completion().
+    }
+
+    void complete_job() noexcept
+    {
+        submitted_ = false;
+    }
+
     void park(Foundation::Async::Coroutine waiter) noexcept
     {
         waiter_ = std::move(waiter);
@@ -70,12 +93,12 @@ class RDMA_SendChannel final : public Channel
         return stream_;
     }
 
-    SendJob &job() noexcept
+    PendingSend &job() noexcept
     {
       return job_;
     }
 
-    const SendJob &job() const noexcept
+    const PendingSend &job() const noexcept
     {
       return job_;
     }
@@ -88,9 +111,10 @@ class RDMA_SendChannel final : public Channel
 
   private:
     Foundation::Core::RDMA_Stream &stream_;
-    SendJob job_{};
+    PendingSend job_{};
     std::size_t completed_{0};
     Foundation::Async::Coroutine waiter_{};
+    bool submitted_{false};
 };
 } // namespace Foundation::NBIO
 

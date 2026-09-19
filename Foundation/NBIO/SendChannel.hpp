@@ -78,42 +78,12 @@ class SendChannel final : public Foundation::NBIO::Channel
     // ahead of the bytes already promised to the socket.
     std::ptrdiff_t send_now(std::span<const char> buffer) noexcept;
 
-    // Wakes what the operation finished and decides what the backend owes next.
+    // The batch protocol (see Channel.hpp). One operation is one sendmsg over the
+    // whole prepared prefix, because a stream is written in order.
+    ::msghdr *submit_jobs();
+    void advance_job(std::ptrdiff_t result) noexcept;
+    void complete_jobs() noexcept;
     void handle_completion();
-
-    // Work the backend could take right now: there is something queued and no
-    // operation of ours is with the kernel.
-    bool has_prepared() const noexcept
-    {
-        return submitted_ == 0 && !pending_.empty();
-    }
-
-    // Hands the prepared prefix over as one operation: builds the iovecs, records
-    // how many sends it covers, and answers that count. Zero means there was
-    // nothing to hand over.
-    std::size_t count_prepared() noexcept;
-
-    // The operation in flight reported its outcome.
-    void complete_tasks(std::ptrdiff_t result) noexcept;
-
-    // Is an operation of this channel's with the kernel? A stream is written in
-    // order, so there is at most one outstanding.
-    bool has_submitted() const noexcept
-    {
-        return submitted_ != 0;
-    }
-
-#if defined(__linux__)
-    const ::msghdr &message_batch() const noexcept
-    {
-        return message_header_;
-    }
-
-    ::msghdr &message_batch() noexcept
-    {
-        return message_header_;
-    }
-#endif
 
     Foundation::Core::Socket &socket() noexcept
     {
@@ -132,20 +102,25 @@ class SendChannel final : public Foundation::NBIO::Channel
   private:
     friend class SendAwaiter;
 
+    // Queues the send and arms the channel: this is the suspension point, and
+    // being armed is what tells the backend to look at the channel.
     void prepare(std::span<const char> buffer, Foundation::Core::SendResult &result, Foundation::Async::Coroutine waiter);
 
-    void refresh_arming() noexcept;
-
-    // Retires the finished sends at the front of the queue, in the order the
-    // stream took them, and hands their waiters back to the scheduler.
-    void retire_answered() noexcept;
+    // Gives one job its verdict and moves it to the completed queue. How much of it
+    // went out is already counted in its outcome slot by the time this runs.
+    void retire(PendingSend job, Foundation::Core::SendStatus status, std::error_code error) noexcept;
 
     void drop(PendingSend &pending) noexcept;
 
     Foundation::Core::Socket &socket_;
-    std::deque<PendingSend> pending_;
-    // How many of `pending_`, from the front, the kernel has been given.
-    std::size_t submitted_{0};
+    // The queue, in the order the sends were awaited. What one operation covers is
+    // a prefix of it: those jobs are held in `submitted_jobs_` while the operation
+    // is out there, and in `completed_jobs_` once they are whole. A send the
+    // operation stopped inside stays in `submitted_jobs_`, at the front, holding
+    // what is left of its buffer.
+    std::deque<PendingSend> prepared_jobs_;
+    std::deque<PendingSend> submitted_jobs_;
+    std::deque<PendingSend> completed_jobs_;
 #if defined(__unix__)
     std::vector<::iovec> vectors_;
     ::msghdr message_header_{};

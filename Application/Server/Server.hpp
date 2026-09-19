@@ -115,6 +115,7 @@ class Server
     Foundation::NBIO::Task<RESP::Object> execute_client(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_config(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command &command);
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.

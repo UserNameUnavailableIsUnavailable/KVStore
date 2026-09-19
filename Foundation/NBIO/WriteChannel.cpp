@@ -74,139 +74,119 @@ WriteChannel::~WriteChannel() noexcept
 {
     multiplexer_.delete_channel(this);
 
-    for (PendingWrite &pending : pending_)
+    // Whatever is still queued has nowhere to land now: every waiting frame gets an
+    // outcome and a wake-up rather than being left parked for a completion that
+    // cannot come. A write that already has its verdict keeps it -- only the wake-up
+    // is still owed to it.
+    for (PendingWrite &pending : prepared_jobs_)
     {
         drop(pending);
     }
-    pending_.clear();
+    for (PendingWrite &pending : submitted_jobs_)
+    {
+        drop(pending);
+    }
+    for (PendingWrite &done : completed_jobs_)
+    {
+        if (done.waiter())
+        {
+            scheduler_.submit(std::move(done.waiter()));
+        }
+    }
+    prepared_jobs_.clear();
+    submitted_jobs_.clear();
+    completed_jobs_.clear();
     vectors_.clear();
-    submitted_ = 0;
 }
 
-void WriteChannel::prepare(std::span<const char> buffer, Foundation::Core::WriteResult &result, Foundation::Async::Coroutine waiter)
+std::span<const ::iovec> WriteChannel::submit_jobs()
 {
-    result = {.status = Foundation::Core::WriteStatus::kPending, .bytes_transferred = 0, .error_code = {}};
-    pending_.emplace_back(buffer, result, std::move(waiter));
-    refresh_arming();
-}
-
-void WriteChannel::refresh_arming() noexcept
-{
-    const bool can_hand_over = has_prepared();
-
-    if (submits_immediately())
+    if (!submitted_jobs_.empty())
     {
-        // Readiness is the submission: the work goes over now, and the channel
-        // stays armed while there is anything to wait for.
-        if (can_hand_over)
-        {
-            count_prepared();
-        }
-
-        if (submitted_ == 0 && pending_.empty())
-        {
-            disarm();
-            return;
-        }
-        arm();
-        return;
+        // A batch is out there already. The backend asks again once it is
+        // concluded, so there is nothing to hand over now. The writes of one batch
+        // follow one another in the file, so they cannot be split up.
+        return {};
+    }
+    if (prepared_jobs_.empty())
+    {
+        return {}; // nothing to submit
     }
 
-    // A completion backend runs the submission phase itself, so the channel is
-    // armed exactly while it has something for that phase to hand over.
-    if (can_hand_over)
-    {
-        arm();
-        return;
-    }
-    disarm();
-}
-
-std::size_t WriteChannel::count_prepared() noexcept
-{
-    if (submitted_ != 0 || pending_.empty())
-    {
-        // The writes of one operation follow one another in the file, so what
-        // follows has to wait for it to come back.
-        return 0;
-    }
-
-    // The offsets come from the file's own cursor: nothing is outstanding, so
-    // every byte written before these has landed and these follow one another.
-    // The offset and the iovec are recorded now, in queue order, because that is
-    // the order the kernel takes them in and the array is what the completion is
-    // walked against to decide how many writes it finished.
+    // The offsets come from the file's own cursor: nothing is outstanding, so every
+    // byte written before these has landed and these follow one another. The offset
+    // and the iovec are recorded now, in queue order, because that is the order the
+    // kernel takes them in and the array its one answer is spread over.
     std::uint64_t offset = file_.write_offset();
-    const std::size_t count = std::min(pending_.size(), kMaximumBatch);
+    const std::size_t count = std::min(prepared_jobs_.size(), kMaximumBatch);
     vectors_.resize(count);
     for (std::size_t index = 0; index < count; ++index)
     {
-        PendingWrite &write = pending_[index];
+        submitted_jobs_.push_back(std::move(prepared_jobs_.front()));
+        prepared_jobs_.pop_front();
+
+        PendingWrite &write = submitted_jobs_.back();
         write.set_offset(offset);
         offset += write.buffer().size();
         const std::span<const char> &buffer = write.buffer();
         vectors_[index] = ::iovec{.iov_base = const_cast<char *>(buffer.data()), .iov_len = buffer.size()};
     }
-    submitted_ = count;
-    return count;
+
+    return std::span<const ::iovec>{vectors_.data(), count};
 }
 
-void WriteChannel::complete_tasks(std::ptrdiff_t result) noexcept
+void WriteChannel::advance_job(std::ptrdiff_t result) noexcept
 {
-    if (submitted_ == 0)
-    {
-        return;
-    }
-
+    // One operation's outcome, spread over the jobs it covered: the file takes them
+    // in the order they were queued, so the front of the batch takes the bytes and a
+    // write the operation stopped inside keeps its place, holding what is left of
+    // it at the offset the kernel stopped at.
     if (result < 0)
     {
         const int error = -static_cast<int>(result);
-        if (error != EAGAIN && error != EWOULDBLOCK)
+        if (error == EAGAIN || error == EWOULDBLOCK)
         {
-            // The backend refused the operation, and the writes were one
-            // operation, so they fail together: the ones behind the front would
-            // land past bytes that never made it, and a log with a hole in it is
-            // worse than one that says it could not write.
-            const std::error_code failure{error, std::system_category()};
-            for (std::size_t index = 0; index < submitted_; ++index)
-            {
-                pending_[index].result().status = Foundation::Core::WriteStatus::kError;
-                pending_[index].result().error_code = failure;
-            }
+            // Not ready is not an answer: every job in the batch keeps waiting.
+            return;
         }
-        // Not ready leaves them waiting and an error answers them; either way the
-        // operation is over and what it covered keeps its place in the queue.
-        submitted_ = 0;
+
+        // The backend refused the operation, and the writes were one operation, so
+        // they fail together: the ones behind the front would land past bytes that
+        // never made it, and a log with a hole in it is worse than one that says it
+        // could not write.
+        const std::error_code failure{error, std::system_category()};
+        while (!submitted_jobs_.empty())
+        {
+            PendingWrite write = std::move(submitted_jobs_.front());
+            submitted_jobs_.pop_front();
+            retire(std::move(write), Foundation::Core::WriteStatus::kError, failure);
+        }
         return;
     }
 
     const auto written = static_cast<std::size_t>(result);
     std::size_t remaining = written;
-    for (std::size_t index = 0; index < submitted_; ++index)
+    while (remaining > 0 && !submitted_jobs_.empty())
     {
-        PendingWrite &write = pending_[index];
+        PendingWrite write = std::move(submitted_jobs_.front());
+        submitted_jobs_.pop_front();
         const std::size_t size = write.buffer().size();
         const std::size_t taken = std::min(remaining, size);
         write.result().bytes_transferred += taken;
 
         if (taken == size)
         {
-            write.buffer() = {};
-            write.result().status = Foundation::Core::WriteStatus::kDone;
+            retire(std::move(write), Foundation::Core::WriteStatus::kDone, {});
         }
         else
         {
-            // The operation stopped inside this write: what is left of it keeps
-            // its place in the file, and the writes behind it are untouched.
+            // The operation stopped inside this write: what is left of it keeps its
+            // place in the file, and it goes back to the front of the queue.
             write.buffer() = write.buffer().subspan(taken);
             write.advance_offset(taken);
+            submitted_jobs_.push_front(std::move(write));
         }
-
         remaining -= taken;
-        if (taken != size)
-        {
-            break;
-        }
     }
 
     if (written != 0)
@@ -215,20 +195,37 @@ void WriteChannel::complete_tasks(std::ptrdiff_t result) noexcept
         // starts where this one stopped.
         file_.advance_write_offset(written);
     }
-    submitted_ = 0;
 }
 
-void WriteChannel::retire_answered() noexcept
+void WriteChannel::complete_jobs() noexcept
 {
-    while (!pending_.empty() && pending_.front().result().status != Foundation::Core::WriteStatus::kPending)
-    {
-        PendingWrite finished = std::move(pending_.front());
-        pending_.pop_front();
-        if (finished.waiter())
-        {
-            scheduler_.submit(std::move(finished.waiter()));
-        }
-    }
+    // The operation is over. Whatever it did not finish goes back to the front of
+    // the queue, in its original order, so the next operation starts where this one
+    // stopped.
+    prepared_jobs_.insert(prepared_jobs_.begin(), std::make_move_iterator(submitted_jobs_.begin()),
+                          std::make_move_iterator(submitted_jobs_.end()));
+    submitted_jobs_.clear();
+    vectors_.clear();
+}
+
+void WriteChannel::prepare(std::span<const char> buffer, Foundation::Core::WriteResult &result, Foundation::Async::Coroutine waiter)
+{
+    result = {.status = Foundation::Core::WriteStatus::kPending, .bytes_transferred = 0, .error_code = {}};
+    prepared_jobs_.emplace_back(buffer, result, std::move(waiter));
+
+    // Armed from the moment there is something to wait for: an armed channel is one
+    // the backend looks at, and it stays armed until the queue runs dry.
+    arm();
+}
+
+void WriteChannel::retire(PendingWrite job, Foundation::Core::WriteStatus status, std::error_code error) noexcept
+{
+    // Only the verdict is written here: how much of this write went out is already
+    // in its outcome slot, counted by advance_job().
+    job.result().status = status;
+    job.result().error_code = std::move(error);
+    job.buffer() = {};
+    completed_jobs_.push_back(std::move(job));
 }
 
 void WriteChannel::drop(PendingWrite &pending) noexcept
@@ -259,9 +256,28 @@ Foundation::NBIO::Task<std::optional<std::size_t>> WriteChannel::write(std::span
 
 void WriteChannel::handle_completion()
 {
-    // Wake every write that is whole: they were given to the backend together, so
-    // one operation can have finished more than one of them.
-    retire_answered();
-    refresh_arming();
+    // Every write that has a verdict wakes here: they were given to the backend
+    // together, so one operation can have finished more than one of them. This runs
+    // once the batch's completions have all been advanced, so a resumed write cannot
+    // queue work behind a job that is still being answered.
+    for (PendingWrite &job : completed_jobs_)
+    {
+        if (job.waiter())
+        {
+            scheduler_.submit(std::move(job.waiter()));
+        }
+    }
+    completed_jobs_.clear();
+
+    // Armed while there is anything left to wait for, disarmed otherwise: the
+    // backend submits for an armed channel and leaves a disarmed one alone.
+    if (prepared_jobs_.empty())
+    {
+        disarm();
+    }
+    else
+    {
+        arm();
+    }
 }
 } // namespace Foundation::NBIO

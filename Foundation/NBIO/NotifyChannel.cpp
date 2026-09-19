@@ -13,7 +13,10 @@ NotifyChannel::NotifyChannel(Foundation::Core::Notifier& notifier, Foundation::N
 {
     notifier.set_non_blocking(true);
     multiplexer.add_channel(this);
-    arm();
+
+    // Nothing is armed and no read is prepared here: the channel has nothing to
+    // watch until a waiter sleeps on the condition variable it serves, and that is
+    // where it arms -- waiter_registered().
 }
 
 NotifyChannel::~NotifyChannel() noexcept
@@ -21,26 +24,84 @@ NotifyChannel::~NotifyChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
+bool NotifyChannel::submit_job()
+{
+    if (submitted_)
+    {
+        return false; // the poll is already out there
+    }
+    {
+        std::lock_guard lock(mutex_);
+        if (parked_ == 0)
+        {
+            return false; // nobody is asleep, so there is nothing to watch for
+        }
+    }
+
+    submitted_ = true;
+    return true;
+}
+
+void NotifyChannel::advance_job(std::ptrdiff_t) noexcept
+{
+    // A poll's answer says only that the eventfd has something; the count is read
+    // out in handle_completion().
+}
+
+void NotifyChannel::complete_job() noexcept
+{
+    submitted_ = false;
+}
+
+void NotifyChannel::waiter_registered()
+{
+    {
+        std::lock_guard lock(mutex_);
+        ++parked_;
+    }
+
+    // One poll covers every waiter: what it reports is that the eventfd has
+    // something, and the count waits there until this channel reads it out.
+    arm();
+}
+
 void NotifyChannel::handle_completion()
 {
-    // handle_event runs in a single thread
+    // Take the count out first: it is what makes the notification this poll
+    // reported stop being reported, and the waiters below are who it was for.
+    (void)notifier_.wait();
+
+    bool still_waiting = false;
     {
-        // other threads may operate on notifiee list
-        // this lock only protects notifiees_
         std::lock_guard lock(mutex_);
+
+        std::size_t woken = 0;
         for (auto &notifiee : notifiees_)
         {
             if (notifiee) [[likely]]
             {
                 scheduler_.submit(std::move(notifiee));
+                ++woken;
             }
         }
         notifiees_.clear();
+        parked_ = parked_ > woken ? parked_ - woken : 0;
+
+        // A waiter that is still asleep needs another poll: the notification that
+        // wakes it may already have been counted in the eventfd.
+        still_waiting = parked_ > 0;
     }
-    // we should unconditionally arm the notify channel
-    // notify channel serves multiple waiters
-    // any thread may park a new coroutine and issue a notification at any time
-    arm();
+
+    if (still_waiting)
+    {
+        arm();
+    }
+    else
+    {
+        // Nobody is asleep on this condition variable, so there is nothing to
+        // watch for.
+        disarm();
+    }
 }
 
 void NotifyChannel::park(Foundation::Async::Coroutine coroutine)

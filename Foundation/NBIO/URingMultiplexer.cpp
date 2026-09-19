@@ -39,43 +39,75 @@ namespace Foundation::NBIO
     throw std::system_error(error, std::system_category(),                                                             \
                             std::string(what) + ": " + std::system_category().message(error));
 
-// The channels that carry per-operation waits. They are queued for a submission
-// only while they have work the kernel has not been given yet; the others (a
-// timer, a notifier, a signal, an RDMA stream) are queued whenever they are armed.
-static bool waits_per_operation(ChannelType type)
-{
-    switch (type)
-    {
-    case ChannelType::kReceive:
-    case ChannelType::kSend:
-    case ChannelType::kRead:
-    case ChannelType::kWrite:
-    case ChannelType::kAccept:
-        return true;
-    default:
-        return false;
-    }
-}
+// The channels that only poll hand their poll over and take it back through these
+// two, which are defined below with the rest of the per-type switches.
+static bool submit_poll(Foundation::NBIO::Channel *channel) noexcept;
+static void complete_poll(Foundation::NBIO::Channel *channel) noexcept;
 
-// Does this channel have work the kernel has not been given yet? Only the channels
-// that carry per-operation waits are asked: the others are queued whenever they are
-// armed.
-static bool has_prepared(Foundation::NBIO::Channel *channel)
+// One completion's outcome into the batch it belongs to: the channel spreads it
+// over the jobs the operation covered.
+static void advance(Foundation::NBIO::Channel *channel, int result)
 {
     switch (channel->type())
     {
     case ChannelType::kReceive:
-        return static_cast<ReceiveChannel *>(channel)->has_prepared();
+        static_cast<ReceiveChannel *>(channel)->advance_job(result);
+        break;
     case ChannelType::kSend:
-        return static_cast<SendChannel *>(channel)->has_prepared();
+        static_cast<SendChannel *>(channel)->advance_job(result);
+        break;
     case ChannelType::kRead:
-        return static_cast<ReadChannel *>(channel)->has_prepared();
+        static_cast<ReadChannel *>(channel)->advance_job(result);
+        break;
     case ChannelType::kWrite:
-        return static_cast<WriteChannel *>(channel)->has_prepared();
+        static_cast<WriteChannel *>(channel)->advance_job(result);
+        break;
     case ChannelType::kAccept:
-        return static_cast<AcceptChannel *>(channel)->has_prepared();
+        static_cast<AcceptChannel *>(channel)->advance_job(result);
+        break;
+    // A poll completion only says the fd became readable, and the channels that
+    // poll reap their own events in handle_completion(): there is no wait for an
+    // outcome to go in.
     default:
-        return false;
+        break;
+    }
+}
+
+// The batch is over for this channel: what the operation did not answer goes back
+// to the front of its queue, ready for the next submission.
+static void conclude(Foundation::NBIO::Channel *channel)
+{
+    switch (channel->type())
+    {
+    case ChannelType::kReceive:
+        static_cast<ReceiveChannel *>(channel)->complete_jobs();
+        break;
+    case ChannelType::kSend:
+        static_cast<SendChannel *>(channel)->complete_jobs();
+        break;
+    case ChannelType::kRead:
+        static_cast<ReadChannel *>(channel)->complete_jobs();
+        break;
+    case ChannelType::kWrite:
+        static_cast<WriteChannel *>(channel)->complete_jobs();
+        break;
+    case ChannelType::kAccept:
+        static_cast<AcceptChannel *>(channel)->complete_jobs();
+        break;
+    // The channels that carry one wait are polled, and they reap what the poll means
+    // themselves: their poll is over here, and each one may hand over another when it
+    // still has something to watch.
+    case ChannelType::kTimer:
+    case ChannelType::kNotify:
+    case ChannelType::kSignal:
+    case ChannelType::kRDMA_Accept:
+    case ChannelType::kRDMA_Connect:
+    case ChannelType::kRDMA_Send:
+    case ChannelType::kRDMA_Receive:
+        complete_poll(channel);
+        break;
+    default:
+        break;
     }
 }
 
@@ -127,6 +159,65 @@ static void resume_channel(Foundation::NBIO::Channel *channel)
     }
 }
 
+// Asks a channel that only polls whether it has a poll to hand over, and records
+// that it is out there. These channels reap their own events, so a poll is the
+// whole wait -- and one at a time: a channel that already has one out there has
+// nothing to hand over.
+static bool submit_poll(Foundation::NBIO::Channel *channel) noexcept
+{
+    switch (channel->type())
+    {
+    case ChannelType::kTimer:
+        return static_cast<TimerChannel *>(channel)->submit_job();
+    case ChannelType::kNotify:
+        return static_cast<NotifyChannel *>(channel)->submit_job();
+    case ChannelType::kSignal:
+        return static_cast<SignalChannel *>(channel)->submit_job();
+    case ChannelType::kRDMA_Accept:
+        return static_cast<RDMA_AcceptChannel *>(channel)->submit_job();
+    case ChannelType::kRDMA_Connect:
+        return static_cast<RDMA_ConnectChannel *>(channel)->submit_job();
+    case ChannelType::kRDMA_Send:
+        return static_cast<RDMA_SendChannel *>(channel)->submit_job();
+    case ChannelType::kRDMA_Receive:
+        return static_cast<RDMA_ReceiveChannel *>(channel)->submit_job();
+    default:
+        return false;
+    }
+}
+
+// The poll is over: the channel may hand over another one when it has a wait to
+// post again.
+static void complete_poll(Foundation::NBIO::Channel *channel) noexcept
+{
+    switch (channel->type())
+    {
+    case ChannelType::kTimer:
+        static_cast<TimerChannel *>(channel)->complete_job();
+        break;
+    case ChannelType::kNotify:
+        static_cast<NotifyChannel *>(channel)->complete_job();
+        break;
+    case ChannelType::kSignal:
+        static_cast<SignalChannel *>(channel)->complete_job();
+        break;
+    case ChannelType::kRDMA_Accept:
+        static_cast<RDMA_AcceptChannel *>(channel)->complete_job();
+        break;
+    case ChannelType::kRDMA_Connect:
+        static_cast<RDMA_ConnectChannel *>(channel)->complete_job();
+        break;
+    case ChannelType::kRDMA_Send:
+        static_cast<RDMA_SendChannel *>(channel)->complete_job();
+        break;
+    case ChannelType::kRDMA_Receive:
+        static_cast<RDMA_ReceiveChannel *>(channel)->complete_job();
+        break;
+    default:
+        break;
+    }
+}
+
 URingMultiplexer::URingMultiplexer(std::uint32_t submission_capacity, std::uint32_t completion_capacity) :
 	Multiplexer(MultiplexerType::kURing)
 {
@@ -158,28 +249,39 @@ URingMultiplexer::~URingMultiplexer() noexcept
     ::io_uring_queue_exit(&ring_);
 }
 
-bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
+bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel, std::size_t &unpublished)
 {
-    if (waits_per_operation(channel->type()) && !has_prepared(channel))
+    // An entry is only ever taken for an operation that is ready to be built in it,
+    // and those two have to happen in that order. An entry taken from the ring and
+    // then abandoned is not private: the next submit publishes it with whatever the
+    // slot still holds, and the kernel runs that operation a second time -- an accept
+    // nobody is waiting for, a send of a buffer that went out already. So the room
+    // is made first and the channel is asked afterwards, which is also why an answer
+    // of "nothing to hand over" costs nothing.
+    //
+    // The free-space query only counts what the kernel knows about, so the entries
+    // this pass has filled in but not handed over yet are counted against it.
+    if (::io_uring_sq_space_left(&ring_) <= unpublished)
     {
-        // Nothing the kernel can take. A channel that carries per-operation waits
-        // arms itself the moment it has some, so this is the normal state for one
-        // whose operation is already in flight.
-        return false;
-    }
+        // Handing over what is filled in is what makes room: the kernel takes them.
+        if (::io_uring_submit(&ring_) <= 0)
+        {
+            return false; // the kernel did not take them: the caller retries later
+        }
+        unpublished = 0;
 
-    io_uring_sqe *sqe = ::io_uring_get_sqe(&ring_);
-    if (sqe == nullptr)
-    {
-        // Submission queue is full: hand the entries prepared so far to the
-        // kernel to make room, then try once more.
-        ::io_uring_submit(&ring_);
-        sqe = ::io_uring_get_sqe(&ring_);
-        if (sqe == nullptr)
+        if (::io_uring_sq_space_left(&ring_) == 0)
         {
             return false; // still full: the caller retries on a later iteration
         }
     }
+
+    // The entry the operation is built in. The room for it is there, so this is one.
+    const auto take_entry = [this]() noexcept { return ::io_uring_get_sqe(&ring_); };
+
+    // Filled in by the one case that has an operation to build, which is also the
+    // only case that takes an entry.
+    io_uring_sqe *sqe = nullptr;
 
     switch (channel->type())
     {
@@ -187,60 +289,68 @@ bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
         // Every prepared receive goes in one submission, and the kernel fills the
         // buffers in the order they were queued.
         auto *receive = static_cast<ReceiveChannel *>(channel);
-        if (receive->count_prepared() == 0)
+        ::msghdr *message = receive->submit_jobs();
+        if (message == nullptr)
         {
-            return false;
+            return false; // nothing to receive for
         }
-        ::io_uring_prep_recvmsg(sqe, receive->native_handle(), const_cast<msghdr *>(&receive->message_batch()), 0);
+        sqe = take_entry();
+        ::io_uring_prep_recvmsg(sqe, receive->native_handle(), message, 0);
         break;
     }
     case Foundation::NBIO::ChannelType::kSend: {
         // One sendmsg for the whole queue: a stream has to keep the order, so the
         // sends cannot be submitted as separate operations.
         auto *send = static_cast<SendChannel *>(channel);
-        if (send->count_prepared() == 0)
+        ::msghdr *message = send->submit_jobs();
+        if (message == nullptr)
         {
-            return false;
+            return false; // nothing to send
         }
-        ::io_uring_prep_sendmsg(sqe, send->native_handle(), const_cast<msghdr *>(&send->message_batch()), MSG_NOSIGNAL);
+        sqe = take_entry();
+        ::io_uring_prep_sendmsg(sqe, send->native_handle(), message, MSG_NOSIGNAL);
         break;
     }
     case Foundation::NBIO::ChannelType::kRead: {
         // Every prepared read goes in one submission: they cover consecutive
         // stretches of the file, so the kernel takes them as one vector.
         auto *read = static_cast<ReadChannel *>(channel);
-        if (read->count_prepared() == 0)
+        const auto vectors = read->submit_jobs();
+        if (vectors.empty())
         {
-            return false;
+            return false; // nothing to read for
         }
-        const auto vectors = read->vectors();
+        sqe = take_entry();
         ::io_uring_prep_readv(sqe, read->native_handle(), vectors.data(), static_cast<unsigned>(vectors.size()),
-                              static_cast<__u64>(read->front_offset()));
+                              static_cast<__u64>(read->batch_offset()));
         break;
     }
     case Foundation::NBIO::ChannelType::kWrite: {
         // Every prepared write goes in one submission: they follow one another in
         // the file, so the kernel takes them as one vector.
         auto *write = static_cast<WriteChannel *>(channel);
-        if (write->count_prepared() == 0)
+        const auto vectors = write->submit_jobs();
+        if (vectors.empty())
         {
-            return false;
+            return false; // nothing to write
         }
-        const auto vectors = write->vectors();
+        sqe = take_entry();
         ::io_uring_prep_writev(sqe, write->native_handle(), vectors.data(), static_cast<unsigned>(vectors.size()),
-                               static_cast<__u64>(write->front_offset()));
+                               static_cast<__u64>(write->batch_offset()));
         break;
     }
     case Foundation::NBIO::ChannelType::kAccept: {
-        // One accept covers one wait: the answer names the channel, not the wait
-        // it belongs to, so exactly one may be with the kernel at a time.
+        // Taking a connection cannot be vectorised, so one operation covers one
+        // wait -- the wait at the front of the queue is the whole of what this ask
+        // can hand over.
         auto *accept = static_cast<AcceptChannel *>(channel);
-        if (accept->count_prepared() == 0)
+        PendingAccept *waiting = accept->submit_jobs();
+        if (waiting == nullptr)
         {
-            return false;
+            return false; // nobody waiting, or a wait is still out there
         }
+        sqe = take_entry();
 
-        PendingAccept *waiting = accept->submitted_front();
         // Let the kernel write the peer address straight into the waiting frame's
         // result, which is alive for as long as that frame is parked.
         waiting->result().address.length() = waiting->result().address.capacity();
@@ -248,36 +358,23 @@ bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
                                &waiting->result().address.length(), 0);
         break;
     }
-    case Foundation::NBIO::ChannelType::kTimer: {
-        // A timerfd read completes when the timer fires, returning (and
-        // draining) the 8-byte expiration count -- so a single read both waits
-        // and consumes the event, matching the completion model.
-        auto timer_channel = static_cast<TimerChannel *>(channel);
-        auto &timer_expirations = timer_channel->last_expirations();
-        ::io_uring_prep_read(sqe, timer_channel->native_handle(), &timer_expirations, sizeof(timer_expirations), 0);
-        break;
-    }
-    case Foundation::NBIO::ChannelType::kNotify: {
-        auto notify_channel = static_cast<NotifyChannel*>(channel);
-        auto &count = static_cast<NotifyChannel *>(channel)->count();
-        ::io_uring_prep_read(sqe, notify_channel->native_handle(), &count, sizeof(count), 0);
-        break;
-    }
-    case Foundation::NBIO::ChannelType::kSignal: {
-        auto signal_channel = static_cast<SignalChannel*>(channel);
-        auto &count = static_cast<SignalChannel *>(channel)->count();
-        ::io_uring_prep_read(sqe, signal_channel->native_handle(), &count, sizeof(count), 0);
-        break;
-    }
-    // The RDMA channels move no data through the ring. They wait for an event on
-    // a file descriptor -- a connection-management event, or a work completion
-    // on the stream's completion channel -- and then reap it themselves in
-    // handle_completion(). A one-shot poll on that fd is the entire wait; the
-    // channel re-arms it until it has something to report.
+    // The channels that carry one wait move no data through the ring. They watch a
+    // file descriptor -- a timer, a notifier, a signalfd, a connection-management
+    // event, a work completion -- and then drain it themselves in
+    // handle_completion(), so a one-shot poll is the entire wait. One at a time: a
+    // channel that already has a poll out there has nothing to hand over.
+    case Foundation::NBIO::ChannelType::kTimer:
+    case Foundation::NBIO::ChannelType::kNotify:
+    case Foundation::NBIO::ChannelType::kSignal:
     case Foundation::NBIO::ChannelType::kRDMA_Accept:
     case Foundation::NBIO::ChannelType::kRDMA_Connect:
     case Foundation::NBIO::ChannelType::kRDMA_Send:
     case Foundation::NBIO::ChannelType::kRDMA_Receive:
+        if (!submit_poll(channel))
+        {
+            return false; // its poll is already out there
+        }
+        sqe = take_entry();
 		::io_uring_prep_poll_add(sqe, channel->native_handle(), POLLIN);
 		break;
     default:
@@ -297,34 +394,27 @@ void URingMultiplexer::submit()
     }
 
     std::size_t handed_over = 0;
+    // Entries this pass has filled in but not handed over yet: the ring's own
+    // free-space query cannot see those until they are published.
+    std::size_t unpublished = 0;
     std::vector<Foundation::NBIO::Channel *> still_waiting;
     still_waiting.reserve(pending_submissions_.size());
 
     for (Foundation::NBIO::Channel *channel : pending_submissions_)
     {
-        if (waits_per_operation(channel->type()) && !has_prepared(channel))
-        {
-            // Nothing left to hand over: the channel arms itself when there is,
-            // so it leaves the queue until then.
-            continue;
-        }
-
-        if (!prepare(channel))
-        {
-            // The submission queue is exhausted: this channel and everything
-            // behind it keep their places, and their order, for the next pass.
-            still_waiting.push_back(channel);
-            continue;
-        }
-
-        ++handed_over;
-
         // A channel may have more than one operation to hand over -- an accept
-        // covers one wait at a time -- so it stays queued while it has more.
-        if (has_prepared(channel))
+        // covers exactly one wait -- so it is asked until it has nothing left to
+        // give: the batch it just submitted makes the next ask answer nothing, and
+        // that answer leaves no entry behind.
+        while (prepare(channel, unpublished))
         {
-            still_waiting.push_back(channel);
+            ++handed_over;
+            ++unpublished;
         }
+
+        // It keeps its place whether it still has waits the submission queue could
+        // not take or has a batch out there, because the next batch comes later.
+        still_waiting.push_back(channel);
     }
 
     pending_submissions_.swap(still_waiting);
@@ -339,58 +429,36 @@ void URingMultiplexer::submit()
     }
 }
 
-void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
-{
-    switch (channel->type())
-    {
-    case Foundation::NBIO::ChannelType::kReceive:
-        static_cast<ReceiveChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kSend:
-        static_cast<SendChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kRead:
-        static_cast<ReadChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kWrite:
-        static_cast<WriteChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kAccept:
-        static_cast<AcceptChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kTimer:
-        // The read already drained the timerfd. Waking the entries that have come
-        // due is all that is left, and resume_channel() does it.
-        break;
-    // A poll completion only reports that the fd became readable (its result is a
-    // revents mask, not a byte count), and a notifier or signal read leaves the
-    // reaping to the channel. There is nothing to write into a wait here.
-    case Foundation::NBIO::ChannelType::kNotify:
-    case Foundation::NBIO::ChannelType::kSignal:
-    case Foundation::NBIO::ChannelType::kRDMA_Accept:
-    case Foundation::NBIO::ChannelType::kRDMA_Connect:
-    case Foundation::NBIO::ChannelType::kRDMA_Send:
-    case Foundation::NBIO::ChannelType::kRDMA_Receive:
-        break;
-    default:
-        break;
-    }
-}
-
 void URingMultiplexer::handle_completions()
 {
+    // A channel can have several completions in one pass -- an accept covers one
+    // wait, and one wait is one operation -- so every completion is advanced first
+    // and only then is each channel's batch concluded and its waiters woken. A
+    // resumed coroutine is free to prepare more work, and that must not happen
+    // while a completion is still being written into the batch it is about to
+    // join.
+    std::vector<Foundation::NBIO::Channel *> answered;
+    answered.reserve(8);
+
     io_uring_cqe *cqe = nullptr;
     while (::io_uring_peek_cqe(&ring_, &cqe) == 0 && cqe != nullptr)
     {
         auto *channel = static_cast<Foundation::NBIO::Channel *>(::io_uring_cqe_get_data(cqe));
         if (channel != nullptr)
         {
-            // Hand the outcome to the channel, which turns it into the answers of
-            // the waits it covers, then let it wake them and do its own bookkeeping.
-            complete(channel, cqe->res);
-            resume_channel(channel);
+            advance(channel, cqe->res);
+            if (std::find(answered.begin(), answered.end(), channel) == answered.end())
+            {
+                answered.push_back(channel);
+            }
         }
         ::io_uring_cqe_seen(&ring_, cqe);
+    }
+
+    for (Foundation::NBIO::Channel *channel : answered)
+    {
+        conclude(channel);
+        resume_channel(channel);
     }
 }
 
