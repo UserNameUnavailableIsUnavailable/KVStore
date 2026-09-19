@@ -37,11 +37,6 @@ class FileView
         return data_;
     }
 
-    bool is_valid() const noexcept
-    {
-        return data_ != nullptr || size_ == 0;
-    }
-
   private:
 #if defined(_WIN32)
     using MappingHandle = void *;

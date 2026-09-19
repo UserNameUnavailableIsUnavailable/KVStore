@@ -1,10 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <list>
 #include <mutex>
 #include <system_error>
-
-#include "Native.hpp"
 
 namespace Foundation::Core
 {
@@ -24,10 +23,9 @@ struct SignalResult
 class Signal
 {
   public:
-    using Handle = NativeHandle;
     Signal();
     ~Signal() noexcept;
-    Handle native_handle() const noexcept
+    std::uintptr_t native_handle() const noexcept
     {
         return handle_;
     }
@@ -38,10 +36,10 @@ class Signal
   private:
     // IMPORTANT: one signal is consumed once
     // When a signal is received, broadcast it as an event to all holders.
-    Handle handle_;              // event handle
+    std::uintptr_t handle_;              // event handle
     static std::once_flag once_; // signal handlers can only be initialized once
     static std::mutex m_;
-    static std::list<Handle> handles_; // all registered handles
-    std::list<Handle>::iterator it_;   // iterator for the current handle in the list
+    static std::list<std::uintptr_t> handles_; // all registered handles
+    std::list<std::uintptr_t>::iterator it_;   // iterator for the current handle in the list
 };
 } // namespace Foundation::Core

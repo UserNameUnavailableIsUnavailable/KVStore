@@ -22,19 +22,9 @@ FileStream::FileStream(const std::string &path, Foundation::Core::FileMode mode,
     (void)permissions;
 }
 
-FileStream::~FileStream() noexcept
-{
-    close();
-}
-
 std::shared_ptr<FileStream> FileStream::Open(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
 {
     return std::make_shared<FileStream>(path, mode, permissions, multiplexer, scheduler);
-}
-
-void FileStream::close() noexcept
-{
-    file_.close();
 }
 
 Foundation::NBIO::Task<std::optional<std::size_t>> FileStream::read(std::span<char> buffer)

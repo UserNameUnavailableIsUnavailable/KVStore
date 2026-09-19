@@ -8,7 +8,7 @@
 namespace Foundation::NBIO
 {
 NotifyChannel::NotifyChannel(Foundation::Core::Notifier& notifier, Foundation::NBIO::Multiplexer& multiplexer, Foundation::Async::Scheduler& scheduler) :
-    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kNotify, notifier.native_handle(), multiplexer, scheduler),
+    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kNotify, static_cast<std::uintptr_t>(notifier.native_handle()), multiplexer, scheduler),
     notifier_(notifier)
 {
     notifier.set_non_blocking(true);
@@ -21,13 +21,9 @@ NotifyChannel::~NotifyChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-void NotifyChannel::handle_event()
+void NotifyChannel::handle_completion()
 {
     // handle_event runs in a single thread
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
     {
         // other threads may operate on notifiee list
         // this lock only protects notifiees_

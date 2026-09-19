@@ -40,7 +40,7 @@ struct Promise
     // the pool saves in allocator calls it pays back in class lookup, counters,
     // an out-of-line call per frame, and chunks rounded up to a power of two.
     // Re-enable only with a measurement that says otherwise.
-#if 1
+#if 0
     static void *operator new(std::size_t size)
     {
         return Foundation::Async::frame_allocate(size);

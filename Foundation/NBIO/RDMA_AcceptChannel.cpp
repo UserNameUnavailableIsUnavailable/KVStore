@@ -47,8 +47,7 @@ class RDMA_AcceptAwaiter
 
 RDMA_AcceptChannel::RDMA_AcceptChannel(Foundation::Core::RDMA_Acceptor &acceptor, Multiplexer &multiplexer,
                                        Foundation::Async::Scheduler &scheduler) :
-    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Accept, acceptor.native_handle(), multiplexer,
-                              scheduler),
+    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Accept, static_cast<std::uintptr_t>(acceptor.native_handle()), multiplexer, scheduler),
     acceptor_(acceptor)
 {
     acceptor_.set_non_blocking(true);
@@ -65,13 +64,8 @@ Task<std::shared_ptr<RDMA_Session>> RDMA_AcceptChannel::accept()
     co_return co_await detail::RDMA_AcceptAwaiter{*this};
 }
 
-void RDMA_AcceptChannel::handle_event()
+void RDMA_AcceptChannel::handle_completion()
 {
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
-
     if (!waiter_) [[unlikely]]
     {
         return;

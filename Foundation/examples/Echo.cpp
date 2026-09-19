@@ -14,10 +14,10 @@ using namespace Foundation;
 NBIO::Task<void> Service()
 {
     auto address = Core::Address::from_ipv4("127.0.0.1", 8080);
-    auto listen_service = NBIO::bind(address);
+    auto acceptor = NBIO::bind(address);
     while (true)
     {
-        auto result = co_await listen_service->accept();
+        auto result = co_await acceptor->accept();
         if (!result)
         {
             std::cout << "[conn] failed\n";

@@ -30,11 +30,11 @@ class RDMA_ConnectChannel final : public Channel
 
     RDMA_ConnectChannel(Foundation::Core::RDMA_Connector &connector, Multiplexer &multiplexer,
                         Foundation::Async::Scheduler &scheduler);
-    ~RDMA_ConnectChannel() noexcept override;
+    ~RDMA_ConnectChannel() noexcept;
 
     Task<std::shared_ptr<RDMA_Session>> connect(Foundation::Core::Address peer);
 
-    void handle_event() override;
+    void handle_completion();
 
     void park(Foundation::Async::Coroutine waiter) noexcept
     {
@@ -54,11 +54,6 @@ class RDMA_ConnectChannel final : public Channel
     Foundation::Core::RDMA_Connector &connector() noexcept
     {
         return connector_;
-    }
-
-    Handle native_handle() const noexcept
-    {
-        return connector_.native_handle();
     }
 
   private:

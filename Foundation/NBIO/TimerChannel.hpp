@@ -66,8 +66,9 @@ class TimerChannel final : public Foundation::NBIO::Channel
     friend struct detail::SleepAwaiter;
 
   public:
+    using Handle = Core::Timer::Handle;
     explicit TimerChannel(Foundation::Core::Timer &timer, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
-    virtual ~TimerChannel() noexcept override;
+    ~TimerChannel() noexcept;
 
     Foundation::Core::Timer &timer() noexcept
     {
@@ -78,7 +79,7 @@ class TimerChannel final : public Foundation::NBIO::Channel
         return timer_;
     }
 
-    virtual void handle_event() override;
+    void handle_completion();
 
     // Sleep 原语：挂起当前协程直到 due，定时器触发后由调度器恢复。
     // 返回的 awaiter 直接 co_await 即可。

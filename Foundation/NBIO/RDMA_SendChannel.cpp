@@ -62,8 +62,7 @@ class RDMA_SendPollAwaiter
 
 RDMA_SendChannel::RDMA_SendChannel(Foundation::Core::RDMA_Stream &stream, Multiplexer &multiplexer,
                                    Foundation::Async::Scheduler &scheduler) :
-    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Send, stream.native_handle(), multiplexer,
-                              scheduler),
+    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Send, static_cast<std::uintptr_t>(stream.native_handle()), multiplexer, scheduler),
     stream_(stream)
 {
     multiplexer_.add_channel(this);
@@ -79,13 +78,8 @@ Foundation::NBIO::Task<std::size_t> RDMA_SendChannel::poll(std::size_t count)
     co_return co_await detail::RDMA_SendPollAwaiter{*this, count};
 }
 
-void RDMA_SendChannel::handle_event()
+void RDMA_SendChannel::handle_completion()
 {
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
-
     if (!waiter_) [[unlikely]]
     {
         // Nothing is waiting, so nothing may be reaped: a completion taken here

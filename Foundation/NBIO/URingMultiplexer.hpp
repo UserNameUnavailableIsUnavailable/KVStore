@@ -31,11 +31,6 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
     void update_channel(Foundation::NBIO::Channel *channel) override;
     void delete_channel(Foundation::NBIO::Channel *channel) noexcept override;
 
-    Handle native_handle() noexcept
-    {
-        return &ring_;
-    }
-
   private:
     void run_impl(int timeout_ms);
 
@@ -47,8 +42,7 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
     static void complete(Foundation::NBIO::Channel *channel, int result);
     // Reap every ready completion: fill the job, then dispatch to the channel.
     void handle_completions();
-
-    io_uring ring_{};
+    io_uring ring_;
     // fd -> channels living on that fd (simplex channels share a socket).
     std::unordered_multimap<int, Foundation::NBIO::Channel *> registered_channels_;
     // Channels whose operation is armed but not yet handed to the kernel. FIFO,

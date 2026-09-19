@@ -22,7 +22,7 @@ public:
     NotifyChannel(Foundation::Core::Notifier& notifier, Foundation::NBIO::Multiplexer& multiplexer, Foundation::Async::Scheduler& scheduler);
     ~NotifyChannel() noexcept;
 
-    virtual void handle_event() override;
+    void handle_completion();
 
     template <typename It>
     void park(It begin, It end);

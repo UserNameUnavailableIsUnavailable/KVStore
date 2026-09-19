@@ -43,13 +43,8 @@ bool TimerChannel::remove(Async::Coroutine coroutine_view)
     return removed;
 }
 
-void TimerChannel::handle_event()
+void TimerChannel::handle_completion()
 {
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
-
     while (!queue_.is_empty()) [[likely]]
     {
         const auto &top = queue_.top();

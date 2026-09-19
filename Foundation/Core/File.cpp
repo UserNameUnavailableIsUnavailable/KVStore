@@ -57,7 +57,7 @@ WriteResult File::write(std::span<const char> buffer)
 {
 #if defined(_WIN32)
     (void)buffer;
-    throw std::runtime_error("Windows file write is not implemented yet");
+    static_assert(false, "Windows file write is not implemented yet");
 #else
     auto total = std::size_t{0};
     while (buffer.size() > 0)
@@ -127,15 +127,15 @@ int File::native_flags_for(FileMode mode)
 #endif
 }
 
-File::Handle File::open_file(const std::filesystem::path &path, FileMode mode)
+std::uintptr_t File::open_file(const std::filesystem::path &path, FileMode mode)
 {
 #if defined(_WIN32)
     (void)path;
     (void)mode;
-    throw std::runtime_error("Windows file open is not implemented yet");
+    static_assert(false, "Windows file open is not implemented yet");
 #else
     const auto fd = ::open(path.c_str(), native_flags_for(mode), 0644);
-    if (fd == kInvalidHandle)
+    if (fd < 0)
     {
         throw std::system_error(errno, std::system_category(), "open failed");
     }
@@ -146,17 +146,10 @@ File::Handle File::open_file(const std::filesystem::path &path, FileMode mode)
 void File::close() noexcept
 {
 #if defined(_WIN32)
-    if (handle_ != kInvalidHandle)
-    {
-        ::CloseHandle(handle_);
-        handle_ = kInvalidHandle;
-    }
+    ::CloseHandle(handle_);
+    handle_ = kInvalidHandle;
 #else
-    if (handle_ != kInvalidHandle)
-    {
-        ::close(handle_);
-        handle_ = kInvalidHandle;
-    }
+    ::close(handle_);
 #endif
 }
 } // namespace Foundation::Core

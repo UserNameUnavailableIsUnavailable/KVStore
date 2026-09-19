@@ -58,9 +58,7 @@ class RDMA_SendChannel final : public Channel
         return stream_.outstanding_sends();
     }
 
-    void handle_event() override;
-
-    Handle native_handle() const noexcept { return stream_.native_handle(); }
+    void handle_completion();
 
     void park(Foundation::Async::Coroutine waiter) noexcept
     {

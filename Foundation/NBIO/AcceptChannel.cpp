@@ -6,8 +6,10 @@
 #include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/Core/Socket.hpp>
 #include <cassert>
+#include <cerrno>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
 
 #include <Foundation/Async/Scheduler.hpp>
@@ -15,14 +17,13 @@
 namespace Foundation::NBIO
 {
 AcceptChannel::AcceptChannel(Foundation::Core::Socket socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-    : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kListen, socket.native_handle(), multiplexer, scheduler),
-      socket_(std::move(socket))
+    : Channel(Foundation::NBIO::ChannelType::kAccept, static_cast<std::uintptr_t>(socket.native_handle()), multiplexer, scheduler), listener_(std::move(socket))
 {
-    if (!socket_.is_valid())
+    if (!listener_.is_valid())
     {
         throw std::logic_error("invalid socket");
     }
-    socket_.set_non_blocking(true);
+    listener_.set_non_blocking(true);
     multiplexer_.add_channel(this);
 }
 
@@ -35,13 +36,12 @@ AcceptChannel::~AcceptChannel() noexcept
     // cannot come.
     for (PendingAccept &pending : pending_)
     {
-        fail(pending);
+        drop(pending);
     }
     pending_.clear();
+    submitted_ = 0;
 }
 
-namespace
-{
 class AcceptAwaiter
 {
   public:
@@ -57,10 +57,9 @@ class AcceptAwaiter
     {
         return false;
     }
-    template <typename PromiseType>
-    void await_suspend(std::coroutine_handle<PromiseType> handle)
+    template <typename PromiseType> void await_suspend(std::coroutine_handle<PromiseType> handle)
     {
-        channel_.submit(result_, Async::Coroutine::from_handle(handle));
+        channel_.prepare(Async::Coroutine::from_handle(handle), result_);
     }
 
     Foundation::Core::AcceptResult await_resume() noexcept
@@ -70,14 +69,12 @@ class AcceptAwaiter
 
   private:
     AcceptChannel &channel_;
-    // Where this wait's outcome lands. It is this frame's own storage, and the
-    // kernel is handed a pointer into it while the accept is in flight.
     Foundation::Core::AcceptResult result_{};
 };
 
 // The accept body, as a plain coroutine whose channel is an ordinary parameter
 // (see the note on AcceptChannel::accept).
-Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> AcceptOn(AcceptChannel &channel)
+static Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> AcceptOn(AcceptChannel &channel)
 {
     auto result = co_await AcceptAwaiter(channel);
     std::optional<std::pair<Core::Socket, Core::Address>> ret{};
@@ -87,128 +84,141 @@ Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> Ac
     }
     co_return ret;
 }
-} // namespace
 
-void AcceptChannel::submit(Foundation::Core::AcceptResult &result, Async::Coroutine waiter)
+void AcceptChannel::prepare(Async::Coroutine waiter, Foundation::Core::AcceptResult &result)
 {
-    const bool was_empty = pending_.empty();
-    pending_.push_back(PendingAccept{.result = &result, .waiter = std::move(waiter)});
-    if (was_empty)
+    result = {.status = Foundation::Core::AcceptStatus::kPending, .socket = {}, .address = {}, .error_code = {}};
+    pending_.emplace_back(std::move(waiter), result);
+    refresh_arming();
+}
+
+void AcceptChannel::refresh_arming() noexcept
+{
+    const bool can_hand_over = has_prepared();
+
+    if (submits_immediately())
     {
-        arm_next();
+        // Readiness is the submission: the wait goes over now, and the channel
+        // stays armed while there is anything to wait for.
+        if (can_hand_over)
+        {
+            count_prepared();
+        }
+
+        if (submitted_ == 0 && pending_.empty())
+        {
+            disarm();
+            return;
+        }
+        arm();
+        return;
+    }
+
+    // A completion backend runs the submission phase itself, so the channel is
+    // armed exactly while it has something for that phase to hand over.
+    if (can_hand_over)
+    {
+        arm();
+        return;
+    }
+    disarm();
+}
+
+std::size_t AcceptChannel::count_prepared() noexcept
+{
+    if (submitted_ != 0 || pending_.empty())
+    {
+        // One accept is in front of the kernel at a time: a completion names the
+        // channel, not the wait it belongs to, so the wait being accepted for has
+        // to be the only one outstanding.
+        return 0;
+    }
+
+    // The front is always a wait that has no answer yet -- an answered one is
+    // retired as it is answered -- so this is where the kernel's peer address goes.
+    pending_.front().result() = {.status = Foundation::Core::AcceptStatus::kPending, .socket = {}, .address = {}, .error_code = {}};
+    submitted_ = 1;
+    return 1;
+}
+
+void AcceptChannel::wake_front() noexcept
+{
+    PendingAccept finished = std::move(pending_.front());
+    pending_.pop_front();
+    submitted_ = 0;
+    if (finished.waiter())
+    {
+        scheduler_.submit(std::move(finished.waiter()));
     }
 }
 
-void AcceptChannel::arm_next()
+void AcceptChannel::commit_result(Foundation::Core::AcceptResult accepted) noexcept
 {
-    if (pending_.empty())
+    if (submitted_ == 0)
     {
         return;
     }
 
-    // One wait is in front of the kernel at a time: a completion says a connection
-    // arrived, and the peer address went into the result of the wait that was
-    // submitted, so that wait is the one it belongs to.
-    Foundation::Core::AcceptResult &next = *pending_.front().result;
-    next = {.status = Foundation::Core::AcceptStatus::kPending, .socket = {}, .address = {}, .error_code = {}};
-    arm();
+    pending_.front().result() = std::move(accepted);
+    wake_front();
 }
 
-void AcceptChannel::accepted(int result) noexcept
+void AcceptChannel::complete_tasks(std::ptrdiff_t result) noexcept
 {
-    if (pending_.empty())
+    if (submitted_ == 0)
     {
+        if (result >= 0)
+        {
+            // Nobody is waiting for this connection any more. It is still ours, so
+            // it is closed rather than leaked.
+            [[maybe_unused]] auto closed = Foundation::Core::Socket::Adopt(static_cast<std::uintptr_t>(result));
+        }
         return;
     }
 
-    Foundation::Core::AcceptResult &slot = *pending_.front().result;
+    Foundation::Core::AcceptResult &slot = pending_.front().result();
     if (result >= 0)
     {
-        // The accepted socket's address was written in place when the accept was
-        // submitted, so the status and the socket are all that is left to fill.
+        // The peer address was written in place when the operation was built, so
+        // the socket and the status are all that is left to fill.
         slot.status = Foundation::Core::AcceptStatus::kDone;
-        slot.socket = Foundation::Core::Socket::Adopt(result);
+        slot.socket = Foundation::Core::Socket::Adopt(static_cast<std::uintptr_t>(result));
+        wake_front();
         return;
     }
 
-    if (result == -EAGAIN || result == -EWOULDBLOCK)
+    const int error = -static_cast<int>(result);
+    if (error == EAGAIN || error == EWOULDBLOCK)
     {
+        // Not ready is not an answer: the wait keeps its place at the front of the
+        // queue and is handed to the kernel again.
         slot.status = Foundation::Core::AcceptStatus::kPending;
+        submitted_ = 0;
         return;
     }
 
     slot.status = Foundation::Core::AcceptStatus::kError;
-    slot.error_code = std::error_code(-result, std::system_category());
+    slot.error_code = std::error_code(error, std::system_category());
+    wake_front();
 }
 
-void AcceptChannel::flush() noexcept
+void AcceptChannel::drop(PendingAccept &pending) noexcept
 {
-    // Taking connections is the one operation here that can be repeated: a
-    // readiness event says "at least one connection", so take them while they last
-    // and while somebody is waiting for one.
-    while (!pending_.empty())
+    pending.result() = {.status = Foundation::Core::AcceptStatus::kError,
+                        .socket = {},
+                        .address = {},
+                        .error_code = std::make_error_code(std::errc::operation_canceled)};
+    if (pending.waiter())
     {
-        Foundation::Core::AcceptResult accepted_now = socket_.accept();
-        if (accepted_now.status == Foundation::Core::AcceptStatus::kPending)
-        {
-            // Nothing more is there: the waits that are left keep their places.
-            break;
-        }
-
-        PendingAccept finished = std::move(pending_.front());
-        pending_.pop_front();
-        if (finished.result != nullptr)
-        {
-            *finished.result = std::move(accepted_now);
-        }
-        if (finished.waiter)
-        {
-            scheduler_.submit(std::move(finished.waiter));
-        }
+        scheduler_.submit(std::move(pending.waiter()));
     }
 }
 
-void AcceptChannel::fail(PendingAccept &pending) noexcept
+void AcceptChannel::handle_completion()
 {
-    if (pending.result != nullptr)
-    {
-        *pending.result = {.status = Foundation::Core::AcceptStatus::kError,
-                           .socket = {},
-                           .address = {},
-                           .error_code = std::make_error_code(std::errc::operation_canceled)};
-    }
-    if (pending.waiter)
-    {
-        scheduler_.submit(std::move(pending.waiter));
-    }
-}
-
-void AcceptChannel::handle_event()
-{
-    // handle the triggered event
-    if (handler_ != nullptr) [[likely]]
-    {
-        handler_(this);
-    }
-
-    // Wake every wait that has an answer: a readiness backend can have taken
-    // several connections in the one event.
-    while (!pending_.empty() && pending_.front().result != nullptr &&
-           pending_.front().result->status != Foundation::Core::AcceptStatus::kPending)
-    {
-        PendingAccept finished = std::move(pending_.front());
-        pending_.pop_front();
-        if (finished.waiter)
-        {
-            scheduler_.submit(std::move(finished.waiter));
-        }
-    }
-
-    if (!pending_.empty())
-    {
-        // Whoever is at the front of the queue waits for the next connection.
-        arm_next();
-    }
+    // An answered wait was retired as it was answered, so all that is left is to
+    // say what the backend owes next.
+    refresh_arming();
 }
 
 Foundation::NBIO::Task<std::optional<std::pair<Core::Socket, Core::Address>>> AcceptChannel::accept()

@@ -29,11 +29,11 @@ class RDMA_AcceptChannel final : public Channel
 
     RDMA_AcceptChannel(Foundation::Core::RDMA_Acceptor &acceptor, Multiplexer &multiplexer,
                        Foundation::Async::Scheduler &scheduler);
-    ~RDMA_AcceptChannel() noexcept override;
+    ~RDMA_AcceptChannel() noexcept;
 
     Task<std::shared_ptr<RDMA_Session>> accept();
 
-    void handle_event() override;
+    void handle_completion();
 
     void park(Foundation::Async::Coroutine waiter) noexcept
     {
@@ -53,11 +53,6 @@ class RDMA_AcceptChannel final : public Channel
     Foundation::Core::RDMA_Acceptor &acceptor() noexcept
     {
         return acceptor_;
-    }
-
-    Handle native_handle() const noexcept
-    {
-        return acceptor_.native_handle();
     }
 
   private:

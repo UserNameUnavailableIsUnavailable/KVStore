@@ -30,7 +30,7 @@ enum class ReceiveStatus
 struct ReceiveResult
 {
     ReceiveStatus status{ReceiveStatus::kPending};
-    std::size_t bytes_transferred{0};
+    std::size_t bytes_received{0};
     std::error_code error_code{};
 };
 
@@ -45,7 +45,7 @@ enum class SendStatus
 struct SendResult
 {
     SendStatus status{SendStatus::kPending};
-    std::size_t bytes_transferred{0};
+    std::size_t bytes_sent{0};
     std::error_code error_code{};
 };
 
@@ -74,14 +74,6 @@ class Socket
         kBoth
     };
 
-#if defined(__linux__)
-    using Handle = int;
-    static constexpr Handle kInvalidHandle = -1;
-#elif defined(_WIN32)
-    using Handle = SOCKET;
-    static constexpr Handle kInvalidHandle = INVALID_SOCKET;
-#endif
-
     Socket() noexcept = default;
 
     // creates a new socket of the given family/type. Throws `std::system_error`
@@ -91,8 +83,9 @@ class Socket
     Socket(const Socket &) = delete;
     Socket &operator=(const Socket &) = delete;
 
-    Socket(Socket &&other) noexcept : handle_(std::exchange(other.handle_, kInvalidHandle))
+    Socket(Socket &&other) noexcept
     {
+        std::swap(handle_, other.handle_);
     }
 
     Socket &operator=(Socket &&other) noexcept
@@ -105,25 +98,16 @@ class Socket
         return *this;
     }
 
-    // Destroys the socket, releasing the Winsock reference on Windows.
     ~Socket() noexcept
     {
         close();
     }
 
-    // take ownership of a raw handle (e.g. returned by `accept`). The handle is
-    // assumed already open; no further configuration is applied.
-    [[nodiscard]] static Socket Adopt(Handle handle) noexcept;
+    [[nodiscard]] static Socket Adopt(std::uintptr_t handle) noexcept;
 
-    Handle native_handle() const noexcept
+    std::uintptr_t native_handle() const noexcept
     {
         return handle_;
-    }
-
-    void reset(Socket::Handle handle) noexcept
-    {
-        close();
-        handle_ = handle;
     }
 
     void swap(Socket &other) noexcept
@@ -138,9 +122,6 @@ class Socket
 
     void bind(const Address &local);
     void listen(int backlog = 4096);
-    // Blocks until a connection arrives (or, for a non-blocking socket, throws
-    // on EAGAIN/EWOULDBLOCK — the caller is expected to retry on readiness).
-    Socket accept(Address &peer);
 
     AcceptResult accept();
     ReceiveResult receive(std::span<char> buffer);
@@ -158,16 +139,14 @@ class Socket
 
     void shutdown(ShutdownHow how = ShutdownHow::kBoth) noexcept;
     void close() noexcept;
-    static std::error_code get_last_error();
 
   private:
-    explicit Socket(Handle handle) noexcept : handle_(handle)
-    {
-    }
-
     template <typename T> void set_native_option(int level, int option, const T &value);
+    static std::error_code get_last_error() noexcept;
 
-    Handle handle_ = kInvalidHandle;
+    constexpr static std::uintptr_t kInvalidHandle{ static_cast<std::uintptr_t>(-1) };
+    std::uintptr_t handle_ = kInvalidHandle;
+
     bool non_blocking_ : 1 {false};
     bool reuse_address_ : 1 {false};
     bool reuse_port_ : 1 {false};

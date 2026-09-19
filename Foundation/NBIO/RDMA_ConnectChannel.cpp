@@ -2,6 +2,7 @@
 
 #include <Foundation/Async/Coroutine.hpp>
 
+#include <cstdint>
 #include <utility>
 
 namespace Foundation::NBIO
@@ -58,8 +59,7 @@ class RDMA_ConnectAwaiter
 
 RDMA_ConnectChannel::RDMA_ConnectChannel(Foundation::Core::RDMA_Connector &connector, Multiplexer &multiplexer,
                                          Foundation::Async::Scheduler &scheduler) :
-    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Connect, connector.native_handle(), multiplexer,
-                              scheduler),
+    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Connect, static_cast<std::uintptr_t>(connector.native_handle()), multiplexer, scheduler),
     connector_(connector)
 {
     connector_.native_handle();
@@ -76,13 +76,8 @@ Task<std::shared_ptr<RDMA_Session>> RDMA_ConnectChannel::connect(Foundation::Cor
     co_return co_await detail::RDMA_ConnectAwaiter{*this, std::move(peer)};
 }
 
-void RDMA_ConnectChannel::handle_event()
+void RDMA_ConnectChannel::handle_completion()
 {
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
-
     if (!waiter_) [[unlikely]]
     {
         return;

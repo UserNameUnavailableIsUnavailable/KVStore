@@ -17,7 +17,7 @@ enum class MultiplexerType
 // listener owns one (accept).
 enum class ChannelType
 {
-    kListen,
+    kAccept,
     kReceive,
     kSend,
     kRead,
