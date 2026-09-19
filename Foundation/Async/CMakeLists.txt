@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.10)
 
 # Core Async is backend-agnostic: coroutine machinery, the scheduler, and the
 # runtime-tag-driven entry points. Channels, multiplexers and the concrete
