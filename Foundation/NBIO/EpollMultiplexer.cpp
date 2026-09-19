@@ -13,6 +13,7 @@
 #include <climits>
 #include <stdexcept>
 #include <system_error>
+#include <sys/uio.h>
 #include <utility>
 
 #include "NotifyChannel.hpp"
@@ -27,6 +28,10 @@
 #include "SendChannel.hpp"
 #include "TimerChannel.hpp"
 #include "WriteChannel.hpp"
+#include "RDMA_ConnectChannel.hpp"
+#include "RDMA_AcceptChannel.hpp"
+#include "RDMA_SendChannel.hpp"
+#include "RDMA_ReceiveChannel.hpp"
 
 namespace Foundation::NBIO
 {
@@ -60,7 +65,7 @@ static constexpr std::uint32_t native_flags_for(Foundation::NBIO::ChannelType ty
     {
     case Foundation::NBIO::ChannelType::kReceive:
     case Foundation::NBIO::ChannelType::kRead:
-    case Foundation::NBIO::ChannelType::kListen:
+    case Foundation::NBIO::ChannelType::kAccept:
     case Foundation::NBIO::ChannelType::kTimer:
     case Foundation::NBIO::ChannelType::kNotify:
     case Foundation::NBIO::ChannelType::kRDMA_Accept:
@@ -145,8 +150,8 @@ void EpollMultiplexer::run_impl(int timeout_ms)
         }
 
         // Take the batch before touching it: disarm() erases an always-ready
-        // channel from active_channels_, and handle_event() may arm one again.
-        // Mutating the set while iterating it invalidates the iterator -- the
+        // channel from active_channels_, and handle_completion() may arm one
+        // again. Mutating the set while iterating it invalidates the iterator -- the
         // increment then walks a freed node. Any channel re-armed here lands in
         // the now-empty active_channels_ and is picked up on the next pass,
         // which does not block because the set is non-empty again.
@@ -155,8 +160,59 @@ void EpollMultiplexer::run_impl(int timeout_ms)
 
         for (auto *channel : batch)
         {
-            channel->disarm();
-            channel->handle_event();
+            // The backend does what only it can do -- the I/O itself -- and the
+            // channel turns what comes back into the outcome of the waits it
+            // covers. Each case then wakes what has an answer; a channel with more
+            // to do arms itself again. The channel is named by its concrete type
+            // because the submission protocol is the channel's own, not the base
+            // class's.
+            switch (channel->type())
+            {
+            case Foundation::NBIO::ChannelType::kReceive:
+                do_receive_data(channel);
+                static_cast<ReceiveChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kSend:
+                do_send_data(channel);
+                static_cast<SendChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kAccept:
+                do_accept_connection(channel);
+                static_cast<AcceptChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kRead:
+                do_read_file(channel);
+                static_cast<ReadChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kWrite:
+                do_write_file(channel);
+                static_cast<WriteChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kTimer:
+                do_wait_timer(channel);
+                static_cast<TimerChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kNotify:
+                do_wait_notifier(channel);
+                static_cast<NotifyChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kSignal:
+                do_drain_signal(channel);
+                static_cast<SignalChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kRDMA_Accept:
+                static_cast<RDMA_AcceptChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kRDMA_Connect:
+                static_cast<RDMA_ConnectChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kRDMA_Send:
+                static_cast<RDMA_SendChannel *>(channel)->handle_completion();
+                break;
+            case Foundation::NBIO::ChannelType::kRDMA_Receive:
+                static_cast<RDMA_ReceiveChannel *>(channel)->handle_completion();
+                break;
+            }
         }
     } while (retry);
 }
@@ -185,43 +241,23 @@ void EpollMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
     // If the channel is incomplete (e.g., has not finished construction yet),
     // calling virtual functions results in runtime error!
 
-    auto fd = channel->native_handle();
-	Channel::IOHandler handler{ nullptr };
-
+    int fd = static_cast<int>(channel->native_handle());
     switch (channel->type())
     {
     case Foundation::NBIO::ChannelType::kReceive:
-        handler = do_receive_data;
-        break;
     case Foundation::NBIO::ChannelType::kSend:
-        handler = do_send_data;
-        break;
-    case Foundation::NBIO::ChannelType::kListen:
-        handler = do_accept_connection;
-        break;
+    case Foundation::NBIO::ChannelType::kAccept:
     case Foundation::NBIO::ChannelType::kTimer:
-        handler = do_wait_timer;
-        break;
     case Foundation::NBIO::ChannelType::kSignal:
-        handler = do_drain_signal;
-        break;
     case Foundation::NBIO::ChannelType::kNotify:
-        handler = do_wait_notifier;
-        break;
-    // The RDMA channels have no backend handler: each one reaps its own
-    // completions in handle_event(), because the event only says "something
-    // finished", not which direction or how much.
+    case Foundation::NBIO::ChannelType::kRead:
+    case Foundation::NBIO::ChannelType::kWrite:
+    // The RDMA channels are only polled: each one reaps its own completions,
+    // because the event says "something finished", not which direction or how much.
     case Foundation::NBIO::ChannelType::kRDMA_Accept:
     case Foundation::NBIO::ChannelType::kRDMA_Connect:
     case Foundation::NBIO::ChannelType::kRDMA_Send:
     case Foundation::NBIO::ChannelType::kRDMA_Receive:
-        handler = nullptr;
-        break;
-    case Foundation::NBIO::ChannelType::kRead:
-        handler = do_read_file;
-        break;
-    case Foundation::NBIO::ChannelType::kWrite:
-        handler = do_write_file;
         break;
     default:
         throw std::logic_error("EpollMultiplexer::add_channel: unsupported channel type");
@@ -242,7 +278,6 @@ void EpollMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
 			}
 		}
 		always_channels_.emplace(fd, channel);
-		channel->on_event(handler);
 		return;
     }
 
@@ -269,7 +304,6 @@ void EpollMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
 		}
 	}
     pollable_channels_.emplace(fd, channel);
-	channel->on_event(handler);
 }
 
 void EpollMultiplexer::update_channel(Foundation::NBIO::Channel *channel)
@@ -377,54 +411,128 @@ EpollMultiplexer::~EpollMultiplexer() noexcept
 
 static void do_receive_data(Foundation::NBIO::Channel *base)
 {
-    // The channel owns what a batch of receives looks like, so it does the I/O
-    // when this backend has to drive the socket itself.
-    static_cast<ReceiveChannel *>(base)->flush();
+    // The readiness of the socket is the submission: the channel handed its
+    // prepared receives over already, so this only has to drive the operation.
+    auto *channel = static_cast<ReceiveChannel *>(base);
+    if (!channel->has_submitted())
+    {
+        return;
+    }
+
+    ::msghdr &message = channel->message_batch();
+    ssize_t result = 0;
+    do
+    {
+        result = ::recvmsg(channel->native_handle(), &message, 0);
+    } while (result < 0 && errno == EINTR);
+
+    channel->complete_tasks(result < 0 ? -errno : result);
 }
 
 static void do_send_data(Foundation::NBIO::Channel *base)
 {
-    static_cast<SendChannel *>(base)->flush();
+    // As for receiving: the channel handed its prepared sends over already.
+    auto *channel = static_cast<SendChannel *>(base);
+    if (!channel->has_submitted())
+    {
+        return;
+    }
+
+    ::msghdr &message = channel->message_batch();
+    ssize_t result = 0;
+    do
+    {
+        result = ::sendmsg(channel->native_handle(), &message, MSG_NOSIGNAL);
+    } while (result < 0 && errno == EINTR);
+
+    channel->complete_tasks(result < 0 ? -errno : result);
 }
 
 static void do_accept_connection(Foundation::NBIO::Channel *base)
 {
-    // One readiness event can mean several connections: the channel takes them
-    // while they last and while somebody is waiting for one.
-    static_cast<AcceptChannel *>(base)->flush();
+    auto *channel = static_cast<AcceptChannel *>(base);
+
+    // One readiness event can mean several connections: take them while they last
+    // and while somebody is waiting for one.
+    while (true)
+    {
+        if (channel->submitted_front() == nullptr)
+        {
+            // The channel hands exactly one wait over at a time, because the
+            // answer names the channel and not the wait it belongs to.
+            if (channel->count_prepared() == 0 || channel->submitted_front() == nullptr)
+            {
+                break;
+            }
+        }
+
+        Foundation::Core::AcceptResult accepted = channel->socket().accept();
+        if (accepted.status == Foundation::Core::AcceptStatus::kPending)
+        {
+            break;
+        }
+
+        channel->commit_result(std::move(accepted));
+    }
 }
 
 void do_wait_timer(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<TimerChannel *>(base);
-    channel->timer().wait();
+    // The read drains the timerfd; handle_completion() then pops the entries that
+    // have come due.
+    static_cast<TimerChannel *>(base)->timer().wait();
 }
 
 void do_wait_notifier(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<NotifyChannel *>(base);
-    channel->notifier().wait();
+    static_cast<NotifyChannel *>(base)->notifier().wait();
 }
 
 void do_drain_signal(Foundation::NBIO::Channel *base)
 {
-    auto *channel = static_cast<SignalChannel *>(base);
-    channel->signal().drain();
+    static_cast<SignalChannel *>(base)->signal().drain();
 }
 
 static void do_read_file(Foundation::NBIO::Channel *base)
 {
-    // As for writing: the channel owns what a batch of reads looks like, so it
-    // does the I/O when this backend has to drive the file itself.
-    static_cast<ReadChannel *>(base)->flush();
+    // A file is always ready, so the channel handed its prepared reads over the
+    // moment they were awaited; this drives the operation they describe.
+    auto *channel = static_cast<ReadChannel *>(base);
+    if (!channel->has_submitted())
+    {
+        return;
+    }
+
+    const auto vectors = channel->vectors();
+    ssize_t result = 0;
+    do
+    {
+        result = ::preadv(channel->native_handle(), vectors.data(), static_cast<int>(vectors.size()),
+                          static_cast<off_t>(channel->front_offset()));
+    } while (result < 0 && errno == EINTR);
+
+    channel->complete_tasks(result < 0 ? -errno : result);
 }
 
 static void do_write_file(Foundation::NBIO::Channel *base)
 {
-    // The channel owns what a batch of writes looks like -- one vector for every
-    // write armed at once -- so it does the I/O when this backend has to drive the
-    // file itself instead of waiting for a completion.
-    static_cast<WriteChannel *>(base)->flush();
+    // As for reading: the channel owns what a batch of writes looks like. A file
+    // is always ready, so the operation it describes is driven here.
+    auto *channel = static_cast<WriteChannel *>(base);
+    if (!channel->has_submitted())
+    {
+        return;
+    }
+
+    const auto vectors = channel->vectors();
+    ssize_t result = 0;
+    do
+    {
+        result = ::pwritev(channel->native_handle(), vectors.data(), static_cast<int>(vectors.size()),
+                           static_cast<off_t>(channel->front_offset()));
+    } while (result < 0 && errno == EINTR);
+
+    channel->complete_tasks(result < 0 ? -errno : result);
 }
 
 } // namespace Foundation::NBIO

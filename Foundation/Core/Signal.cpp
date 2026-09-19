@@ -17,18 +17,18 @@ namespace Foundation::Core
 
 std::once_flag Signal::once_;
 std::mutex Signal::m_;
-std::list<Signal::Handle> Signal::handles_;
+std::list<std::uintptr_t> Signal::handles_;
 static std::atomic_size_t s_count{0};
 
 Signal::Signal()
 {
     {
         std::lock_guard<std::mutex> lock(m_);
-        handle_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        handle_ = static_cast<std::uintptr_t>(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC));
         handles_.push_back(handle_);
         it_ = std::prev(handles_.end());
     }
-    if (handle_ < 0)
+    if (handle_ == static_cast<std::uintptr_t>(-1))
     {
         throw std::runtime_error("failed to create eventfd");
     }

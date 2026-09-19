@@ -27,13 +27,8 @@ void SignalChannel::park(Async::Coroutine coroutine)
     arm();
 }
 
-void SignalChannel::handle_event()
+void SignalChannel::handle_completion()
 {
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
-
     for (auto &waiter : waiters_)
     {
         // is_dead() first: it is what makes done() safe, since the frame may have

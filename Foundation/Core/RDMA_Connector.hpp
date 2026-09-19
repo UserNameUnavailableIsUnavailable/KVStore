@@ -13,8 +13,6 @@ namespace Foundation::Core
 class RDMA_Connector
 {
 public:
-    using Handle = NativeHandle;
-
     // The pools outlive the stream they lend chunks to, exactly as on the
     // acceptor side.
     RDMA_Connector(BitmapMemory receive_pool, BitmapMemory send_pool);
@@ -26,7 +24,7 @@ public:
     // id's own context, pre-posts receives and connects.
     RDMA_Stream connect(Address peer);
 
-    Handle native_handle() const noexcept { return event_channel_ ? event_channel_->fd : -1; }
+    std::uintptr_t native_handle() const noexcept { return event_channel_ ? event_channel_->fd : -1; }
 
 private:
     // Waits for one event, requires it to be `expected`, and acknowledges it.

@@ -26,10 +26,6 @@ class EpollMultiplexer final : public Foundation::NBIO::Multiplexer
     virtual void add_channel(Foundation::NBIO::Channel *channel) override;
     virtual void update_channel(Foundation::NBIO::Channel *channel) override;
     virtual void delete_channel(Foundation::NBIO::Channel *channel) noexcept override;
-    Handle native_handle() const noexcept
-    {
-        return handle_;
-    }
 
   private:
 
@@ -37,8 +33,8 @@ class EpollMultiplexer final : public Foundation::NBIO::Multiplexer
     int handle_{-1}; // epoll file descriptor
     std::unordered_multimap<int, Foundation::NBIO::Channel *> pollable_channels_; // all pollable channels
     std::unordered_multimap<int, Foundation::NBIO::Channel *> always_channels_; // channels that are always ready, non-pollable
-	std::unordered_map<int, std::uint32_t> updated_flags_; // delayed update
-	std::unordered_set<Foundation::NBIO::Channel *> active_channels_;
+    std::unordered_map<int, std::uint32_t> updated_flags_; // delayed update
+    std::unordered_set<Foundation::NBIO::Channel *> active_channels_;
 };
 } // namespace Foundation::NBIO
 #endif // defined(__linux__)

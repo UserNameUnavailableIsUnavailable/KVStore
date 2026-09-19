@@ -42,9 +42,9 @@ class SignalChannel final : public Foundation::NBIO::Channel
 {
   public:
     SignalChannel(Foundation::Core::Signal &signal, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
-    ~SignalChannel() override;
+    ~SignalChannel();
 
-    void handle_event() override;
+    void handle_completion();
 
     void park(Foundation::Async::Coroutine coroutine);
 

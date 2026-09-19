@@ -144,7 +144,7 @@ Foundation::NBIO::Task<void> accept_and_receive(Foundation::NBIO::AcceptChannel 
     co_await Foundation::NBIO::sleep_for(std::chrono::milliseconds(20));
     const auto sent_result = client.send(std::span<const char>{sent.data(), sent.size()});
     EXPECT_EQ(sent_result.status, Foundation::Core::SendStatus::kDone);
-    EXPECT_EQ(sent_result.bytes_transferred, sent.size());
+    EXPECT_EQ(sent_result.bytes_sent, sent.size());
 
     for (const Foundation::Async::CoroutineToken &waiter : waiters)
     {
@@ -215,8 +215,8 @@ TEST(SocketChannelTesting, SendsFromManyCoroutinesKeepTheOrderTheyQueuedIn)
     {
         const auto got = client.receive(std::span<char>{buffer.data(), buffer.size()});
         ASSERT_EQ(got.status, Foundation::Core::ReceiveStatus::kDone) << "the client could not read the stream";
-        ASSERT_GT(got.bytes_transferred, 0U);
-        received.append(buffer.data(), got.bytes_transferred);
+        ASSERT_GT(got.bytes_received, 0U);
+        received.append(buffer.data(), got.bytes_received);
     }
     ASSERT_EQ(received.size(), expected);
 

@@ -26,25 +26,16 @@ class RDMA_ReceiveChannel final : public Channel
         };
 
     ~RDMA_ReceiveChannel() noexcept;
-    
+
     RDMA_ReceiveChannel(Foundation::Core::RDMA_Stream &stream, Multiplexer &multiplexer,
                         Foundation::Async::Scheduler &scheduler);
 
     Foundation::NBIO::Task<std::optional<std::span<char>>> receive();
-    // Takes a chunk that has already arrived without waiting for one, answering
-    // nothing when none is ready. For a caller that has something else to do
-    // when the queue is empty -- a sender collecting the acknowledgements that
-    // keep coming back while it keeps sending. Not to be used while another
-    // coroutine is parked in receive() on the same channel.
+
     Foundation::NBIO::Task<std::optional<std::span<char>>> try_receive();
     void release(std::span<char> chunk);
 
-    void handle_event() override;
-
-    Handle native_handle() const noexcept
-    {
-        return stream_.native_handle();
-    }
+    void handle_completion();
 
     void park(Foundation::Async::Coroutine waiter) noexcept
     {

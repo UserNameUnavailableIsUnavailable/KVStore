@@ -36,7 +36,11 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
     FileStream &operator=(const FileStream &) = delete;
     FileStream(FileStream &&) = delete;
     FileStream &operator=(FileStream &&) = delete;
-    ~FileStream() noexcept;
+    // The file is closed by `file_`'s own destructor, which runs *after* the
+    // channels are destroyed. Closing it here, in the body, would release the
+    // descriptor while a channel still names it -- and the number could be handed
+    // to another open before that channel unregisters itself.
+    ~FileStream() noexcept = default;
 
     static std::shared_ptr<FileStream> Open(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions,
                                             Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
@@ -44,9 +48,7 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
     Foundation::NBIO::Task<std::optional<std::size_t>> read(std::span<char> buffer);
     Foundation::NBIO::Task<std::optional<std::size_t>> write(std::span<const char> buffer);
 
-    void close() noexcept;
-
-    Foundation::Core::File::Handle native_handle() const noexcept
+    std::uintptr_t native_handle() const noexcept
     {
         return file_.native_handle();
     }
@@ -67,16 +69,6 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
     {
         write_offset_ += static_cast<std::uint64_t>(bytes);
     }
-
-    // Core::ReadResult read(std::span<char> buffer)
-    // {
-    //     return file_.read(buffer);
-    // }
-
-    // Core::WriteResult write(std::span<const char> buffer)
-    // {
-    //     return file_.write(buffer);
-    // }
 
     ReadChannel &read_channel() noexcept;
     WriteChannel &write_channel() noexcept;

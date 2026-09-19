@@ -75,7 +75,7 @@ void ReleaseWinsock()
 #endif
 } // namespace
 
-std::error_code Socket::get_last_error()
+std::error_code Socket::get_last_error() noexcept
 {
 #if defined(__linux__)
     return std::error_code(errno, std::system_category());
@@ -129,7 +129,7 @@ Socket::Socket(Address::Family family, Type type)
 #endif
 }
 
-Socket Socket::Adopt(Handle handle) noexcept
+Socket Socket::Adopt(std::uintptr_t handle) noexcept
 {
     if (handle == kInvalidHandle)
     {
@@ -157,17 +157,6 @@ void Socket::listen(int backlog)
     }
 }
 
-Socket Socket::accept(Address &peer)
-{
-    peer.length() = Address::capacity();
-    const Handle client = ::accept(handle_, peer.storage<sockaddr>(), &peer.length());
-    if (client == kInvalidHandle)
-    {
-        throw std::system_error(get_last_error(), "Socket: accept failed");
-    }
-    return Adopt(client);
-}
-
 AcceptResult Socket::accept()
 {
     AcceptResult result;
@@ -180,7 +169,7 @@ AcceptResult Socket::accept()
         result.address.length() = Address::capacity();
         auto handle = ::accept(handle_, result.address.storage<sockaddr>(), &result.address.length());
 
-        if (handle != kInvalidHandle)
+        if (static_cast<std::uintptr_t>(handle) != kInvalidHandle)
         {
             result.status = AcceptStatus::kDone;
             result.socket = Socket::Adopt(handle);
@@ -211,7 +200,7 @@ ReceiveResult Socket::receive(std::span<char> buffer)
 {
     ReceiveResult result{
         .status = ReceiveStatus::kPending,
-        .bytes_transferred = 0,
+        .bytes_received = 0,
     };
     bool retry = false;
 
@@ -221,7 +210,7 @@ ReceiveResult Socket::receive(std::span<char> buffer)
         auto n = ::recv(handle_, buffer.data(), buffer.size(), 0);
         if (n > 0)
         {
-            result.bytes_transferred = static_cast<std::size_t>(n);
+            result.bytes_received = static_cast<std::size_t>(n);
             result.status = ReceiveStatus::kDone;
         }
         else if (n == 0)
@@ -250,7 +239,7 @@ SendResult Socket::send(std::span<const char> buffer)
 {
     SendResult result{
         .status = SendStatus::kPending,
-        .bytes_transferred = 0,
+        .bytes_sent = 0,
     };
     bool retry = false;
     do
@@ -259,9 +248,9 @@ SendResult Socket::send(std::span<const char> buffer)
         auto n = ::send(handle_, buffer.data(), buffer.size(), MSG_NOSIGNAL);
         if (n >= 0)
         {
-            result.bytes_transferred += static_cast<std::size_t>(n);
+            result.bytes_sent += static_cast<std::size_t>(n);
             // "write flushes all": done only when nothing is left to send.
-            result.status = (result.bytes_transferred == buffer.size()) ? SendStatus::kDone : SendStatus::kPending;
+            result.status = (result.bytes_sent == buffer.size()) ? SendStatus::kDone : SendStatus::kPending;
         }
         else if (IS_SOCKET_ERROR_AGAIN)
         {

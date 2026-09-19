@@ -5,8 +5,6 @@
 #include <span>
 #include <system_error>
 
-#include "Native.hpp"
-
 namespace Foundation::Core
 {
 enum class FileMode : std::uint32_t
@@ -67,7 +65,6 @@ constexpr FileMode &operator|=(FileMode &lhs, FileMode rhs) noexcept
 class File
 {
   public:
-    using Handle = NativeHandle;
     explicit File(const std::filesystem::path &path, FileMode mode);
     File(const File &) = delete;
     File &operator=(const File &) = delete;
@@ -78,12 +75,7 @@ class File
     ReadResult read(std::span<char> buffer);
     WriteResult write(std::span<const char> buffer);
 
-    bool is_valid() const noexcept
-    {
-        return handle_ != kInvalidHandle;
-    }
-
-    Handle native_handle() const noexcept
+    std::uintptr_t native_handle() const noexcept
     {
         return handle_;
     }
@@ -98,20 +90,13 @@ class File
         return native_flags_for(mode_);
     }
 
-    void close() noexcept;
-
     static int native_flags_for(FileMode mode);
 
   private:
-    Handle open_file(const std::filesystem::path &path, FileMode mode);
+    std::uintptr_t open_file(const std::filesystem::path &path, FileMode mode);
+    void close() noexcept;
 
-#if defined(_WIN32)
-    static constexpr Handle kInvalidHandle{ nullptr };
-#else
-    static constexpr Handle kInvalidHandle{ -1 };
-#endif
-
-    Handle handle_;
+    std::uintptr_t handle_;
     FileMode mode_;
 };
 } // namespace Foundation::Core

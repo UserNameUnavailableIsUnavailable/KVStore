@@ -16,7 +16,6 @@ namespace Foundation::Core
 class RDMA_Acceptor
 {
 public:
-    using Handle = NativeHandle;
     explicit RDMA_Acceptor(BitmapMemory receive_pool, BitmapMemory send_pool);
     ~RDMA_Acceptor() noexcept;
 
@@ -31,7 +30,7 @@ public:
     std::optional<RDMA_Stream> accept();
 
     void set_non_blocking(bool enabled = true);
-    Handle native_handle() const noexcept { return event_channel_->fd; }
+    std::uintptr_t native_handle() const noexcept { return event_channel_->fd; }
 
 private:
     ::rdma_cm_id *communication_id_{ nullptr };

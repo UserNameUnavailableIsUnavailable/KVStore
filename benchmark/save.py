@@ -12,21 +12,15 @@ import tempfile
 import time
 import socket
 from pathlib import Path
+from benchmark import PROJECT_ROOT
+import redis
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE_ROOT))
-from benchmark import PROJECT_ROOT
 
-try:
-    import redis
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
-    redis = None
-    REDIS_IMPORT_ERROR = exc
-else:
-    REDIS_IMPORT_ERROR = None
 
 TEMP_ROOT = PROJECT_ROOT/"temp"
-DEFAULT_SERVER = Path(f"{PROJECT_ROOT}/build/Application/Server/Server")
+DEFAULT_SERVER = Path(f"{PROJECT_ROOT}/build/Application/Server/Release/Server")
 DEFAULT_PORT = 0
 DEFAULT_COUNT = 100_000
 DEFAULT_RESTART_WAIT = 30.0

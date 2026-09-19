@@ -1,26 +1,22 @@
 #pragma once
 
+#include <cstdint>
 #include <spdlog/spdlog.h>
 
 #include <Foundation/Async/Scheduler.hpp>
-#include <utility>
+#include <cstddef>
 
 #include "Multiplexer.hpp"
 #include "Types.hpp"
 
 namespace Foundation::NBIO
 {
-class Channel;
 class Channel
 {
   public:
-	using IOHandler = void (*)(Channel *);
 
-    using Handle = int;
-    constexpr static Handle kInvalidHandle = -1;
-
-    explicit Channel(ChannelType type, Handle handle, Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-        : type_(type), handle_(handle), multiplexer_(multiplexer), scheduler_(scheduler)
+    explicit Channel(ChannelType type, std::uintptr_t native_handle, Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
+        : type_(type), native_handle_(native_handle), multiplexer_(multiplexer), scheduler_(scheduler)
     {
     }
 
@@ -31,45 +27,24 @@ class Channel
     Channel(Channel &&) = delete;
     Channel &operator=(Channel &&) = delete;
 
-    virtual ~Channel() noexcept = default;
+    ~Channel() noexcept = default;
 
     ChannelType type() const noexcept
     {
         return type_;
     }
 
-    // The multiplexer installs the backend handler at registration time.
-    void on_event(IOHandler handler) noexcept
+    std::uintptr_t native_handle() const noexcept
     {
-        handler_ = handler;
+        return native_handle_;
     }
 
-    // The receive side, called by the multiplexer once the channel's job has
-    // been filled: by the handler for readiness backends, or by the multiplexer
-    // itself for completion backends. The channel only does job control -- if
-    // the job reached a conclusive status, resume the waiting coroutine.
-    //
-    // There is deliberately no send side here. Whether a channel can be
-    // triggered at all is a property of its type, not of the base: kernel-driven
-    // channels (receive, send, listen, read, write, timer, signal) have no
-    // sender at all, so an application-triggered event is expressed by a
-    // concrete channel that provides one (see NotifyChannel).
-    //
-    // A channel drives ONE job at a time and, unless it says otherwise, wants one
-    // coroutine: the job, the offset it was armed with and the parked coroutine
-    // all live on the channel, so a second coroutine starting the same operation
-    // would write over the first one's job and drop the parked coroutine that
-    // nothing else refers to. A channel that a shared resource makes reachable
-    // from more than one coroutine therefore has to queue its work --
-    // WriteChannel is the one that does, because every client session appends to
-    // the same file through it. SignalChannel and NotifyChannel take many
-    // waiters by design; those wait on an event rather than for a job.
-    virtual void handle_event() = 0;
-
-    Handle native_handle() const noexcept
-    {
-        return handle_;
-    }
+    // There is deliberately no submission protocol here. Each channel keeps what
+    // fits it: a queue of waits with a batch to hand over (receive, send, read,
+    // write), one wait at a time (accept), or no per-operation wait at all (timer,
+    // notifier, signal, RDMA stream). The multiplexer switches on `type()` anyway,
+    // so it calls those methods on the concrete channel rather than the base class
+    // pretending every channel has them.
 
     Multiplexer &multiplexer() noexcept
     {
@@ -96,31 +71,35 @@ class Channel
         return armed_;
     }
 
-    // Arm a channel with its associated event.
+    // Arm a channel with its associated event. Arming says "this channel has work
+    // for the backend"; a channel with none disarms itself.
     void arm()
     {
-        if (!std::exchange(armed_, true))
-        {
-            multiplexer_.update_channel(this);
-        }
+        armed_ = true;
+        multiplexer_.update_channel(this);
     }
 
-    // Disarm a channel. Its events will no longer be reported by the multiplexer.
-    // Called in multiplexer, after event triggers and before handle_event.
+    // Disarm a channel: its events will no longer be reported by the multiplexer.
     void disarm()
     {
-        if (std::exchange(armed_, false))
-        {
-            multiplexer_.update_channel(this);
-        }
+        armed_ = false;
+        multiplexer_.update_channel(this);
     }
 
   protected:
+    // A readiness backend submits the moment a wait is prepared, so the channel
+    // hands its own work over and the multiplexer only has to watch the
+    // descriptor. A completion backend runs a submission phase, and the
+    // multiplexer is what runs it.
+    bool submits_immediately() const noexcept
+    {
+        return multiplexer_.submits_immediately();
+    }
+
     const ChannelType type_;
-    const Handle handle_;
+	const std::uintptr_t native_handle_;
     Multiplexer &multiplexer_;
     Foundation::Async::Scheduler &scheduler_;
-    IOHandler handler_{nullptr};
     bool armed_{false};
 };
 } // namespace Foundation::NBIO

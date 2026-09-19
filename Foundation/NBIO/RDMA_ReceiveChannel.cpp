@@ -3,6 +3,7 @@
 #include <Foundation/Async/Coroutine.hpp>
 
 #include <cassert>
+#include <cstdint>
 #include <utility>
 
 namespace Foundation::NBIO
@@ -89,8 +90,7 @@ class RDMA_ReceiveTryAwaiter
 
 RDMA_ReceiveChannel::RDMA_ReceiveChannel(Foundation::Core::RDMA_Stream &stream, Multiplexer &multiplexer,
                                          Foundation::Async::Scheduler &scheduler) :
-    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Receive, stream.native_handle(), multiplexer,
-                              scheduler),
+    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kRDMA_Receive, static_cast<std::uintptr_t>(stream.native_handle()), multiplexer, scheduler),
     stream_(stream)
 {
     multiplexer_.add_channel(this);
@@ -116,13 +116,8 @@ void RDMA_ReceiveChannel::release(std::span<char> chunk)
     stream_.release(chunk);
 }
 
-void RDMA_ReceiveChannel::handle_event()
+void RDMA_ReceiveChannel::handle_completion()
 {
-    if (handler_) [[likely]]
-    {
-        handler_(this);
-    }
-
     if (!waiter_) [[unlikely]]
     {
         return;

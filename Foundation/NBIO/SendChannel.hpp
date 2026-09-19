@@ -19,14 +19,46 @@ struct io_uring_sqe;
 
 namespace Foundation::NBIO
 {
+class SendAwaiter;
+
 // One send waiting its turn. The bytes and the slot its outcome is written into
-// belong to the frame that is parked; several of these go to the kernel in one
-// sendmsg, because a stream has to keep their order.
-struct PendingSend
+// belong to the frame that is parked, which is alive for exactly as long as this
+// entry is queued, so the entry points at them rather than owning them.
+class PendingSend
 {
-    std::span<const char> buffer;
-    Foundation::Core::SendResult *result{nullptr};
-    Foundation::Async::Coroutine waiter;
+  public:
+    PendingSend(std::span<const char> buffer, Foundation::Core::SendResult &result, Foundation::Async::Coroutine waiter) noexcept
+        : buffer_(buffer), result_(&result), waiter_(std::move(waiter))
+    {
+    }
+
+    std::span<const char> &buffer() noexcept
+    {
+        return buffer_;
+    }
+    const std::span<const char> &buffer() const noexcept
+    {
+        return buffer_;
+    }
+
+    Foundation::Core::SendResult &result() noexcept
+    {
+        return *result_;
+    }
+    const Foundation::Core::SendResult &result() const noexcept
+    {
+        return *result_;
+    }
+
+    Foundation::Async::Coroutine &waiter() noexcept
+    {
+        return waiter_;
+    }
+
+  private:
+    std::span<const char> buffer_;
+    Foundation::Core::SendResult *result_{nullptr};
+    Foundation::Async::Coroutine waiter_;
 };
 
 // Simplex channel dedicated to sending: a queue of sends, one operation, with the
@@ -35,42 +67,53 @@ class SendChannel final : public Foundation::NBIO::Channel
 {
   public:
     explicit SendChannel(Foundation::Core::Socket &socket, Foundation::Async::Scheduler &scheduler, Foundation::NBIO::Multiplexer &multiplexer);
-    ~SendChannel() noexcept override;
+    ~SendChannel() noexcept;
 
     Foundation::NBIO::Task<std::optional<std::size_t>> send(std::span<const char> buffer);
 
     // Sends as much of `buffer` as the socket will take right now, for a caller
     // that would rather not park: a send the kernel takes in one call never has
-    // to reach the event loop. Answers the bytes written, or -1 when a batch is
-    // already in flight and this send has to queue behind it rather than jump
+    // to reach the event loop. Answers the bytes written, or -1 when an operation
+    // is already in flight and this send has to queue behind it rather than jump
     // ahead of the bytes already promised to the socket.
     std::ptrdiff_t send_now(std::span<const char> buffer) noexcept;
 
-    void handle_event() override;
+    // Wakes what the operation finished and decides what the backend owes next.
+    void handle_completion();
 
-    // Hands a send to the channel: it joins the sendmsg in flight when there is
-    // one, and starts one otherwise. The order is what a stream needs, so the
-    // sends go in the order they were queued.
-    void submit(std::span<const char> buffer, Foundation::Core::SendResult &result, Async::Coroutine waiter);
+    // Work the backend could take right now: there is something queued and no
+    // operation of ours is with the kernel.
+    bool has_prepared() const noexcept
+    {
+        return submitted_ == 0 && !pending_.empty();
+    }
+
+    // Hands the prepared prefix over as one operation: builds the iovecs, records
+    // how many sends it covers, and answers that count. Zero means there was
+    // nothing to hand over.
+    std::size_t count_prepared() noexcept;
+
+    // The operation in flight reported its outcome.
+    void complete_tasks(std::ptrdiff_t result) noexcept;
+
+    // Is an operation of this channel's with the kernel? A stream is written in
+    // order, so there is at most one outstanding.
+    bool has_submitted() const noexcept
+    {
+        return submitted_ != 0;
+    }
 
 #if defined(__linux__)
     const ::msghdr &message_batch() const noexcept
     {
-        return message_;
+        return message_header_;
     }
 
     ::msghdr &message_batch() noexcept
     {
-        return message_;
+        return message_header_;
     }
 #endif
-
-    // What the kernel took: a byte count, or a negative errno.
-    void complete(std::ptrdiff_t result) noexcept;
-
-    // Does the armed sends here and now, for a multiplexer that has to drive the
-    // socket itself rather than wait for a completion.
-    void flush() noexcept;
 
     Foundation::Core::Socket &socket() noexcept
     {
@@ -80,23 +123,33 @@ class SendChannel final : public Foundation::NBIO::Channel
     {
         return socket_;
     }
+
     std::error_code last_error() const noexcept
     {
         return error_code_;
     }
 
   private:
-    void refresh_vectors();
-    void arm_batch();
-    void fail(PendingSend &pending) noexcept;
+    friend class SendAwaiter;
+
+    void prepare(std::span<const char> buffer, Foundation::Core::SendResult &result, Foundation::Async::Coroutine waiter);
+
+    void refresh_arming() noexcept;
+
+    // Retires the finished sends at the front of the queue, in the order the
+    // stream took them, and hands their waiters back to the scheduler.
+    void retire_answered() noexcept;
+
+    void drop(PendingSend &pending) noexcept;
 
     Foundation::Core::Socket &socket_;
     std::deque<PendingSend> pending_;
-#if defined(__linux__)
+    // How many of `pending_`, from the front, the kernel has been given.
+    std::size_t submitted_{0};
+#if defined(__unix__)
     std::vector<::iovec> vectors_;
-    ::msghdr message_{};
+    ::msghdr message_header_{};
 #endif
-    std::size_t armed_{0};
     std::error_code error_code_;
 };
 } // namespace Foundation::NBIO
