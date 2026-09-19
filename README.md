@@ -41,7 +41,7 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
 
 - **操作系统**：Linux（x86-64）。服务器、复制与 io_uring 后端都在 `#if defined(__linux__)`
   保护之下，其它平台上只有 Foundation 的一部分能编译。
-- **CMake ≥ 3.20**（顶层 `CMakeLists.txt` 声明；开发机实测 4.2.3）。
+- **CMake ≥ 3.10**（顶层 `CMakeLists.txt` 声明；开发机实测 4.2.3）。
 - **支持 C++20 的编译器**：代码用到协程、ranges、指定初始化与 concepts（实测 Clang 21.1.8；
   GCC 11+ / Clang 14+ 具备所需特性）。
 - **Ninja**（可选，任意 CMake 生成器均可；实测 1.13.2）。

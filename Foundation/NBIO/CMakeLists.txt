@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.10)
 
 # The vcpkg liburing port ships no CMake config package, only pkg-config
 # (.pc) files, so pkg-config is the way to consume it. vcpkg's toolchain adds
