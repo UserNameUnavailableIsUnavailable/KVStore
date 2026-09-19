@@ -2,8 +2,38 @@
 
 [English](README_en.md) | **中文**
 
-一个用 C++20 写的 RESP 兼容键值服务器：客户端走 TCP + RESP，节点之间走 RDMA，
-数据落在快照（RDB）与追加日志（AOF）里，写入会实时同步到副本。
+## C++20 协程异步框架（NBIO）
+
+I/O 多路复用同时支持 epoll（reactor）与 io_uring（proactor）两种后端，启动时二选一。多路复用器通过单工通道（SendChannel / ReceiveChannel 等）完成事件派发：I/O 请求在通道内排队，复用器收到内核事件后回调将挂起的协程置为就绪。
+
+reactor 路径（epoll）将通道内排队的 I/O 汇聚为一次 readv / writev / pwritev 提交；proactor 路径（io_uring）则在准备阶段直接批量下发全部排队请求，并按完成事件推进读写偏移。
+
+C++20 协程任务调度器：支持对称转移（final_suspend 返回 continuation，以尾调用方式衔接）与任务取消；并提供 WhenAll / WhenAny 结构化并发组合子，作用域退出时自动取消剩余子任务。
+
+定时任务通道：timerfd + 优先队列，配合任务取消机制实现超时取消。
+
+信号通道：signalfd 信号通道、eventfd 通知通道，结合定时任务实现优雅退出。
+
+条件变量：基于 eventfd 的 ConditionVariable 提供跨线程协程条件等待/唤醒原语。
+
+网络、文件 I/O 通道：异步的 Socket 收发、文件读写。
+
+RDMA 通道：基于 iWARP 协议的 RDMA 收发通道。每个监听/连接端点持有独立的发送、接收内存池（由该端点接纳的连接共享这一对池），内存池基于 bitmap 管理块的分配与回收。
+
+协程帧池化策略：采用类似于指数平均的池化策略，回收时缓存协程帧供后续使用，根据协程帧使用情况动态回收。
+
+## 上层应用：KV 存储引擎
+
+yieldable RESP 协议解析器：数据不完整时挂起（co_yield），补齐后继续解析，有效处理 TCP 粘包/拆包。
+索引和淘汰策略：跳表、红黑树、哈希表可选作存储索引；支持 LRU / LFU 淘汰策略。
+
+Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
+
+全量备份（即 Redis RDB）：在辅助线程中 fork，子进程完成序列化写盘，主线程协程通过条件等待/唤醒原语获知结果；启动时用 mmap 加载 RDB 并解析。加载备份文件时采用 mmap 策略。
+
+增量备份（即 Redis AOF）：每条写命令编码为一条完整日志条目，命令协程等待该条 pwrite 完成后再应答，保证条目完整、有序、可回放；通道排队策略下吞吐良好。
+
+主从复制：master 与 replica 通过 RDMA 通道通信，先经 RDMA 全量同步 RDB 文件，随后基于 backlog 策略进行实时增量同步。
 
 ## 构建依赖
 
