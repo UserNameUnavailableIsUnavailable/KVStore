@@ -7,6 +7,7 @@
     "crcpp",
     "nlohmann-json",
     "jemalloc",
+    "tl-expected",
     {
       "name": "rdma-core",
       "platform": "linux"

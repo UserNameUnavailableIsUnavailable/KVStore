@@ -4,7 +4,7 @@ add_executable(
 	ServerTesting
 	BackupTesting.cpp
 	AppendOnlyFileTesting.cpp
-	RDMA_TransferTesting.cpp
+	RdmaTransferTesting.cpp
 	ReplicationServiceTesting.cpp
 	WriteHistoryTesting.cpp
 	ConfFileTesting.cpp

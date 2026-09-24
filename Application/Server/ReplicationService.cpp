@@ -2,7 +2,7 @@
 
 #if defined(__linux__)
 
-#include "RDMA_Transfer.hpp"
+#include "RdmaTransfer.hpp"
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
@@ -30,15 +30,26 @@ namespace NBIO = Foundation::NBIO;
 
 // Waits for the link to end. Nothing follows a snapshot yet, so this is where
 // the master's side of a live link spends its time.
-NBIO::Task<void> ParkUntilPeerCloses(NBIO::RDMA_Session &session)
+NBIO::Task<void> ParkUntilPeerCloses(NBIO::RdmaSession &session)
 {
-    while (auto message = co_await session.receive())
+    while (true)
     {
-        session.release(*message);
+        auto received = co_await session.receive();
+        if (!received || !*received)
+        {
+            // The link is gone, or there was nothing left to take. Either way
+            // there is nothing more to wait for.
+            break;
+        }
+        if (const auto released = session.release(**received); !released) [[unlikely]]
+        {
+            spdlog::warn("replication: handing a message back failed: {}", released.error());
+            break;
+        }
     }
 }
 
-std::string Endpoint(const Core::Address &address)
+std::string Endpoint(const Core::SocketAddress &address)
 {
     return address.ip() + ":" + std::to_string(address.port());
 }
@@ -54,9 +65,17 @@ ReplicationService::ReplicationService(Options options, Host host) :
     {
         throw std::invalid_argument("replication: the packet size cannot hold the count the transfer announces");
     }
-    if (options_.chunk_count < 2 * Core::RDMA_Stream::kSendChunks)
+    if (options_.chunk_count < 2 * Core::RdmaConnector::kSendChunks)
     {
         throw std::invalid_argument("replication: the pools are too small to serve one connection");
+    }
+    // Replication runs on RDMA, and only on RDMA: there is no TCP path yet, so a
+    // service that serves or follows without a device named would come up unable
+    // to do either. An instance that does neither needs nothing.
+    if ((options_.listen_port != 0 || options_.master.has_value()) && options_.rdma_device.empty())
+    {
+        throw std::invalid_argument("replication: replication needs an RDMA device; pass --rdma-device or "
+                                    "'config rdma_device <name>'");
     }
     // A wildcard address is accepted by rdma_bind_addr and leaves the id with no
     // device, so a listener asked to serve replicas from one has nothing to serve
@@ -75,8 +94,17 @@ ReplicationService::ReplicationService(Options options, Host host) :
     if (options_.listen_address.find(':') != std::string::npos)
     {
         throw std::invalid_argument("replication: '" + options_.listen_address +
-                                    "' is not an address to serve replicas from; --replication-address takes the "
+                                    "' is not an address to serve replicas from; --replication-ip takes the "
                                     "address alone and --replication-port the port");
+    }
+    // The device is opened last, once every option is known to be usable: a name
+    // that is wrong, or a device that cannot be opened, is a server that refuses
+    // to start rather than a replication link that fails later, and an option that
+    // is wrong is worth reporting on a machine where no RDMA device exists at
+    // all. Every connection the service makes borrows what is opened here.
+    if (!options_.rdma_device.empty())
+    {
+        resources_ = std::make_shared<Core::RdmaResourceManager>(options_.rdma_device);
     }
 }
 
@@ -128,7 +156,7 @@ void ReplicationService::prune_sessions()
 {
     // A session is only referred to by this list once the coroutine serving it
     // has finished, and its chunks only go back to the pools once it is gone.
-    std::erase_if(sessions_, [](const std::shared_ptr<NBIO::RDMA_Session> &session) {
+    std::erase_if(sessions_, [](const std::shared_ptr<NBIO::RdmaSession> &session) {
         return session.use_count() == 1;
     });
 }
@@ -142,20 +170,31 @@ Foundation::NBIO::Task<void> ReplicationService::serve()
 
     try
     {
-        // The acceptor and its pools belong to the service, not to this frame:
-        // every stream borrows them, and the links outlive the accept loop.
-        acceptor_.emplace(Core::BitmapMemory(options_.chunk_size, options_.chunk_count),
-                          Core::BitmapMemory(options_.chunk_size, options_.chunk_count));
-        acceptor_->listen(Core::Address::from_ipv4(options_.listen_address, options_.listen_port));
+        // The device, its regions and its pools belong to the service, not to this
+        // frame: every connection is built from them and every link outlives the
+        // accept loop. They were opened when the service was constructed.
+        acceptor_.emplace(*resources_);
+        const auto bound =
+            acceptor_->listen(Core::SocketAddress::from_v4(options_.listen_address, options_.listen_port));
+        if (!bound) [[unlikely]]
+        {
+            spdlog::error("replication: the listener stopped: {}", bound.error());
+            co_return;
+        }
         spdlog::info("replication: serving snapshots on rdma://{}:{}", options_.listen_address, options_.listen_port);
 
-        NBIO::RDMA_AcceptChannel channel(*acceptor_, NBIO::Engine::multiplexer(), NBIO::Engine::scheduler());
+        NBIO::RdmaAcceptChannel channel(*acceptor_, NBIO::Engine::multiplexer(), NBIO::Engine::scheduler());
         while (true)
         {
             auto session = co_await channel.accept();
+            if (!session) [[unlikely]]
+            {
+                spdlog::error("replication: the listener stopped: {}", session.error());
+                co_return;
+            }
             prune_sessions();
-            sessions_.push_back(session);
-            NBIO::spawn(serve_replica(std::move(session)));
+            sessions_.push_back(*session);
+            NBIO::spawn(serve_replica(std::move(*session)));
         }
     }
     catch (const std::exception &error)
@@ -164,7 +203,7 @@ Foundation::NBIO::Task<void> ReplicationService::serve()
     }
 }
 
-Foundation::NBIO::Task<void> ReplicationService::serve_replica(std::shared_ptr<NBIO::RDMA_Session> session)
+Foundation::NBIO::Task<void> ReplicationService::serve_replica(std::shared_ptr<NBIO::RdmaSession> session)
 {
     try
     {
@@ -270,7 +309,7 @@ Foundation::NBIO::Task<void> ReplicationService::serve_replica(std::shared_ptr<N
     spdlog::info("replication: replica link closed");
 }
 
-Foundation::NBIO::Task<std::optional<std::uint64_t>> ReplicationService::full_sync(NBIO::RDMA_Session &session)
+Foundation::NBIO::Task<std::optional<std::uint64_t>> ReplicationService::full_sync(NBIO::RdmaSession &session)
 {
     // The master's RDB arrives as a file: it lands beside the RDB path and is
     // moved onto it only once every packet has arrived, so a transfer that dies
@@ -304,7 +343,7 @@ Foundation::NBIO::Task<std::optional<std::uint64_t>> ReplicationService::full_sy
     co_return received->offset;
 }
 
-Foundation::NBIO::Task<void> ReplicationService::follow_master(NBIO::RDMA_Session &session, std::uint64_t offset)
+Foundation::NBIO::Task<void> ReplicationService::follow_master(NBIO::RdmaSession &session, std::uint64_t offset)
 {
     // The incremental half, one batch at a time: ask from what has been applied,
     // apply what comes back, ask again. The request carries the position, so the
@@ -373,19 +412,30 @@ Foundation::NBIO::Task<void> ReplicationService::follow()
         try
         {
             // A fresh connector per attempt: a successful connect hands its
-            // communication id to the stream, so it cannot be reused.
-            link_ = std::make_unique<ReplicaLink>(Core::BitmapMemory(options_.chunk_size, options_.chunk_count),
-                                                  Core::BitmapMemory(options_.chunk_size, options_.chunk_count));
-            NBIO::RDMA_ConnectChannel channel(link_->connector, NBIO::Engine::multiplexer(), NBIO::Engine::scheduler());
-            link_->session = co_await channel.connect(*options_.master);
-
-            if (const auto offset = co_await full_sync(*link_->session))
+            // communication id to the session, so it cannot be reused. The device
+            // it borrows is the service's, opened once at startup.
+            link_ = std::make_unique<ReplicaLink>(resources_);
+            NBIO::RdmaConnectChannel channel(link_->connector, NBIO::Engine::multiplexer(), NBIO::Engine::scheduler());
+            auto session = co_await channel.connect(*options_.master);
+            if (!session) [[unlikely]]
             {
-                linked = true;
-                host_.link_changed(true);
-                spdlog::info("replication: following master {}", master);
-                co_await follow_master(*link_->session, *offset);
-                spdlog::warn("replication: the link to {} ended", master);
+                // Connecting used to throw and land in the handler below; the
+                // failure is a value now, so it is reported in the same words
+                // and the retry that follows is the same one.
+                spdlog::warn("replication: the link to {} failed: {}", master, session.error());
+            }
+            else
+            {
+                link_->session = std::move(*session);
+
+                if (const auto offset = co_await full_sync(*link_->session))
+                {
+                    linked = true;
+                    host_.link_changed(true);
+                    spdlog::info("replication: following master {}", master);
+                    co_await follow_master(*link_->session, *offset);
+                    spdlog::warn("replication: the link to {} ended", master);
+                }
             }
         }
         catch (const std::exception &error)

@@ -1,6 +1,6 @@
  #include "Commands.hpp"
 
-#include <Foundation/Core/Address.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
 
 #include <algorithm>
 #include <array>
@@ -124,7 +124,8 @@ std::string Lowercase(std::string_view text)
 
 bool KnownConfigParameter(std::string_view name)
 {
-	return name == "appendonly" || name == "appendfsync" || name == "save" || name == "port" || name == "replication_address";
+	return name == "appendonly" || name == "appendfsync" || name == "save" || name == "port" || name == "rdma_device" ||
+		   name == "replication_address";
 }
 
 // A port as a parameter value. The lowest one is the caller's: `port` is a port
@@ -147,7 +148,7 @@ bool IsPort(std::string_view text, unsigned long lowest)
 // An address to serve replicas from: one the listener can bind, and one that
 // names a device. A wildcard is accepted by rdma_bind_addr and names no device
 // at all, so it is refused while the message can still say why.
-bool IsDeviceAddress(std::string_view text)
+bool IsDeviceSocketAddress(std::string_view text)
 {
 	if (text == "0.0.0.0" || text == "::")
 	{
@@ -155,7 +156,7 @@ bool IsDeviceAddress(std::string_view text)
 	}
 	try
 	{
-		(void)Foundation::Core::Address::from_ipv4(text, 1);
+		(void)Foundation::Core::SocketAddress::from_v4(text, 1);
 	}
 	catch (const std::exception &)
 	{
@@ -209,9 +210,18 @@ CommandValidation ValidateConfigWrite(const Arguments &arguments, std::size_t pa
 			return Error("ERR CONFIG SET failed - 'port' wants a port between 1 and 65535");
 		}
 	}
+	else if (parameters.parameter == "rdma_device")
+	{
+		// A device name, not an address: `siw0`, `mlx5_0`. What it names is what the
+		// server opens for replication, and it too is decided before it exists.
+		if (parameters.values.size() != 1 || parameters.values.front().empty())
+		{
+			return Error("ERR CONFIG SET failed - 'rdma_device' wants the name of the RDMA device replication runs on");
+		}
+	}
 	else if (parameters.parameter == "replication_address")
 	{
-		if (parameters.values.size() != 2 || !IsDeviceAddress(parameters.values.front()) ||
+		if (parameters.values.size() != 2 || !IsDeviceSocketAddress(parameters.values.front()) ||
 			!IsPort(parameters.values.back(), 0))
 		{
 			return Error("ERR CONFIG SET failed - 'replication_address' wants <ip> <port>, the address of the RDMA device to "
@@ -326,18 +336,25 @@ CommandValidation ValidateClient(const Arguments &arguments)
 	return {.command = Command{.type = CommandType::kClient, .parameters = std::move(parameters)}, .error = {}};
 }
 
-// `SAVE` forks a child to write the snapshot, which is what Redis calls
-// `BGSAVE`, so that is the name this server answers to.
+// `BGSAVE` forks a child to write the snapshot, so it is named the way Redis
+// names a fork-then-write, and it answers the way Redis answers one.
 CommandValidation ValidateBgSave(const Arguments &arguments)
 {
 	return NoArguments<BgSaveParams>(arguments, CommandType::kBgSave, "BGSAVE");
 }
 
-constexpr std::array<ValidatorEntry, 13> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
+// `SAVE` takes nothing either: it is the same snapshot, written here instead of
+// in a child, and it says so once the file is in place.
+CommandValidation ValidateSave(const Arguments &arguments)
+{
+	return NoArguments<SaveParams>(arguments, CommandType::kSave, "SAVE");
+}
+
+constexpr std::array<ValidatorEntry, 14> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
 										   {"DEL", ValidateDel}, {"EXISTS", ValidateExists}, {"MULTI", ValidateMulti},
 										   {"EXEC", ValidateExec}, {"COMMAND", ValidateCommandInfo}, {"CLIENT", ValidateClient},
 										   {"DBSIZE", ValidateDbSize}, {"INFO", ValidateInfo},
-										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}}};
+										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}, {"SAVE", ValidateSave}}};
 
 // The case of one ASCII letter, without the C library. `std::toupper` is a call
 // through the locale for every character, and this comparison runs for every
@@ -446,7 +463,7 @@ bool IsWriteCommand(CommandType type) noexcept
 
 bool IsStartupConfigParameter(std::string_view name) noexcept
 {
-	return name == "port" || name == "replication_address";
+	return name == "port" || name == "rdma_device" || name == "replication_address";
 }
 
 std::string_view CommandName(CommandType type)
@@ -483,6 +500,8 @@ std::string_view CommandName(CommandType type)
 		return "CLIENT";
 	case CommandType::kBgSave:
 		return "BGSAVE";
+	case CommandType::kSave:
+		return "SAVE";
 	}
 	return "";
 }
@@ -561,6 +580,7 @@ RESP::Object CommandToRESP(const Command &command)
 	case CommandType::kMulti:
 	case CommandType::kExec:
 	case CommandType::kBgSave:
+	case CommandType::kSave:
 	case CommandType::kCommand:
 	case CommandType::kTTL:
 	case CommandType::kDbSize:

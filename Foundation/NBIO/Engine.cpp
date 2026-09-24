@@ -67,24 +67,24 @@ Multiplexer &Engine::multiplexer()
     return *instance().multiplexer_;
 }
 
-NotifyChannel &Engine::notify_channel()
+EventNotifyChannel &Engine::notify_channel()
 {
     return instance().notify_channel_;
 }
 
-TimerChannel &Engine::timer_channel()
+SystemTimerChannel &Engine::timer_channel()
 {
     return instance().timer_channel_;
 }
 
-SignalChannel &Engine::signal_channel()
+SystemSignalChannel &Engine::signal_channel()
 {
     auto &self = instance();
     if (!self.signal_channel_)
     {
-        self.signal_ = std::make_unique<Foundation::Core::Signal>();
+        self.signal_ = std::make_unique<Foundation::Core::SystemSignal>();
         self.signal_channel_ =
-            std::make_unique<SignalChannel>(*self.signal_, *self.multiplexer_, self.scheduler_);
+            std::make_unique<SystemSignalChannel>(*self.signal_, *self.multiplexer_, self.scheduler_);
     }
     return *self.signal_channel_;
 }

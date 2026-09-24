@@ -3,13 +3,15 @@ cmake_minimum_required(VERSION 3.20)
 target_sources(
     Foundation
     INTERFACE
-    Address.cpp
+    SocketAddress.cpp
     File.cpp
     FileView.cpp
-    Socket.cpp
-    Timer.cpp
-    Signal.cpp
-    Notifier.cpp
+    TcpSocket.cpp
+    TcpAcceptor.cpp
+    TcpConnector.cpp
+    SystemTimer.cpp
+    SystemSignal.cpp
+    EventNotifier.cpp
     Buffer.cpp
     BitmapMemory.cpp
 )
@@ -19,22 +21,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # dlopen'd from /etc/libibverbs.d, which vcpkg's static archives cannot do.
     find_library(IBVERBS_LIBRARY NAMES ibverbs
         PATHS /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE} /usr/lib64 /usr/lib NO_DEFAULT_PATH)
-    find_library(RDMACM_LIBRARY NAMES rdmacm
+    find_library(RDMA_CM_LIBRARY NAMES rdmacm
         PATHS /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE} /usr/lib64 /usr/lib NO_DEFAULT_PATH)
     find_library(IBVERBS_LIBRARY NAMES ibverbs REQUIRED)
-    find_library(RDMACM_LIBRARY NAMES rdmacm REQUIRED)
+    find_library(RDMA_CM_LIBRARY NAMES rdmacm REQUIRED)
 
     target_sources(
         Foundation
         INTERFACE
-        RDMA_Stream.cpp
-        RDMA_Acceptor.cpp
-        RDMA_Connector.cpp
+        RdmaResourceManager.cpp
+        RdmaAcceptor.cpp
+        RdmaConnector.cpp
     )
     target_link_libraries(
         Foundation
         INTERFACE
-        ${RDMACM_LIBRARY}
+        ${RDMA_CM_LIBRARY}
         ${IBVERBS_LIBRARY}
     )
 endif()

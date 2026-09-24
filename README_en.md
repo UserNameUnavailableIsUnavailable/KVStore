@@ -43,7 +43,7 @@ everything below by itself.
 
 ### RDMA hardware (only replication needs it)
 
-Replication and the `RDMA_*` tests need an RDMA device, real or in software (`siw`'s
+Replication and the `RDMA*` tests need an RDMA device, real or in software (`siw`'s
 `siw0`, address `192.168.0.201`, on the development machine). Without one the server still
 runs stand-alone, and the **four RDMA wire tests skip by design**: they take the device's
 address from `KVSTORE_RDMA_ADDRESS`, because that address cannot be derived portably.
@@ -66,9 +66,10 @@ Targets worth knowing:
 | `Server` | The server: `build/Application/Server/Server` |
 | `Client` | The command line client: `build/Application/Client/Client` |
 | `FoundationTesting`, `ServerTesting` | The test executables |
-| `Echo`, `Sleep`, `Grace`, `SignalSvc`, `ScopedSignalService`, `Condition` | NBIO examples |
-| `RDMA_Echo`, `RDMA_AsyncEcho` | RDMA examples |
-| `Tutorial_RDMA_Server`, `Tutorial_RDMA_Client` | The raw verbs example in `Tutorial/RDMA` |
+| `Echo`, `Sleep`, `Grace`, `SystemSignalSvc`, `ScopedSystemSignalService`, `Condition` | NBIO examples |
+| `RdmaEcho`, `RdmaAsyncEcho` | RDMA examples |
+| `Tutorial_RdmaServer`, `Tutorial_RdmaClient` | The raw verbs example in `Tutorial/RDMA` |
+| `RdmaFileBenchmark` | RDMA link throughput at the NBIO layer, needs `-DKVSTORE_BUILD_BENCHMARKS=ON` |
 
 ## Testing
 
@@ -90,7 +91,7 @@ packet and every credit.
 
 # a master and a replica on one machine
 ./build/Application/Server/Server \
-    --port 8080 --replication-port 8081 --replication-address 192.168.0.201
+    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201
 ./build/Application/Server/Server \
     --port 8082 --replicaof 192.168.0.201:8081
 
@@ -120,9 +121,36 @@ config port 8082
 replicaof 192.168.0.201 8081
 ```
 
+## Benchmarking
+
+The C++ benchmarks stay out of the default build; turn them on when configuring:
+
+```bash
+export KVSTORE_RDMA_ADDRESS=192.168.0.201
+export KVSTORE_RDMA_DEVICE=siw2
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKVSTORE_BUILD_BENCHMARKS=ON
+cmake --build build --target RdmaFileBenchmark
+./build/Foundation/NBIO/benchmark/Release/RdmaFileBenchmark
+```
+
+`RdmaFileBenchmark` measures the RDMA link itself, on the NBIO channels the replication link
+is built from, with both ends in one process on two engines in two threads: one connector,
+one accepted connection, 1 GiB of random bytes by default, and a throughput reported by each
+end. `--size` is the payload in bytes, `--file` reads it from disk instead, `--multiplexer`
+chooses epoll or io_uring, and `--port` names the port (0 asks for a free one). The message
+size is not an option: it is the resource manager's chunk size, which is what a send is handed
+and what a receive lands in.
+
+The sender keeps its uncredited messages inside the receiver's posted receives -- the same
+window `RdmaTransfer` runs on -- because a message that arrives with no receive posted is not
+queued and not refused: the queue pair is torn down with `RNR_RETRY_EXC_ERR`. A run that
+stalls exits with a report of how far each end got rather than hanging. The Python scripts
+under `benchmark/` benchmark the whole server, and their numbers live in
+`benchmark/result.md`.
+
 Things that catch people out:
 
-- The address in `--replication-address` / `config replication_address` has to be the **RDMA
+- The address in `--replication-ip` / `config replication_address` has to be the **RDMA
   device's own address**. A wildcard such as `0.0.0.0` binds no device, and the server
   refuses to start rather than come up unable to serve replicas.
 - Two instances on one machine cannot share a client port (both default to 8080).

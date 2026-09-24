@@ -1,9 +1,9 @@
-#include <Foundation/Core/Address.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/NBIO/NBIO.hpp>
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
@@ -208,10 +208,14 @@ std::vector<std::string> Tokenize(const std::string &line)
 
 } // namespace
 
-Foundation::NBIO::Task<void> run_client(Foundation::Core::Address address, std::string host, std::uint16_t port)
+Foundation::NBIO::Task<void> run_client(Foundation::Core::SocketAddress address, std::string host, std::uint16_t port)
 {
-    Foundation::Core::Socket socket(address.family(), Foundation::Core::Socket::Type::kStream);
-    socket.connect(address);
+    Foundation::Core::TcpSocket socket(address.family(), Foundation::Core::TcpSocket::Type::kStream);
+    if (auto result = socket.connect(address); !result)
+    {
+        std::cerr << "connect failed: " << result.error().message() << '\n';
+        co_return;
+    }
     auto session = Foundation::NBIO::establish(std::move(socket));
 
     std::cout << "connected to " << host << ':' << port << '\n';
@@ -270,8 +274,8 @@ int main(int argc, char *argv[])
 {
     const std::string host = argc > 1 ? argv[1] : "127.0.0.1";
     const std::uint16_t port = argc > 2 ? static_cast<std::uint16_t>(std::stoul(argv[2])) : 6379;
-    const Foundation::Core::Address address =
-        host.find(':') == std::string::npos ? Foundation::Core::Address::from_ipv4(host, port) : Foundation::Core::Address::from_ipv6(host, port);
+    const Foundation::Core::SocketAddress address =
+        host.find(':') == std::string::npos ? Foundation::Core::SocketAddress::from_v4(host, port) : Foundation::Core::SocketAddress::from_v6(host, port);
     Foundation::NBIO::run(run_client(address, host, port));
     return 0;
 }

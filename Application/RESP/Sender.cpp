@@ -3,14 +3,14 @@
 
 #include <Foundation/Async/Task.hpp>
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 #include <stdexcept>
 
 #include "RESP.hpp"
 
 namespace RESP
 {
-Sender::Sender(Foundation::NBIO::Session &session, Foundation::Core::Buffer &buffer)
+Sender::Sender(Foundation::NBIO::TcpSession &session, Foundation::Core::Buffer &buffer)
     : session_(session), buffer_(buffer)
 {
     if (!buffer.is_empty())
@@ -42,7 +42,7 @@ Foundation::NBIO::Task<bool> Sender::flush()
         auto result = co_await session_.send(buffer_.readable_span());
         if (!result)
         {
-            internal_error_ = session_.send_channel().last_error().message();
+            internal_error_ = result.error().message();
             co_return false;
         }
         if (*result == 0)

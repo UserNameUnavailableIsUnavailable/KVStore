@@ -5,7 +5,6 @@
 #include <memory>
 
 #include "File.hpp"
-#include "Native.hpp"
 
 namespace Foundation::Core
 {
@@ -13,7 +12,11 @@ namespace Foundation::Core
 class FileView
 {
   public:
-    using Handle = NativeHandle;
+#if defined(__unix__)
+    using Handle = int;
+#elif defined(_WIN32)
+    using Handle = void*;
+#endif
     explicit FileView(const std::filesystem::path &path);
     explicit FileView(File &file);
     FileView(const FileView &) = delete;

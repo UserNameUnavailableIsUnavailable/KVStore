@@ -35,18 +35,30 @@ std::shared_ptr<FileStream> open_file(const std::filesystem::path &p)
                             Engine::multiplexer(), Engine::scheduler());
 }
 
-std::unique_ptr<AcceptChannel> bind(const Foundation::Core::Address &address, int backlog)
+std::unique_ptr<TcpAcceptChannel> bind(const Foundation::Core::SocketAddress &address, int backlog)
 {
-    Foundation::Core::Socket socket(address.family(), Foundation::Core::Socket::Type::kStream);
-    socket.set_non_blocking();
-    socket.set_reuse_address(); // enable address reuse for quick restart
-    socket.bind(address);
-    socket.listen(backlog);
-    return std::make_unique<AcceptChannel>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
+    Foundation::Core::TcpSocket socket(address.family(), Foundation::Core::TcpSocket::Type::kStream);
+    if (auto result = socket.non_blocking(); !result)
+    {
+        throw std::system_error(result.error(), "TcpSocket: non_blocking failed");
+    }
+    if (auto result = socket.reuse_address(); !result) // enable address reuse for quick restart
+    {
+        throw std::system_error(result.error(), "TcpSocket: set_reuse_address failed");
+    }
+    if (auto result = socket.bind(address); !result)
+    {
+        throw std::system_error(result.error(), "TcpSocket: bind failed");
+    }
+    if (auto result = socket.listen(backlog); !result)
+    {
+        throw std::system_error(result.error(), "TcpSocket: listen failed");
+    }
+    return std::make_unique<TcpAcceptChannel>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
 }
 
-std::shared_ptr<Session> establish(Foundation::Core::Socket socket)
+std::shared_ptr<TcpSession> establish(Foundation::Core::TcpSocket socket)
 {
-    return std::make_shared<Session>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
+    return std::make_shared<TcpSession>(std::move(socket), Engine::multiplexer(), Engine::scheduler());
 }
 } // namespace Foundation::NBIO

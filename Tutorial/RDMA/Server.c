@@ -29,7 +29,7 @@ int main() {
     // 2. Wait for connection request
     rdma_get_cm_event(ec, &event);
     if (event->event != RDMA_CM_EVENT_CONNECT_REQUEST) {
-        fprintf(stderr, "Unexpected event\n");
+        fprintf(stderr, "unexpected event\n");
         return 1;
     }
     conn = event->id;

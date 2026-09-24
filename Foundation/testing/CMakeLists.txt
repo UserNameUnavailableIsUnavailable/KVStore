@@ -5,7 +5,7 @@ add_executable(
 	BufferTesting.cpp
 	ConditionTesting.cpp
 	FramePoolTesting.cpp
-	WriteChannelTesting.cpp
+	FileWriteChannelTesting.cpp
 	SocketChannelTesting.cpp
 )
 

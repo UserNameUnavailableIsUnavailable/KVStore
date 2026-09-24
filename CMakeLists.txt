@@ -30,6 +30,10 @@ if(KVSTORE_USE_JEMALLOC)
     find_library(JEMALLOC_LIBRARY NAMES jemalloc REQUIRED)
 endif()
 
+# The C++ benchmarks measure throughput against real hardware, so they are built
+# only when asked for: nothing in the default build or in ctest needs them.
+option(KVSTORE_BUILD_BENCHMARKS "Build the throughput benchmarks" OFF)
+
 include_directories(
 	SYSTEM
 	${CMAKE_SOURCE_DIR}

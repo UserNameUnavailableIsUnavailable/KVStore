@@ -20,16 +20,11 @@ namespace Foundation::Core
 // and handed to someone else looks exactly like the new owner's. Releasing a
 // chunk is therefore a promise that nothing still refers to it, so drain
 // completions before returning one.
-//
-// The block is allocated aligned, so it can be handed to a device registration
-// without pinning pages it does not own.
-//
-// Not thread safe: one pool belongs to one event loop.
 class BitmapMemory
 {
   public:
     static constexpr std::size_t kAlignment = 4096;
-    // Reserved, so a default-constructed handle never names a chunk.
+
     static constexpr std::uint32_t kInvalidIndex = std::numeric_limits<std::uint32_t>::max();
 
     struct Chunk

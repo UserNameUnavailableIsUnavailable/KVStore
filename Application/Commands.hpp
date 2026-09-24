@@ -29,6 +29,7 @@ enum class CommandType
     kClient,
     kConfig,
     kBgSave,
+    kSave,
 };
 
 // A command that mutates the store. The AOF records these, the replication log
@@ -131,8 +132,14 @@ struct BgSaveParams
 {
 };
 
+// `SAVE` is the same snapshot written where the server is, which is what makes
+// it the one that stands still while it runs.
+struct SaveParams
+{
+};
+
 using Parameters = std::variant<PingParams, GetParams, SetParams, DelParams, ExistsParams, DbSizeParams, ExpireParams, TTLParams,
-                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams, InfoParams>;
+                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams, SaveParams, InfoParams>;
 
 struct Command
 {

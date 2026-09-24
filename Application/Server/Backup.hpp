@@ -78,6 +78,19 @@ class Backup
             co_return co_await save(capture(store));
         }
 
+        // Writes a snapshot of `entries` to the RDB path in this process, on the
+        // calling thread: the store is serialised where the server runs, so
+        // nothing else happens there until the image is written. That is the
+        // difference between this and the save that forks, and the reason to ask
+        // for one rather than the other.
+        bool save_now(std::vector<detail::SnapshotEntry> entries) const;
+
+        template <template <typename, typename> typename Map>
+        bool save_now(Store<std::string, std::string, Map> &store) const
+        {
+            return save_now(capture(store));
+        }
+
         // The file a snapshot is written to. It is also the file a replica is
         // handed, so it is what a replication service streams over the wire.
         const std::filesystem::path &path() const noexcept

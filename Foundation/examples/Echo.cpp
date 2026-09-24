@@ -1,19 +1,19 @@
 #include <iostream>
 #include <Foundation/NBIO/Runtime.hpp>
 #include <memory>
-#include <Foundation/Core/Address.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Async/Task.hpp>
 #include <Foundation/NBIO/Engine.hpp>
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 #include <Foundation/NBIO/NBIO.hpp>
 
 using namespace Foundation;
 
 NBIO::Task<void> Service()
 {
-    auto address = Core::Address::from_ipv4("127.0.0.1", 8080);
+    auto address = Core::SocketAddress::from_v4("127.0.0.1", 8080);
     auto acceptor = NBIO::bind(address);
     while (true)
     {
@@ -30,7 +30,7 @@ NBIO::Task<void> Service()
         // task ever runs, so anything it needs must arrive as a by-value
         // parameter (parameters are moved into the frame at call time).
         NBIO::spawn(
-            [](std::shared_ptr<NBIO::Session> session) -> NBIO::Task<void> {
+            [](std::shared_ptr<NBIO::TcpSession> session) -> NBIO::Task<void> {
                 auto buffer = std::make_unique<::Foundation::Core::Buffer>(1024);
                 while (true)
                 {

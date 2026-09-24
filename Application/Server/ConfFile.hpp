@@ -2,7 +2,7 @@
 
 #include <Application/RESP/RESP.hpp>
 
-#include <Foundation/Core/Address.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -52,6 +52,7 @@ RESP::Object CommandRequest(const CommandLine &line);
 // read while it is being put together, and taken out of the list of commands:
 //
 //   config port <port>
+//   config rdma_device <name>
 //   config replication_address <ip> <port>
 //   replicaof <ip> <port>       (or slaveof, the older name)
 //
@@ -62,7 +63,8 @@ struct StartupSettings
     std::optional<std::uint16_t> port;
     std::optional<std::uint16_t> replication_port;
     std::optional<std::string> replication_address;
-    std::optional<Foundation::Core::Address> master;
+    std::optional<std::string> rdma_device;
+    std::optional<Foundation::Core::SocketAddress> master;
 };
 
 // Reads those lines out of the file, and takes them out of `lines` so that what

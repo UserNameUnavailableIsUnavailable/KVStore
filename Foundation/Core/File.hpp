@@ -5,6 +5,8 @@
 #include <span>
 #include <system_error>
 
+#include "Expected.hpp"
+
 namespace Foundation::Core
 {
 enum class FileMode : std::uint32_t
@@ -15,35 +17,6 @@ enum class FileMode : std::uint32_t
     kCreate = 1u << 2,
     kTruncate = 1u << 3,
     kAppend = 1u << 4,
-};
-
-enum class ReadStatus
-{
-    kDone,
-    kPending,
-    kEndOfFile,
-    kError,
-};
-
-struct ReadResult
-{
-    ReadStatus status{ReadStatus::kPending};
-    std::size_t bytes_transferred{0};
-    std::error_code error_code{};
-};
-
-enum class WriteStatus
-{
-    kDone,
-    kPending,
-    kError,
-};
-
-struct WriteResult
-{
-    WriteStatus status{WriteStatus::kPending};
-    std::size_t bytes_transferred{0};
-    std::error_code error_code{};
 };
 
 constexpr FileMode operator|(FileMode lhs, FileMode rhs) noexcept
@@ -72,8 +45,8 @@ class File
     File &operator=(File &&) = default;
     ~File() noexcept;
 
-    ReadResult read(std::span<char> buffer);
-    WriteResult write(std::span<const char> buffer);
+    expected<std::size_t, std::error_code> read(std::span<char> buffer);
+    expected<std::size_t, std::error_code> write(std::span<const char> buffer);
 
     std::uintptr_t native_handle() const noexcept
     {

@@ -2,6 +2,12 @@
 
 namespace Foundation::NBIO
 {
+enum class EventModelType
+{
+    kReactor,
+    kProactor,
+};
+
 enum class MultiplexerType
 {
 #if defined(__linux__)
@@ -22,12 +28,12 @@ enum class ChannelType
     kSend,
     kRead,
     kWrite,
-    kTimer,
-    kSignal,
+    kSystemTimer,
+    kSystemSignal,
     kNotify,
-    kRDMA_Accept,
-    kRDMA_Connect,
-    kRDMA_Send,
-    kRDMA_Receive,
+    kRdmaAccept,
+    kRdmaConnect,
+    kRdmaSend,
+    kRdmaReceive,
 };
 } // namespace Foundation::NBIO

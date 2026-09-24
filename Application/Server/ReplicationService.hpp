@@ -5,14 +5,14 @@
 
 #include <Application/Commands.hpp>
 
-#include <Foundation/Core/Address.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
 #include <Foundation/Core/BitmapMemory.hpp>
-#include <Foundation/Core/RDMA_Acceptor.hpp>
-#include <Foundation/Core/RDMA_Connector.hpp>
+#include <Foundation/Core/RdmaAcceptor.hpp>
+#include <Foundation/Core/RdmaConnector.hpp>
 #include <Foundation/NBIO/ConditionVariable.hpp>
-#include <Foundation/NBIO/RDMA_AcceptChannel.hpp>
-#include <Foundation/NBIO/RDMA_ConnectChannel.hpp>
-#include <Foundation/NBIO/RDMA_Session.hpp>
+#include <Foundation/NBIO/RdmaAcceptChannel.hpp>
+#include <Foundation/NBIO/RdmaConnectChannel.hpp>
+#include <Foundation/NBIO/RdmaSession.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include <cstdint>
@@ -59,8 +59,12 @@ class ReplicationService
         // 0 leaves the master side of the service off.
         std::uint16_t listen_port{0};
         std::string listen_address{"0.0.0.0"};
+        // The RDMA device, by name, that the link runs on. One name, one device,
+        // one resource manager: replication does not yet fall back to TCP, so a
+        // service that serves or follows needs it.
+        std::string rdma_device{};
         // Set on a replica: the RDMA address of the master to synchronise from.
-        std::optional<Foundation::Core::Address> master{};
+        std::optional<Foundation::Core::SocketAddress> master{};
         // The packet size: the size of one message and of one chunk in the
         // pools. Both ends have to agree on it, because it is the size the file
         // is cut at.
@@ -137,15 +141,15 @@ class ReplicationService
         }
     };
 
-    Foundation::NBIO::Task<void> serve_replica(std::shared_ptr<Foundation::NBIO::RDMA_Session> session);
+    Foundation::NBIO::Task<void> serve_replica(std::shared_ptr<Foundation::NBIO::RdmaSession> session);
     // One full synchronization over a fresh link: the master's RDB file arrives,
     // is validated, and becomes the store. Answers the log offset the snapshot was
     // taken at -- where following on from it starts -- or nothing when that did
     // not happen.
-    Foundation::NBIO::Task<std::optional<std::uint64_t>> full_sync(Foundation::NBIO::RDMA_Session &session);
+    Foundation::NBIO::Task<std::optional<std::uint64_t>> full_sync(Foundation::NBIO::RdmaSession &session);
     // Keeps the link once the snapshot is done, applying the writes the master has
     // for this replica from `offset` onwards, one batch at a time.
-    Foundation::NBIO::Task<void> follow_master(Foundation::NBIO::RDMA_Session &session, std::uint64_t offset);
+    Foundation::NBIO::Task<void> follow_master(Foundation::NBIO::RdmaSession &session, std::uint64_t offset);
 
     // A cursor at the end of the log as it stands, which is where the snapshot
     // being served ends, and the recording that has to go with it. Nothing when
@@ -165,23 +169,27 @@ class ReplicationService
     // and nothing else.
     Foundation::NBIO::ConditionVariable writes_;
 
-    // Declared before the sessions: a stream borrows the protection domain and
-    // the chunks out of these pools, so every session has to be gone first.
-    std::optional<Foundation::Core::RDMA_Acceptor> acceptor_;
+    // Declared before the sessions: every connection borrows the device, its
+    // regions and its chunks, so they all have to be gone before it is. Shared,
+    // because a connection keeps it alive for as long as it runs.
+    std::shared_ptr<Foundation::Core::RdmaResourceManager> resources_;
+    std::optional<Foundation::Core::RdmaAcceptor> acceptor_;
 
     struct ReplicaLink
     {
-        explicit ReplicaLink(Foundation::Core::BitmapMemory receive_pool, Foundation::Core::BitmapMemory send_pool) :
-            connector(std::move(receive_pool), std::move(send_pool))
+        explicit ReplicaLink(std::shared_ptr<Foundation::Core::RdmaResourceManager> manager) :
+            resources(std::move(manager)), connector(*resources)
         {
         }
 
-        Foundation::Core::RDMA_Connector connector;
-        std::shared_ptr<Foundation::NBIO::RDMA_Session> session;
+        // Held first, and held at all: the connection borrows this device.
+        std::shared_ptr<Foundation::Core::RdmaResourceManager> resources;
+        Foundation::Core::RdmaConnector connector;
+        std::shared_ptr<Foundation::NBIO::RdmaSession> session;
     };
     std::unique_ptr<ReplicaLink> link_;
 
-    std::vector<std::shared_ptr<Foundation::NBIO::RDMA_Session>> sessions_;
+    std::vector<std::shared_ptr<Foundation::NBIO::RdmaSession>> sessions_;
 };
 } // namespace KV
 

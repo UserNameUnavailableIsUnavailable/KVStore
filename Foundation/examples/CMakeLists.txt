@@ -19,6 +19,6 @@ add_example(ScopedSignalService)
 add_example(Condition)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_example(RDMA_Echo)
-    add_example(RDMA_AsyncEcho)
+    # add_example(RdmaEcho)
+    # add_example(RdmaAsyncEcho)
 endif()

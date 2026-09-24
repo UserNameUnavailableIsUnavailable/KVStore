@@ -19,15 +19,15 @@
 
 #include <sys/types.h>
 
-#include "ReadChannel.hpp"
-#include "WriteChannel.hpp"
+#include "FileReadChannel.hpp"
+#include "FileWriteChannel.hpp"
 
 namespace Foundation::NBIO
 {
-class ReadChannel;
-class WriteChannel;
+class FileReadChannel;
+class FileWriteChannel;
 
-class FileStream : protected std::enable_shared_from_this<FileStream>
+class FileStream : public std::enable_shared_from_this<FileStream>
 {
   public:
     FileStream(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions, Foundation::NBIO::Multiplexer &multiplexer,
@@ -45,8 +45,8 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
     static std::shared_ptr<FileStream> Open(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions,
                                             Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
 
-    Foundation::NBIO::Task<std::optional<std::size_t>> read(std::span<char> buffer);
-    Foundation::NBIO::Task<std::optional<std::size_t>> write(std::span<const char> buffer);
+    Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> read(std::span<char> buffer);
+    Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> write(std::span<const char> buffer);
 
     std::uintptr_t native_handle() const noexcept
     {
@@ -70,13 +70,13 @@ class FileStream : protected std::enable_shared_from_this<FileStream>
         write_offset_ += static_cast<std::uint64_t>(bytes);
     }
 
-    ReadChannel &read_channel() noexcept;
-    WriteChannel &write_channel() noexcept;
+    FileReadChannel &read_channel() noexcept;
+    FileWriteChannel &write_channel() noexcept;
 
   private:
     Foundation::Core::File file_;
-    std::unique_ptr<ReadChannel> read_channel_;
-    std::unique_ptr<WriteChannel> write_channel_;
+    std::unique_ptr<FileReadChannel> read_channel_;
+    std::unique_ptr<FileWriteChannel> write_channel_;
     std::uint64_t read_offset_{0};
     std::uint64_t write_offset_{0};
 };

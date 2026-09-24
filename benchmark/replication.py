@@ -177,7 +177,7 @@ def main() -> int:
 		master_process, *master_logs = start_server(
 			server, master_directory,
 			["--port", str(args.master_port), "--replication-port", str(args.replication_port),
-			 "--replication-address", args.rdma_address, "--config", str(args.master_config.resolve())],
+			 "--replication-ip", args.rdma_address, "--config", str(args.master_config.resolve())],
 		)
 		master = redis.Redis(host="127.0.0.1", port=args.master_port, decode_responses=True, protocol=2)
 		wait_for_ping(master, master_process, args.sync_timeout)

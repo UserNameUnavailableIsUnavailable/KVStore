@@ -16,9 +16,9 @@
 #include "ReplicationService.hpp"
 
 #include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/Core/Address.hpp>
-#include <Foundation/NBIO/AcceptChannel.hpp>
-#include <Foundation/NBIO/Session.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
+#include <Foundation/NBIO/TcpAcceptChannel.hpp>
+#include <Foundation/NBIO/TcpSession.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <Application/RESP/RESP.hpp>
@@ -35,15 +35,15 @@ struct ServerOptions
 {
     static constexpr std::uint16_t kDefaultPort = 8080;
     static constexpr std::uint16_t kDefaultReplicationPort = 0;
-    static constexpr std::string_view kDefaultReplicationAddress = "0.0.0.0";
+    static constexpr std::string_view kDefaultReplicationSocketAddress = "0.0.0.0";
 
     // The TCP port clients connect to.
     std::optional<std::uint16_t> port{};
     // 0 leaves the replication listener off.
     std::optional<std::uint16_t> replication_port{};
     std::optional<std::string> replication_address{};
-    // Set to make this instance a read-only replica of that master.
-    std::optional<Foundation::Core::Address> master{};
+    std::optional<std::string> rdma_device{};    // Set to make this instance a read-only replica of that master.
+    std::optional<Foundation::Core::SocketAddress> master{};
     // The event multiplexer that drives this server instance.
     std::string multiplexer{"epoll"};
     // The startup command file, if one was given: each line is a command, applied
@@ -51,14 +51,14 @@ struct ServerOptions
     std::optional<std::filesystem::path> config_file{};
 };
 
-class Session
+class TcpSession
 {
   public:
-    explicit Session(std::shared_ptr<Foundation::NBIO::Session> transport) : transport_(std::move(transport))
+    explicit TcpSession(std::shared_ptr<Foundation::NBIO::TcpSession> transport) : transport_(std::move(transport))
     {
     }
 
-    Foundation::NBIO::Session &transport() const noexcept
+    Foundation::NBIO::TcpSession &transport() const noexcept
     {
         return *transport_;
     }
@@ -71,7 +71,7 @@ class Session
     std::string lookup_key;
 
   private:
-    std::shared_ptr<Foundation::NBIO::Session> transport_;
+    std::shared_ptr<Foundation::NBIO::TcpSession> transport_;
 };
 
 class Server
@@ -92,17 +92,17 @@ class Server
     Foundation::NBIO::Task<void> start(std::uint16_t port, std::vector<CommandLine> commands);
     Foundation::NBIO::Task<void> apply_commands(std::vector<CommandLine> commands);
 
-    Foundation::NBIO::Task<void> serve(const Foundation::Core::Address &address);
-    Foundation::NBIO::Task<void> accept_clients(std::unique_ptr<Foundation::NBIO::AcceptChannel> listener);
-    Foundation::NBIO::Task<void> serve_client(std::shared_ptr<Session> session);
+    Foundation::NBIO::Task<void> serve(const Foundation::Core::SocketAddress &address);
+    Foundation::NBIO::Task<void> accept_clients(std::unique_ptr<Foundation::NBIO::TcpAcceptChannel> listener);
+    Foundation::NBIO::Task<void> serve_client(std::shared_ptr<TcpSession> session);
 
   private:
     // The answer to a command that reads one key, or nothing when the request is
     // not one: see the definition for why it is worth answering before a command
     // is built for it.
-    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words, Session &session);
+    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words, TcpSession &session);
 
-    Foundation::NBIO::Task<RESP::Object> dispatch(Session &session, KV::Command command);
+    Foundation::NBIO::Task<RESP::Object> dispatch(TcpSession &session, KV::Command command);
     Foundation::NBIO::Task<RESP::Object> execute(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command &command);
@@ -115,6 +115,7 @@ class Server
     Foundation::NBIO::Task<RESP::Object> execute_client(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_config(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command &command);
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.
@@ -139,5 +140,6 @@ class Server
     std::uint16_t port_{0};
     std::uint16_t replication_port_{0};
     std::string replication_address_{};
+    std::string rdma_device_{};
 };
 } // namespace KV

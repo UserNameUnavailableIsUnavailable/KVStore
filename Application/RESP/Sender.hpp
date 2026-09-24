@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Foundation/NBIO/Session.hpp>
+#include <Foundation/NBIO/TcpSession.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 
 #include <Application/RESP/RESP.hpp>
 
@@ -12,7 +12,7 @@ namespace RESP
 class Sender
 {
   public:
-    Sender(Foundation::NBIO::Session &session, ::Foundation::Core::Buffer &buffer);
+    Sender(Foundation::NBIO::TcpSession &session, ::Foundation::Core::Buffer &buffer);
     ~Sender() noexcept;
 
     // Encodes one reply into the buffer without writing it, so the replies that
@@ -50,7 +50,7 @@ class Sender
     }
 
   private:
-    Foundation::NBIO::Session &session_;
+    Foundation::NBIO::TcpSession &session_;
     Foundation::Core::Buffer &buffer_;
     std::size_t bytes_sent_{0};
     std::string encode_error_;

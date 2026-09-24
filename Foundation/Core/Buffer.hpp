@@ -103,11 +103,7 @@ class Buffer
 
     std::size_t capacity_;
     std::size_t max_capacity_;
-    // base: initially, where the prependable region ends and the appendable region begins [0,
-    // capacity_] if base_ == 0, the prependable region is empty initially if base_ == capacity_,
-    // the appendable region is empty initially
     std::unique_ptr<char[]> storage_;
-    // Invariant: begin_ <= end_ <= storage_.size()
     std::size_t begin_{0};
     std::size_t end_{0};
 };

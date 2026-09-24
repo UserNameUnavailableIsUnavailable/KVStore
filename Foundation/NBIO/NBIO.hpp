@@ -2,8 +2,8 @@
 
 #include <Foundation/Async/Async.hpp>
 #include <Foundation/Async/Coroutine.hpp>
-#include <Foundation/Core/Address.hpp>
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 
 #include <Foundation/NBIO/Engine.hpp>
 #include <Foundation/NBIO/EpollMultiplexer.hpp>
@@ -13,10 +13,10 @@
 #include <memory>
 
 #include "FileStream.hpp"
-#include "AcceptChannel.hpp"
-#include "RDMA_Session.hpp"
+#include "TcpAcceptChannel.hpp"
+#include "RdmaSession.hpp"
 #include "Runtime.hpp"
-#include "Session.hpp"
+#include "TcpSession.hpp"
 
 // Umbrella header for the NBIO backend: the non-blocking I/O runtime built on
 // epoll / io_uring. Everything here is backend-specific; the generic coroutine
@@ -48,7 +48,7 @@ Task<void> wait_for_signal();
 
 std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
 
-std::unique_ptr<AcceptChannel> bind(const Foundation::Core::Address &address, int backlog = 4096);
+std::unique_ptr<TcpAcceptChannel> bind(const Foundation::Core::SocketAddress &address, int backlog = 4096);
 
-std::shared_ptr<Session> establish(Foundation::Core::Socket socket);
+std::shared_ptr<TcpSession> establish(Foundation::Core::TcpSocket socket);
 } // namespace Foundation::NBIO

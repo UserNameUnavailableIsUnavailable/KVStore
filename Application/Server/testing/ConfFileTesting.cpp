@@ -241,7 +241,7 @@ TEST(ConfFileTesting, TheLaterSettingWins)
     EXPECT_TRUE(lines.empty());
 }
 
-TEST(ConfFileTesting, AMasterThatIsNotAnAddressIsRefused)
+TEST(ConfFileTesting, AMasterThatIsNotAnSocketAddressIsRefused)
 {
     std::vector<CommandLine> no_port = ReadLines("replicaof 127.0.0.1\n");
     EXPECT_THROW(KV::TakeStartupSettings(no_port), std::runtime_error);

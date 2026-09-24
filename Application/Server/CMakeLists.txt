@@ -10,7 +10,7 @@ target_sources(
     AppendOnlyFile.cpp
     Backup.cpp
     ConfFile.cpp
-    RDMA_Transfer.cpp
+    RdmaTransfer.cpp
     ReplicationService.cpp
     Server.cpp
     WriteHistory.cpp
