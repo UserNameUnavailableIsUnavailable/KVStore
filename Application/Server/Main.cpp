@@ -13,7 +13,7 @@ namespace
 {
 // `--replicaof` names the master the way an endpoint is written everywhere
 // else, so it carries the port with it: <ip>:<port>.
-std::optional<Foundation::Core::Address> ParseMaster(const std::string &text)
+std::optional<Foundation::Core::SocketAddress> ParseMaster(const std::string &text)
 {
     const auto colon = text.rfind(':');
     if (colon == std::string::npos || colon == 0 || colon + 1 == text.size())
@@ -26,7 +26,7 @@ std::optional<Foundation::Core::Address> ParseMaster(const std::string &text)
     {
         throw std::invalid_argument("--replicaof wants a port between 1 and 65535, not '" + text.substr(colon + 1) + "'");
     }
-    return Foundation::Core::Address::from_ipv4(text.substr(0, colon), static_cast<std::uint16_t>(port));
+    return Foundation::Core::SocketAddress::from_v4(text.substr(0, colon), static_cast<std::uint16_t>(port));
 }
 } // namespace
 
@@ -50,8 +50,10 @@ int main(int argc, char *argv[])
     app.add_option("--replication-port", options.replication_port,
                    "RDMA port this server serves snapshots on (default 0, which serves none)")
         ->check(CLI::Range(0, 65535));
-    app.add_option("--replication-address", options.replication_address,
+    app.add_option("--replication-ip", options.replication_address,
                    "local address the replication listener binds (default 0.0.0.0)");
+    app.add_option("--rdma-device", options.rdma_device,
+                   "RDMA device the replication link runs on, by name (--rdma-device siw0)");
     app.add_option("--replicaof", replicaof, "RDMA <ip>:<port> of the master to replicate");
     app.add_option("--multiplexer", options.multiplexer, "I/O multiplexer: epoll or io_uring")
         ->check(CLI::IsMember({"epoll", "io_uring"}));

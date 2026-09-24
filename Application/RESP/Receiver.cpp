@@ -3,9 +3,9 @@
 
 #include "Receiver.hpp"
 
-#include <Foundation/NBIO/Session.hpp>
+#include <Foundation/NBIO/TcpSession.hpp>
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 
 #include <Application/RESP/RESP.hpp>
 
@@ -20,7 +20,7 @@ namespace
 constexpr std::size_t kReadHeadroom = 16U * 1024U;
 } // namespace
 
-Receiver::Receiver(Foundation::NBIO::Session &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
+Receiver::Receiver(Foundation::NBIO::TcpSession &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
 {
 }
 
@@ -60,7 +60,7 @@ Foundation::NBIO::Task<std::optional<Object>> Receiver::receive()
         auto result = co_await session_.receive(buffer_.writable_span());
         if (!result)
         {
-            interal_error_ = session_.receive_channel().last_error().message();
+            interal_error_ = result.error().message();
             co_return {};
         }
         if (*result == 0)
@@ -176,7 +176,7 @@ Foundation::NBIO::Task<std::optional<Receiver::Command>> Receiver::receive_comma
         auto result = co_await session_.receive(buffer_.writable_span());
         if (!result)
         {
-            interal_error_ = session_.receive_channel().last_error().message();
+            interal_error_ = result.error().message();
             co_return std::nullopt;
         }
         if (*result == 0)

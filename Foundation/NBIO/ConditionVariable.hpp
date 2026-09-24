@@ -10,7 +10,7 @@
 #include <mutex>
 #include <utility>
 
-#include "NotifyChannel.hpp"
+#include "EventNotifyChannel.hpp"
 #include "Runtime.hpp"
 
 namespace Foundation::NBIO
@@ -75,7 +75,7 @@ class ConditionVariable
     friend struct ConditionVariableAwaiter;
 
     std::mutex mutex_;
-    NotifyChannel &channel_;
+    EventNotifyChannel &channel_;
     std::deque<Async::Coroutine> notifiees_;
     std::size_t stock_{0};
     std::atomic_bool broadcasting_{false};

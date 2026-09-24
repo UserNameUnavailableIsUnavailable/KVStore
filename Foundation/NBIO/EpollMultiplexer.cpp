@@ -16,22 +16,22 @@
 #include <sys/uio.h>
 #include <utility>
 
-#include "NotifyChannel.hpp"
-#include "SignalChannel.hpp"
+#include "EventNotifyChannel.hpp"
+#include "SystemSignalChannel.hpp"
 #include "Types.hpp"
 #include "Channel.hpp"
 #include "Multiplexer.hpp"
 #include "FileStream.hpp"
-#include "AcceptChannel.hpp"
-#include "ReadChannel.hpp"
-#include "ReceiveChannel.hpp"
-#include "SendChannel.hpp"
-#include "TimerChannel.hpp"
-#include "WriteChannel.hpp"
-#include "RDMA_ConnectChannel.hpp"
-#include "RDMA_AcceptChannel.hpp"
-#include "RDMA_SendChannel.hpp"
-#include "RDMA_ReceiveChannel.hpp"
+#include "TcpAcceptChannel.hpp"
+#include "FileReadChannel.hpp"
+#include "TcpReceiveChannel.hpp"
+#include "TcpSendChannel.hpp"
+#include "SystemTimerChannel.hpp"
+#include "FileWriteChannel.hpp"
+#include "RdmaConnectChannel.hpp"
+#include "RdmaAcceptChannel.hpp"
+#include "RdmaSendChannel.hpp"
+#include "RdmaReceiveChannel.hpp"
 
 namespace Foundation::NBIO
 {
@@ -63,15 +63,15 @@ static constexpr std::uint32_t native_flags_for(Foundation::NBIO::ChannelType ty
     case Foundation::NBIO::ChannelType::kReceive:
     case Foundation::NBIO::ChannelType::kRead:
     case Foundation::NBIO::ChannelType::kAccept:
-    case Foundation::NBIO::ChannelType::kTimer:
+    case Foundation::NBIO::ChannelType::kSystemTimer:
     case Foundation::NBIO::ChannelType::kNotify:
-    case Foundation::NBIO::ChannelType::kRDMA_Accept:
-    case Foundation::NBIO::ChannelType::kRDMA_Connect:
+    case Foundation::NBIO::ChannelType::kRdmaAccept:
+    case Foundation::NBIO::ChannelType::kRdmaConnect:
     // A stream's completion channel becomes readable when a work completion
     // lands; both simplex halves watch that same fd.
-    case Foundation::NBIO::ChannelType::kRDMA_Send:
-    case Foundation::NBIO::ChannelType::kRDMA_Receive:
-    case Foundation::NBIO::ChannelType::kSignal:
+    case Foundation::NBIO::ChannelType::kRdmaSend:
+    case Foundation::NBIO::ChannelType::kRdmaReceive:
+    case Foundation::NBIO::ChannelType::kSystemSignal:
         return EPOLLIN;
     case Foundation::NBIO::ChannelType::kSend:
     case Foundation::NBIO::ChannelType::kWrite:
@@ -84,35 +84,22 @@ static constexpr std::uint32_t native_flags_for(Foundation::NBIO::ChannelType ty
 // run once
 void EpollMultiplexer::run_impl(int timeout_ms)
 {
-	for (const auto& it : updated_flags_)
-	{
-		auto [fd, flags] = it;
-		::epoll_event ev{
-			.events = flags,
-			.data{
-				.fd = fd
-			}
-		};
-		spdlog::debug("[EpollMultiplexer::run_impl] fd=0x{:X} flags updated to {}", fd, flags);
-		if (epoll_ctl(handle_, EPOLL_CTL_MOD, fd, &ev) != 0)
-		{
-			throw std::system_error(errno, std::system_category(), "epoll_ctl(MOD) failed");
-		}
-	}
-	updated_flags_.clear();
-
-    // some channels are always ready: ReadChannel; WriteChannel;
-	// always-ready channels are added to active_channels_ in update_channel()
-    if (!active_channels_.empty())
-    {
-		timeout_ms = 0; // do not block, poll once to collect active channels and return immediately
-    }
-
     std::array<::epoll_event, 4096> events;
     bool retry = false;
     do
     {
         retry = false;
+
+        // Always-ready channels (regular files) are processed every pass.
+        for (const auto &[fd, channel] : always_channels_)
+        {
+            active_channels_.push_back(channel);
+        }
+        if (!active_channels_.empty())
+        {
+            timeout_ms = 0; // do not block: poll once and return
+        }
+
         auto n = epoll_wait(handle_, events.data(), events.size(), timeout_ms);
         if (n < 0)
         {
@@ -132,84 +119,70 @@ void EpollMultiplexer::run_impl(int timeout_ms)
             // epoll reports ERR/HUP regardless of the requested interest, and
             // they do not match EPOLLIN bit-wise -- count them as readable, or
             // a failing connection would never wake its receive channel.
-
             auto [begin, end] = pollable_channels_.equal_range(fd);
             for (auto it = begin; it != end; ++it)
             {
                 auto *channel = it->second;
-
-                const auto flags = native_flags_for(channel->type());
+                const auto flags = native_flags_for(channel->type()) | EPOLLHUP | EPOLLERR;
                 if ((flags & ev) != 0)
                 {
-                    active_channels_.insert(channel);
+                    active_channels_.push_back(channel);
                 }
             }
         }
 
-        // Take the batch before touching it: disarm() erases an always-ready
-        // channel from active_channels_, and handle_completion() may arm one
-        // again. Mutating the set while iterating it invalidates the iterator -- the
-        // increment then walks a freed node. Any channel re-armed here lands in
-        // the now-empty active_channels_ and is picked up on the next pass,
-        // which does not block because the set is non-empty again.
-        std::unordered_set<Foundation::NBIO::Channel *> batch;
-        batch.swap(active_channels_);
-
-        for (auto *channel : batch)
+        // The backend does what only it can do -- the I/O itself -- and then the
+        // channel reaps the payload the backend filled: waking the answered
+        // waiters and arming again while anything is still waiting.
+        for (auto *channel : active_channels_)
         {
-            // The backend does what only it can do -- the I/O itself -- and the
-            // channel turns what comes back into the outcome of the waits it
-            // covers. Each case then wakes what has an answer; a channel with more
-            // to do arms itself again. The channel is named by its concrete type
-            // because the submission protocol is the channel's own, not the base
-            // class's.
             switch (channel->type())
             {
             case Foundation::NBIO::ChannelType::kReceive:
                 do_receive_data(channel);
-                static_cast<ReceiveChannel *>(channel)->handle_completion();
+                static_cast<TcpReceiveChannel *>(channel)->complete();
                 break;
             case Foundation::NBIO::ChannelType::kSend:
                 do_send_data(channel);
-                static_cast<SendChannel *>(channel)->handle_completion();
+                static_cast<TcpSendChannel *>(channel)->complete();
                 break;
             case Foundation::NBIO::ChannelType::kAccept:
                 do_accept_connection(channel);
-                static_cast<AcceptChannel *>(channel)->handle_completion();
+                static_cast<TcpAcceptChannel *>(channel)->complete();
                 break;
             case Foundation::NBIO::ChannelType::kRead:
                 do_read_file(channel);
-                static_cast<ReadChannel *>(channel)->handle_completion();
+                static_cast<FileReadChannel *>(channel)->complete();
                 break;
             case Foundation::NBIO::ChannelType::kWrite:
                 do_write_file(channel);
-                static_cast<WriteChannel *>(channel)->handle_completion();
+                static_cast<FileWriteChannel *>(channel)->complete();
                 break;
-            // Readiness is the whole wait for these: each one arms while it has
-            // something to watch, and its completion drains the fd itself.
-            case Foundation::NBIO::ChannelType::kTimer:
-                static_cast<TimerChannel *>(channel)->handle_completion();
+            // Readiness is the whole wait for these: each one drains its fd itself.
+            case Foundation::NBIO::ChannelType::kSystemTimer:
+                static_cast<SystemTimerChannel *>(channel)->complete();
                 break;
             case Foundation::NBIO::ChannelType::kNotify:
-                static_cast<NotifyChannel *>(channel)->handle_completion();
+                static_cast<EventNotifyChannel *>(channel)->complete();
                 break;
-            case Foundation::NBIO::ChannelType::kSignal:
-                static_cast<SignalChannel *>(channel)->handle_completion();
+            case Foundation::NBIO::ChannelType::kSystemSignal:
+                static_cast<SystemSignalChannel *>(channel)->complete();
                 break;
-            case Foundation::NBIO::ChannelType::kRDMA_Accept:
-                static_cast<RDMA_AcceptChannel *>(channel)->handle_completion();
+            case Foundation::NBIO::ChannelType::kRdmaAccept:
+                static_cast<RdmaAcceptChannel *>(channel)->complete();
                 break;
-            case Foundation::NBIO::ChannelType::kRDMA_Connect:
-                static_cast<RDMA_ConnectChannel *>(channel)->handle_completion();
+            case Foundation::NBIO::ChannelType::kRdmaConnect:
+                static_cast<RdmaConnectChannel *>(channel)->complete();
                 break;
-            case Foundation::NBIO::ChannelType::kRDMA_Send:
-                static_cast<RDMA_SendChannel *>(channel)->handle_completion();
+            case Foundation::NBIO::ChannelType::kRdmaSend:
+                static_cast<RdmaSendChannel *>(channel)->complete();
                 break;
-            case Foundation::NBIO::ChannelType::kRDMA_Receive:
-                static_cast<RDMA_ReceiveChannel *>(channel)->handle_completion();
+            case Foundation::NBIO::ChannelType::kRdmaReceive:
+                static_cast<RdmaReceiveChannel *>(channel)->complete();
                 break;
             }
         }
+        active_channels_.clear();
     } while (retry);
 }
 
@@ -233,171 +206,109 @@ void EpollMultiplexer::run_for(std::chrono::milliseconds timeout)
 
 void EpollMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
 {
-    // IMPORTANT: The channel may register itself at any time.
-    // If the channel is incomplete (e.g., has not finished construction yet),
-    // calling virtual functions results in runtime error!
-
-    int fd = static_cast<int>(channel->native_handle());
-    switch (channel->type())
-    {
-    case Foundation::NBIO::ChannelType::kReceive:
-    case Foundation::NBIO::ChannelType::kSend:
-    case Foundation::NBIO::ChannelType::kAccept:
-    case Foundation::NBIO::ChannelType::kTimer:
-    case Foundation::NBIO::ChannelType::kSignal:
-    case Foundation::NBIO::ChannelType::kNotify:
-    case Foundation::NBIO::ChannelType::kRead:
-    case Foundation::NBIO::ChannelType::kWrite:
-    // The RDMA channels are only polled: each one reaps its own completions,
-    // because the event says "something finished", not which direction or how much.
-    case Foundation::NBIO::ChannelType::kRDMA_Accept:
-    case Foundation::NBIO::ChannelType::kRDMA_Connect:
-    case Foundation::NBIO::ChannelType::kRDMA_Send:
-    case Foundation::NBIO::ChannelType::kRDMA_Receive:
-        break;
-    default:
-        throw std::logic_error("EpollMultiplexer::add_channel: unsupported channel type");
-    }
+    // Registration is the whole of arming: every channel is dedicated to one
+    // event, so there is nothing to update -- only to add and to remove.
+    const int fd = static_cast<int>(channel->native_handle());
 
     if (is_always_ready(channel->type()))
     {
-		if (always_channels_.contains(fd))
-		{
-			auto it = always_channels_.find(fd);
-			for (; it != always_channels_.end(); it++)
-			{
-				auto [fd, chan] = *it;
-				if (chan == channel) [[unlikely]]
-				{
-					throw std::logic_error("EpollMultiplexer::add_channel: channel already added");
-				}
-			}
-		}
-		always_channels_.emplace(fd, channel);
-		return;
-    }
-
-	if (pollable_channels_.contains(fd))
-	{
-		auto it = pollable_channels_.find(fd);
-		for (; it != pollable_channels_.end(); it++)
-		{
-			auto [fd, chan] = *it;
-			if (chan == channel) [[unlikely]]
-			{
-				throw std::logic_error("EpollMultiplexer::add_channel: channel already added");
-			}
-		}
-	}
-	else
-	{
-		epoll_event event{};
-		event.events = 0;
-		event.data.fd = fd;
-		if (epoll_ctl(handle_, EPOLL_CTL_ADD, fd, &event) != 0)
-		{
-			throw std::system_error(errno, std::system_category(), "epoll_ctl(ADD) failed");
-		}
-	}
-    pollable_channels_.emplace(fd, channel);
-}
-
-void EpollMultiplexer::update_channel(Foundation::NBIO::Channel *channel)
-{
-    const int fd = channel->native_handle();
-	const auto type = channel->type();
-    if (is_always_ready(type))
-    {
-        if (channel->armed())
+        auto [begin, end] = always_channels_.equal_range(fd);
+        for (auto it = begin; it != end; ++it)
         {
-			active_channels_.insert(channel);
+            if (it->second == channel) [[unlikely]]
+            {
+                return; // already added
+            }
         }
-        else if (active_channels_.contains(channel))
-        {
-			active_channels_.erase(channel);
-        }
+        always_channels_.emplace(fd, channel);
         return;
     }
 
-	auto [begin, end] = pollable_channels_.equal_range(fd);
-    if (begin == end)
+    auto [begin, end] = pollable_channels_.equal_range(fd);
+    for (auto it = begin; it != end; ++it)
     {
-        throw std::logic_error("channel not added");
+        if (it->second == channel) [[unlikely]]
+        {
+            return; // already added
+        }
     }
 
-	std::uint32_t flags{ 0 };
-	for (auto it = begin; it != end; ++it)
-	{
-		auto *chan = it->second;
-		if (chan->armed())
-		{
-			flags |= native_flags_for(chan->type());
-		}
-	}
-	
-	spdlog::debug("[EpollMultiplexer::update_channel] fd=0x{:X} flags updated to {}", fd, flags);
-	updated_flags_[fd] = flags;
+    if (begin == end)
+    {
+        // The first channel on this fd registers it.
+        ::epoll_event event{.events = native_flags_for(channel->type()), .data{.fd = fd}};
+        if (::epoll_ctl(handle_, EPOLL_CTL_ADD, fd, &event) != 0)
+        {
+            throw std::system_error(errno, std::system_category(), "epoll_ctl(ADD) failed");
+        }
+    }
+    else
+    {
+        // Simplex channels share a socket: the interest is the union of them all.
+        std::uint32_t flags = native_flags_for(channel->type());
+        for (auto it = begin; it != end; ++it)
+        {
+            flags |= native_flags_for(it->second->type());
+        }
+        ::epoll_event event{.events = flags, .data{.fd = fd}};
+        if (::epoll_ctl(handle_, EPOLL_CTL_MOD, fd, &event) != 0)
+        {
+            throw std::system_error(errno, std::system_category(), "epoll_ctl(MOD) failed");
+        }
+    }
+    pollable_channels_.emplace(fd, channel);
 }
 
 void EpollMultiplexer::delete_channel(Foundation::NBIO::Channel *channel) noexcept
 {
-	auto fd = channel->native_handle();
-	auto type = channel->type();
-	active_channels_.erase(channel);
+    const int fd = static_cast<int>(channel->native_handle());
 
-	if (is_always_ready(type))
-	{
-		auto [begin, end] = always_channels_.equal_range(fd);
-		for (auto it = begin; it != end; ++it)
-		{
-			if (it->second == channel)
-			{
-				always_channels_.erase(it); // each channel is unique
-				break;
-			}
-		}
-		return;
-	}
+    if (is_always_ready(channel->type()))
+    {
+        auto [begin, end] = always_channels_.equal_range(fd);
+        for (auto it = begin; it != end; ++it)
+        {
+            if (it->second == channel)
+            {
+                always_channels_.erase(it);
+                return;
+            }
+        }
+        return;
+    }
 
-	{
-		auto [begin, end] = pollable_channels_.equal_range(fd);
-		auto target = end;
-		for (auto it = begin; it != end; ++it)
-		{
-			if (it->second == channel)
-			{
-				target = it;
-				break;
-			}
-		}
-		if (target == end)
-		{
-			return;
-		}
-		pollable_channels_.erase(target);
+    {
+        auto [begin, end] = pollable_channels_.equal_range(fd);
+        auto target = end;
+        for (auto it = begin; it != end; ++it)
+        {
+            if (it->second == channel)
+            {
+                target = it;
+                break;
+            }
+        }
+        if (target == end)
+        {
+            return; // never registered
+        }
+        pollable_channels_.erase(target);
+    }
 
-	}
-	{
-		auto [begin, end] = pollable_channels_.equal_range(fd);
-		if (begin == end)
-		{
-			epoll_ctl(handle_, EPOLL_CTL_DEL, fd, nullptr);
-			updated_flags_.erase(fd);
-			spdlog::debug("[EpollMultiplexer::delete_channel] fd=0x{:X} deleted", fd);
-			return;
-		}
-		std::uint32_t flags{ 0 };
-		for (auto it = begin; it != end; ++it)
-		{
-			auto *chan = it->second;
-			if (chan->armed())
-			{
-				flags |= native_flags_for(chan->type());
-			}
-		}
-		updated_flags_[fd] = flags;
-		spdlog::debug("[EpollMultiplexer::delete_channel] fd=0x{:X} flags will update to {}", fd, flags);
-	}
+    auto [begin, end] = pollable_channels_.equal_range(fd);
+    if (begin == end)
+    {
+        ::epoll_ctl(handle_, EPOLL_CTL_DEL, fd, nullptr);
+        return;
+    }
+
+    std::uint32_t flags = 0;
+    for (auto it = begin; it != end; ++it)
+    {
+        flags |= native_flags_for(it->second->type());
+    }
+    ::epoll_event event{.events = flags, .data{.fd = fd}};
+    ::epoll_ctl(handle_, EPOLL_CTL_MOD, fd, &event);
 }
 
 EpollMultiplexer::~EpollMultiplexer() noexcept
@@ -407,113 +318,334 @@ EpollMultiplexer::~EpollMultiplexer() noexcept
 
 static void do_receive_data(Foundation::NBIO::Channel *base)
 {
-    // Readiness is the operation: what the channel is waiting with is the batch it
-    // just handed over, and one recvmsg answers as much of it as the kernel has.
-    auto *channel = static_cast<ReceiveChannel *>(base);
-    ::msghdr *message = channel->submit_jobs();
-    if (message == nullptr)
+    auto *channel = static_cast<TcpReceiveChannel *>(base);
+    auto &payload = std::get<ReceivePayload>(channel->submit());
+    if (payload.size() == 0)
     {
         return; // nothing to receive for
     }
 
+    auto &message = payload.header();
     ssize_t result = 0;
     do
     {
-        result = ::recvmsg(channel->native_handle(), message, 0);
+        result = ::recvmsg(channel->native_handle(), &message, 0);
     } while (result < 0 && errno == EINTR);
 
-    channel->advance_job(result < 0 ? -errno : result);
-    channel->complete_jobs();
+    if (result < 0)
+    {
+        const int error = errno;
+        if (error == EAGAIN || error == EWOULDBLOCK)
+        {
+            // Not ready is not an answer: every receive in the batch keeps waiting.
+            return;
+        }
+        const std::error_code failure{error, std::system_category()};
+        while (auto *submission = payload.next_submission())
+        {
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = failure;
+            payload.complete();
+        }
+        return;
+    }
+
+    if (result == 0)
+    {
+        // The peer closed, and it closed for every receive waiting.
+        while (auto *submission = payload.next_submission())
+        {
+            submission->status = Core::OperationStatus::kDone;
+            submission->bytes = 0;
+            submission->error_code = {};
+            payload.complete();
+        }
+        return;
+    }
+
+    std::size_t remaining = static_cast<std::size_t>(result);
+    while (remaining > 0)
+    {
+        auto *submission = payload.next_submission();
+        if (submission == nullptr)
+        {
+            break;
+        }
+        const std::size_t taken = std::min(remaining, submission->buffer.size());
+        submission->status = Core::OperationStatus::kDone;
+        submission->bytes = taken;
+        submission->error_code = {};
+        payload.complete();
+        remaining -= taken;
+    }
 }
 
-static void do_send_data(Foundation::NBIO::Channel *base)
+static void do_send_data(Channel *base)
 {
-    // As for receiving: the batch the channel handed over is the operation.
-    auto *channel = static_cast<SendChannel *>(base);
-    ::msghdr *message = channel->submit_jobs();
-    if (message == nullptr)
+    auto *channel = static_cast<TcpSendChannel *>(base);
+    auto &payload = std::get<SendPayload>(channel->submit());
+    if (payload.size() == 0)
     {
         return; // nothing to send
     }
 
+    auto &message = payload.header();
     ssize_t result = 0;
+    bool retry{false};
+    bool failed{false};
     do
     {
-        result = ::sendmsg(channel->native_handle(), message, MSG_NOSIGNAL);
-    } while (result < 0 && errno == EINTR);
+        retry = false;
+        result = ::sendmsg(channel->native_handle(), &message, MSG_NOSIGNAL);
+        if (result < 0)
+        {
+            if (errno == EINTR)
+            {
+                retry = true;
+            }
+            else if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                return; // not writable: keep waiting
+            }
+            else
+            {
+                failed = true;
+            }
+        }
+    } while (retry);
 
-    channel->advance_job(result < 0 ? -errno : result);
-    channel->complete_jobs();
-}
-
-static void do_accept_connection(Foundation::NBIO::Channel *base)
-{
-    auto *channel = static_cast<AcceptChannel *>(base);
-
-    // One readiness event can mean several connections, and one accept covers one
-    // wait: take them while they last and while somebody is waiting for one. Each
-    // one is an operation of its own, so the batch is concluded once, at the end.
-    while (true)
+    if (failed) [[unlikely]]
     {
-        if (channel->submit_jobs() == nullptr)
+        // A socket that cannot be written is one socket: every send fails.
+        std::error_code failure{errno, std::system_category()};
+        while (auto *submission = payload.next_submission())
         {
-            break; // nobody waiting, or a wait is still out there
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = failure;
+            payload.complete();
         }
-
-        Foundation::Core::AcceptResult accepted = channel->socket().accept();
-        if (accepted.status == Foundation::Core::AcceptStatus::kPending)
-        {
-            break; // no more connections to take right now
-        }
-
-        channel->advance_job(std::move(accepted));
+        return;
     }
 
-    channel->complete_jobs();
+    if (result == 0)
+    {
+        // Nothing was taken from bytes that were there to send; asking again would
+        // spin, so the front is failed instead.
+        auto *submission = payload.next_submission();
+        if (submission != nullptr && !submission->buffer.empty())
+        {
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = std::make_error_code(std::errc::io_error);
+            payload.complete();
+        }
+        return;
+    }
+
+    std::size_t remaining = static_cast<std::size_t>(result);
+    while (remaining > 0)
+    {
+        auto *submission = payload.next_submission();
+        if (submission == nullptr)
+        {
+            break;
+        }
+        const std::size_t size = submission->buffer.size();
+        const std::size_t taken = std::min(remaining, size);
+        submission->bytes += taken;
+        remaining -= taken;
+
+        if (taken == size)
+        {
+            submission->status = Core::OperationStatus::kDone;
+            submission->error_code = {};
+            payload.complete();
+        }
+        else
+        {
+            // The operation stopped inside this send: what is left of it goes first
+            // next time, and it keeps its place.
+            submission->buffer = submission->buffer.subspan(taken);
+            break;
+        }
+    }
+}
+
+static void do_accept_connection(Channel *base)
+{
+    auto *channel = static_cast<TcpAcceptChannel *>(base);
+    auto &payload = std::get<AcceptPayload>(channel->submit());
+    if (payload.size() == 0)
+    {
+        return; // nobody is waiting
+    }
+    payload.bundle();
+
+    bool stop{false};
+    bool failed{false};
+    while (!failed && !stop)
+    {
+        auto *submission = payload.next_submission();
+        if (submission == nullptr)
+        {
+            break;
+        }
+        bool retry{false};
+        do
+        {
+            const auto fd = ::accept(channel->native_handle(), submission->address.storage(), &submission->address.length());
+            if (fd == -1)
+            {
+                if (errno == EINTR) [[unlikely]]
+                {
+                    retry = true;
+                }
+                else if (errno == EAGAIN || errno == EWOULDBLOCK) [[likely]]
+                {
+                    stop = true;
+                }
+                else [[unlikely]]
+                {
+                    failed = true;
+                }
+            }
+            else
+            {
+                submission->status = Core::OperationStatus::kDone;
+                submission->socket = Core::TcpSocket::adopt(static_cast<std::uintptr_t>(fd));
+                submission->error_code = {};
+                payload.complete();
+            }
+        } while (retry);
+    }
+
+    if (failed)
+    {
+        // The listener failed: every wait behind the front fails with it.
+        std::error_code failure{errno, std::system_category()};
+        while (auto *submission = payload.next_submission())
+        {
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = failure;
+            payload.complete();
+        }
+    }
 }
 
 static void do_read_file(Foundation::NBIO::Channel *base)
 {
     // A file is always ready, so the batch the channel hands over here is the
     // operation: the reads cover consecutive stretches of it.
-    auto *channel = static_cast<ReadChannel *>(base);
-    const auto vectors = channel->submit_jobs();
-    if (vectors.empty())
+    auto *channel = static_cast<FileReadChannel *>(base);
+    auto &payload = std::get<ReadPayload>(channel->submit());
+    if (payload.size() == 0)
     {
         return; // nothing to read for
     }
 
+    auto &vectors = payload.header();
     ssize_t result = 0;
     do
     {
         result = ::preadv(channel->native_handle(), vectors.data(), static_cast<int>(vectors.size()),
-                          static_cast<off_t>(channel->batch_offset()));
+                          static_cast<off_t>(payload.offset()));
     } while (result < 0 && errno == EINTR);
 
-    channel->advance_job(result < 0 ? -errno : result);
-    channel->complete_jobs();
+    if (result < 0)
+    {
+        const int error = errno;
+        const std::error_code failure{error, std::system_category()};
+        while (auto *submission = payload.next_submission())
+        {
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = failure;
+            payload.complete();
+        }
+        return;
+    }
+
+    payload.advance_offset(static_cast<std::size_t>(result));
+    std::size_t remaining = static_cast<std::size_t>(result);
+    while (auto *submission = payload.next_submission())
+    {
+        if (remaining == 0)
+        {
+            // A short read on a regular file is its end: the reads behind it would
+            // read at or past where it stopped.
+            submission->status = Core::OperationStatus::kDone;
+            submission->bytes = 0;
+            submission->error_code = {};
+            payload.complete();
+            continue;
+        }
+        const std::size_t taken = std::min(remaining, submission->buffer.size());
+        submission->status = Core::OperationStatus::kDone;
+        submission->bytes = taken;
+        submission->error_code = {};
+        payload.complete();
+        remaining -= taken;
+    }
 }
 
 static void do_write_file(Foundation::NBIO::Channel *base)
 {
     // As for reading: the batch is the operation, and the writes follow one another
     // in the file.
-    auto *channel = static_cast<WriteChannel *>(base);
-    const auto vectors = channel->submit_jobs();
-    if (vectors.empty())
+    auto *channel = static_cast<FileWriteChannel *>(base);
+    auto &payload = std::get<WritePayload>(channel->submit());
+    if (payload.size() == 0)
     {
         return; // nothing to write
     }
 
+    auto &vectors = payload.header();
     ssize_t result = 0;
     do
     {
         result = ::pwritev(channel->native_handle(), vectors.data(), static_cast<int>(vectors.size()),
-                           static_cast<off_t>(channel->batch_offset()));
+                           static_cast<off_t>(payload.offset()));
     } while (result < 0 && errno == EINTR);
 
-    channel->advance_job(result < 0 ? -errno : result);
-    channel->complete_jobs();
+    if (result < 0)
+    {
+        const int error = errno;
+        const std::error_code failure{error, std::system_category()};
+        while (auto *submission = payload.next_submission())
+        {
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = failure;
+            payload.complete();
+        }
+        return;
+    }
+
+    payload.advance_offset(static_cast<std::size_t>(result));
+    std::size_t remaining = static_cast<std::size_t>(result);
+    while (remaining > 0)
+    {
+        auto *submission = payload.next_submission();
+        if (submission == nullptr)
+        {
+            break;
+        }
+        const std::size_t size = submission->buffer.size();
+        const std::size_t taken = std::min(remaining, size);
+        submission->bytes += taken;
+        remaining -= taken;
+
+        if (taken == size)
+        {
+            submission->status = Core::OperationStatus::kDone;
+            submission->error_code = {};
+            payload.complete();
+        }
+        else
+        {
+            // The operation stopped inside this write: what is left of it keeps its
+            // place in the file.
+            submission->buffer = submission->buffer.subspan(taken);
+            break;
+        }
+    }
 }
 
 } // namespace Foundation::NBIO

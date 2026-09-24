@@ -33,7 +33,7 @@ as decisions land.
   `Foundation::RDMA::run()` and `Foundation::RDMA::spawn()`.
 - Reliable, connection-oriented, ordered data transfer — "TCP-like" semantics —
   for the first version.
-- A server path (`listen_on` → `accept` → `Session`) that mirrors the `NBIO`
+- A server path (`listen_on` → `accept` → `TcpSession`) that mirrors the `NBIO`
   server path closely enough that the RESP layer can be reused without changes
   to its logic.
 - Memory-safety and lifetime guarantees at least as strong as `NBIO`: a channel
@@ -44,7 +44,7 @@ as decisions land.
 - One-sided operations (`RDMA READ` / `RDMA WRITE`) and atomic verbs.
 - Zero-copy receive into application-owned memory.
 - Native InfiniBand addressing (LID/GID routing); the first version targets
-  RoCEv2 so that the existing `Foundation::Core::Address` (IPv4) can be reused.
+  RoCEv2 so that the existing `Foundation::Core::SocketAddress` (IPv4) can be reused.
 - Automatic reconnection / failover.
 - Multi-threaded engines. Like `NBIO`, one engine per thread, installed as a
   `thread_local`.
@@ -64,10 +64,10 @@ first version needs:
 | Teardown notification | `RDMA_CM_EVENT_DISCONNECTED` |
 
 Because RC `SEND`/`RECV` is message-oriented while RESP is a byte stream, the
-`Session` exposes a **byte-stream** interface identical in signature to
-`NBIO::Session::receive`/`send`. RESP is self-delimiting, so as long as bytes
+`TcpSession` exposes a **byte-stream** interface identical in signature to
+`NBIO::TcpSession::receive`/`send`. RESP is self-delimiting, so as long as bytes
 arrive in order (guaranteed by RC) the framing works unchanged. Message
-boundaries are an implementation detail the `Session` hides.
+boundaries are an implementation detail the `TcpSession` hides.
 
 ### What "reliable (TCP)" means here, concretely
 
@@ -85,11 +85,11 @@ boundaries are an implementation detail the `Session` hides.
 
 ### No sockets; three layers of identity
 
-**The RDMA backend never creates a socket.** `Foundation::Core::Socket` is not
+**The RDMA backend never creates a socket.** `Foundation::Core::TcpSocket` is not
 used at all — there is no `socket()`/`bind()`/`accept()` anywhere under
 `Foundation/RDMA`. Two things take its place:
 
-- `Core::Address` is still reused, because `rdma_cm` still speaks in `sockaddr`
+- `Core::SocketAddress` is still reused, because `rdma_cm` still speaks in `sockaddr`
   terms: `rdma_bind_addr(id, addr)` and `rdma_resolve_addr(id, ...)` both take a
   `struct sockaddr *`. An endpoint is still named by IP and port; the kernel
   owns the transport beneath it.
@@ -123,8 +123,8 @@ the transport objects — `struct rdma_cm_id` holds `verbs`, `channel`, `qp`,
 `rdma_cm_id *`, and `Connection::qp()` is simply `id->qp`.
 
 The initial implementation chooses one completion queue and completion channel
-per `RDMA_Channel`. This makes the channel's pollable handle local and obvious:
-`RDMA_Channel::native_handle()` returns `ibv_comp_channel::fd`, while its
+per `RdmaChannel`. This makes the channel's pollable handle local and obvious:
+`RdmaChannel::native_handle()` returns `ibv_comp_channel::fd`, while its
 `poll()` drains its own CQ. A later shared-CQ optimization can route by
 `(qp_num, wr_id)` or a globally unique `wr_id`, but it is not required by the
 first design.
@@ -149,11 +149,11 @@ flowchart TD
         CONN["Connection (rdma_cm_id + QP + CQ)"]
         DEV["Device (ibv_context + PD)"]
         MEM["MemoryRegion (ibv_reg_mr pool)"]
-        SESS["Session (byte stream)"]
+        SESS["TcpSession (byte stream)"]
     end
 
     subgraph Core["Foundation::Core"]
-        ADDR["Address / Buffer / Timer / Notifier / Signal"]
+        ADDR["SocketAddress / Buffer / SystemTimer / EventNotifier / SystemSignal"]
     end
 
     App --> RUN
@@ -193,9 +193,9 @@ class Engine
     static Foundation::Async::Scheduler &scheduler();
     static Multiplexer &multiplexer();
 
-    static NotifyChannel &notify_channel();
-    static TimerChannel &timer_channel();
-    static SignalChannel &signal_channel();
+    static EventNotifyChannel &notify_channel();
+    static SystemTimerChannel &timer_channel();
+    static SystemSignalChannel &signal_channel();
 
   private:
     static thread_local std::unique_ptr<Engine> engine_;
@@ -298,7 +298,7 @@ connection manager it drives) keeps **two registries**, not one:
 
 | Source | Key carried by the event | Resolves to |
 |---|---|---|
-| Completion queue (`ibv_wc`) | `wr_id` (our `Channel::Handle`) | the `SendChannel` / `ReceiveChannel` that posted |
+| Completion queue (`ibv_wc`) | `wr_id` (our `Channel::Handle`) | the `TcpSendChannel` / `TcpReceiveChannel` that posted |
 | `rdma_event_channel` (`rdma_cm_event`) | `event->id`, an `rdma_cm_id *` | the `Listener` or the in-progress `Connection` |
 
 A CM event describes a *connection's* state (`CONNECT_REQUEST`, `ESTABLISHED`,
@@ -377,7 +377,7 @@ deployments.
 
 A channel is **pinned to exactly one underlying object** — for the transport
 channels that object is a `Connection` (a queue pair) — and it can never migrate
-off it. That part matches `NBIO`, where a channel is pinned to a `Socket`.
+off it. That part matches `NBIO`, where a channel is pinned to a `TcpSocket`.
 
 What differs is the handle. A channel mirrors the `NBIO` protocol (`arm` /
 `disarm` / `park` / `handle_event`), but it carries **its own identity**, not the
@@ -393,9 +393,9 @@ enum class ChannelType
     kReceive, // completion
     kSend,    // completion
     kListen,  // cm
-    kTimer,   // fd
+    kSystemTimer,   // fd
     kNotify,  // fd
-    kSignal,  // fd
+    kSystemSignal,  // fd
 };
 
 class Channel
@@ -442,7 +442,7 @@ all eight kinds. `RDMA` channels do not share one dispatch mechanism:
 |---|---|---|---|---|
 | **Completion** | `kReceive`, `kSend` | the channel's completion-channel fd (one per RDMA channel) | `ibv_poll_cq` | `wr_id` (`Channel::Handle`) |
 | **Cm** | `kListen`, and each accepted `Connection` | the **CM event channel** fd (one per engine) | `rdma_get_cm_event` | `event->id`, an `rdma_cm_id *` |
-| **Fd** | `kTimer`, `kNotify`, `kSignal` | their own fd (timerfd / eventfd / signalfd) | `epoll_wait` readiness | the fd |
+| **Fd** | `kSystemTimer`, `kNotify`, `kSystemSignal` | their own fd (timerfd / eventfd / signalfd) | `epoll_wait` readiness | the fd |
 
 The `NBIO` analogy holds — channels *are* grouped by the fd the poller waits on,
 and the poller dispatches internally — but with two caveats.
@@ -487,15 +487,15 @@ So the channel hierarchy carries **two roles**, on one base class:
 | Role | Owns an fd? | `handle_event()` does | Examples |
 |---|---|---|---|
 | **Poller** (one per engine) | yes | drain the source, then dispatch to its targets | completion poller, CM poller |
-| **Target** (per connection/operation) | no | resume its parked coroutine from a filled job | `ReceiveChannel`, `SendChannel` |
+| **Target** (per connection/operation) | no | resume its parked coroutine from a filled job | `TcpReceiveChannel`, `TcpSendChannel` |
 
 ```cpp
 class Channel;                     // shared protocol: on_event / arm / disarm / handle_event
 class CompletionPoller : Channel;  // fd = comp_channel->fd; handle_event() drains the CQ
                                    //   and calls the owning channel for each wr_id
 class CmPoller         : Channel;  // fd = event_channel->fd; handle_event() drains CM events
-class ReceiveChannel   : Channel;  // no fd; arm() posts a WR; handle_event() resumes
-class SendChannel      : Channel;  // no fd; arm() posts a WR; handle_event() resumes
+class TcpReceiveChannel   : Channel;  // no fd; arm() posts a WR; handle_event() resumes
+class TcpSendChannel      : Channel;  // no fd; arm() posts a WR; handle_event() resumes
 ```
 
 Only the two pollers are registered with the event loop; the targets are
@@ -504,7 +504,7 @@ fd → channel → `handle_event()` — without introducing a new abstraction.
 
 The initial implementation uses one completion fd per connection. That is more
 fd-heavy than a shared CQ, but it keeps ownership and dispatch local: a ready
-`RDMA_Channel` fd means exactly one CQ to acknowledge, re-arm and drain. A
+`RdmaChannel` fd means exactly one CQ to acknowledge, re-arm and drain. A
 shared-CQ design remains an optimization rather than a prerequisite for the
 channel abstraction.
 
@@ -519,8 +519,8 @@ multiplexer already does it twice:
   channel then performs a synchronous `pread`. The *same* channel class under
   `URingMultiplexer` instead submits a genuine asynchronous read. A `ChannelType`
   is therefore already a shared vocabulary whose *handling* is backend-specific.
-- `kSignal` adapts a primitive only **one** consumer can observe: `Core::Signal`
-  broadcasts to a static list of eventfds so every `SignalChannel` instance can
+- `kSystemSignal` adapts a primitive only **one** consumer can observe: `Core::SystemSignal`
+  broadcasts to a static list of eventfds so every `SystemSignalChannel` instance can
   consume it, and the channel then resumes a whole list of waiters.
 
 The completion flavour is the same kind of extension: one more bucket in the
@@ -618,7 +618,7 @@ struct SendJob
 A `Connection` is a thin owner around one `rdma_cm_id *`, which already holds
 the queue pair (`id->qp`), the protection domain and the CQs. It is the
 "underlying object" that a send channel and a receive channel are pinned to,
-playing the role `Foundation::Core::Socket` plays in `NBIO` — but with no
+playing the role `Foundation::Core::TcpSocket` plays in `NBIO` — but with no
 socket: there is no fd for the connection, and the object is reached through
 `rdma_cm` and the verbs API rather than through the kernel's socket interface.
 
@@ -684,16 +684,16 @@ class MemoryRegion
 
 Receives are posted against slots from this arena. Received bytes are then
 copied into the caller's `Core::Buffer` before resuming its coroutine, which
-keeps `Session::receive` byte-for-byte compatible with `NBIO`. The copy is a
+keeps `TcpSession::receive` byte-for-byte compatible with `NBIO`. The copy is a
 deliberate first-version trade-off; see Open Decisions.
 
-### `Session`
+### `TcpSession`
 
-`Session` is the transport the APPLICATION talks to. Its surface matches
-`NBIO::Session` so the RESP layer works unchanged:
+`TcpSession` is the transport the APPLICATION talks to. Its surface matches
+`NBIO::TcpSession` so the RESP layer works unchanged:
 
 ```cpp
-class Session : protected std::enable_shared_from_this<Session>
+class TcpSession : protected std::enable_shared_from_this<TcpSession>
 {
   public:
     Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
@@ -704,7 +704,7 @@ class Session : protected std::enable_shared_from_this<Session>
 };
 ```
 
-Internally it owns a `ReceiveChannel` and a `SendChannel` over the same
+Internally it owns a `TcpReceiveChannel` and a `TcpSendChannel` over the same
 `Connection`, plus the receive-slot bookkeeping.
 
 ## Public API
@@ -725,12 +725,12 @@ Task<void> sleep_for(std::chrono::steady_clock::duration duration);
 Task<void> wait_for_signal();
 
 // ---- server ----
-std::unique_ptr<Listener> listen_on(const Foundation::Core::Address &address,
+std::unique_ptr<Listener> listen_on(const Foundation::Core::SocketAddress &address,
                                     int backlog = 128);
 
 // ---- connection ----
-Task<std::shared_ptr<Session>> connect_to(const Foundation::Core::Address &address);
-std::shared_ptr<Session> establish_with(Connection connection);
+Task<std::shared_ptr<TcpSession>> connect_to(const Foundation::Core::SocketAddress &address);
+std::shared_ptr<TcpSession> establish_with(Connection connection);
 } // namespace Foundation::RDMA
 ```
 
@@ -780,7 +780,7 @@ sequenceDiagram
     E->>E: create QP, post initial RECVs
     E->>CM: rdma_connect
     CM-->>E: RDMA_CM_EVENT_ESTABLISHED
-    E->>C: resume connect_to() with a Session
+    E->>C: resume connect_to() with a TcpSession
 ```
 
 CM events are delivered on the CM event channel fd, which is registered with the
@@ -812,13 +812,13 @@ Foundation/RDMA/
   Engine.hpp / Engine.cpp  // runtime tag, idle hook, standing resources
   Multiplexer.hpp / .cpp    // concrete composite CQ/fd poller
   Channel.hpp / .cpp        // channel base (owns its handle)
-  SendChannel.hpp / .cpp
-  ReceiveChannel.hpp / .cpp
+  TcpSendChannel.hpp / .cpp
+  TcpReceiveChannel.hpp / .cpp
   AcceptChannel.hpp / .cpp  // rdma_cm listener / connector
   Connection.hpp / .cpp     // rdma_cm_id + QP (the object a channel pins to)
   Device.hpp / .cpp         // ibv_context + PD
   MemoryRegion.hpp / .cpp   // registered arena + slot pool
-  Session.hpp / .cpp
+  TcpSession.hpp / .cpp
   Types.hpp                 // ChannelType, status mapping
 ```
 
@@ -826,7 +826,7 @@ Foundation/RDMA/
 
 The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`,
 `Connection`, `EventChannel`) sit *below* the channel layer, playing the role
-`Foundation::Core::Socket` plays for `NBIO`. They do **not** belong in
+`Foundation::Core::TcpSocket` plays for `NBIO`. They do **not** belong in
 `Foundation::Core`, for two reasons:
 
 1. **Dependencies.** `Foundation/Core/CMakeLists.txt` has no `find_package` at
@@ -836,9 +836,9 @@ The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`
    belongs to `RDMA`. Putting the primitives in Core would force `libibverbs` /
    `librdmacm` on every consumer of `Foundation`, including a TCP-only build.
 2. **Reach.** Core holds primitives that are dependency-free *and* useful to more
-   than one backend (`Socket`, `File`, `Timer`, `Notifier`, `Signal`). No other
+   than one backend (`TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal`). No other
    backend can use an `ibv_qp`. What RDMA genuinely shares with Core is the value
-   types it does not own — `Address` (`rdma_cm` takes a `sockaddr`) and `Buffer`.
+   types it does not own — `SocketAddress` (`rdma_cm` takes a `sockaddr`) and `Buffer`.
 
 One correction to the "each provides a pollable fd" model, because it changes the
 shape of the layer: **the two pollable fds are engine-wide, not per-connection.**
@@ -850,7 +850,7 @@ shape of the layer: **the two pollable fds are engine-wide, not per-connection.*
 | `Connection` (`rdma_cm_id`) | no | one per connection |
 | `QueuePair`, `MemoryRegion` | no | per connection / per arena |
 
-The CM event channel is engine-owned like `Core::Notifier`; the completion
+The CM event channel is engine-owned like `Core::EventNotifier`; the completion
 channel is connection-owned. A QP has no fd of its own; a completion is pollable
 only because the channel's CQ was created against its completion channel.
 
@@ -881,15 +881,15 @@ so that non-Linux configuration is unaffected.
 |---|---|---|
 | M0 | Skeleton: `CMakeLists.txt`, `Runtime.hpp`, `Engine`, `RDMA::run()`, idle hook, standing timer/notify/signal channels, `sleep_for`. | A no-op coroutine plus a timer runs on the RDMA engine, with no verbs linked yet. |
 | M1 | `Device`, `Connection`, `MemoryRegion`, `Channel`, `Multiplexer` with CQ polling; two-sided `SEND`/`RECV` over a loopback QP pair. | A handshake-free loopback exchange delivers bytes reliably. |
-| M2 | `rdma_cm` listener + connector; `Session` byte stream; `Listener::accept()`; `establish_with`. | A client can `connect_to` a server, exchange an ordered byte stream, and disconnect cleanly. |
+| M2 | `rdma_cm` listener + connector; `TcpSession` byte stream; `Listener::accept()`; `establish_with`. | A client can `connect_to` a server, exchange an ordered byte stream, and disconnect cleanly. |
 | M3 | Reliability: flush/disconnect handling, receive-slot backpressure, cancellation safety, RESP integration. | The RESP server runs on the RDMA backend under the existing test suite. |
 | M4 | Performance: zero-copy receive, completion batching, tunable CQ/slot counts. | Measured throughput/latency recorded against the `NBIO` backends. |
 
 ## Open Decisions
 
 1. **Standing channels: duplicate or extract? — settled in favour of extraction.**
-   An earlier draft had `RDMA` duplicate `TimerChannel`, `NotifyChannel`,
-   `SignalChannel` and `ConditionVariable`. That is not small: those four are a
+   An earlier draft had `RDMA` duplicate `SystemTimerChannel`, `EventNotifyChannel`,
+   `SystemSignalChannel` and `ConditionVariable`. That is not small: those four are a
    few hundred lines of subtle park/wake coroutine code whose *only* backend
    requirement is "poll this fd". They are backend-neutral, so the right boundary
    is not "NBIO versus RDMA" but **fd-based channels versus data-path channels**.
@@ -898,17 +898,17 @@ so that non-Linux configuration is unaffected.
    | Layer | Contents |
    |---|---|
    | `Foundation::Async` | `Task`, `Coroutine`, `Scheduler` |
-   | `Foundation::Core` | `Address`, `Buffer`, `Socket`, `File`, `Timer`, `Notifier`, `Signal` |
-   | `Foundation::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `TimerChannel`, `NotifyChannel`, `SignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
-   | `Foundation::NBIO` | epoll / io_uring multiplexers, socket channels, `Session`, file channels |
-   | `Foundation::RDMA` | RDMA multiplexer, RDMA channels, `Session`, `MemoryRegion` |
+   | `Foundation::Core` | `SocketAddress`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
+   | `Foundation::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
+   | `Foundation::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSession`, file channels |
+   | `Foundation::RDMA` | RDMA multiplexer, RDMA channels, `TcpSession`, `MemoryRegion` |
 
    Each backend then supplies only its multiplexer, its data-path channels, its
    `Runtime` alias and its default-multiplexer factory. Everything else is
    inherited. This is a move of existing files, not a rewrite, and it is the
    difference between "add a backend" and "add a second framework".
 
-   File channels (`ReadChannel`, `WriteChannel`, `FileStream`) stay in `NBIO`:
+   File channels (`FileReadChannel`, `FileWriteChannel`, `FileStream`) stay in `NBIO`:
    local file I/O is a capability of the local backends, not of RDMA.
 2. **One completion queue, or one per connection?** The design assumes a single
    engine-wide CQ that the multiplexer polls, with connections created against

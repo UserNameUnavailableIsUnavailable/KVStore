@@ -191,7 +191,7 @@ StartupSettings TakeStartupSettings(std::vector<CommandLine> &lines)
             }
             try
             {
-                settings.master = Foundation::Core::Address::from_ipv4(line->arguments[1], ParsePort(*line, line->arguments[2]));
+                settings.master = Foundation::Core::SocketAddress::from_v4(line->arguments[1], ParsePort(*line, line->arguments[2]));
             }
             catch (const std::exception &error)
             {
@@ -218,6 +218,10 @@ StartupSettings TakeStartupSettings(std::vector<CommandLine> &lines)
         if (config.parameter == "port")
         {
             settings.port = ToPort(config.values.front());
+        }
+        else if (config.parameter == "rdma_device")
+        {
+            settings.rdma_device = config.values.front();
         }
         else
         {

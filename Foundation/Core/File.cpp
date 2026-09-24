@@ -22,11 +22,11 @@ File::~File() noexcept
     close();
 }
 
-ReadResult File::read(std::span<char> buffer)
+expected<std::size_t, std::error_code> File::read(std::span<char> buffer)
 {
 #if defined(_WIN32)
     (void)buffer;
-    throw std::runtime_error("Windows file read is not implemented yet");
+    return unexpected<std::error_code>(std::make_error_code(std::errc::function_not_supported));
 #else
     while (true)
     {
@@ -37,30 +37,22 @@ ReadResult File::read(std::span<char> buffer)
             {
                 continue;
             }
-            return {.status = ReadStatus::kError,
-                    .bytes_transferred = 0,
-                    .error_code = std::error_code(errno, std::system_category())};
+            return unexpected<std::error_code>(std::error_code(errno, std::system_category()));
         }
-        if (result == 0)
-        {
-            return {.status = ReadStatus::kEndOfFile, .bytes_transferred = 0, .error_code = {}};
-        }
-
-        return {.status = ReadStatus::kDone,
-                .bytes_transferred = static_cast<std::size_t>(result),
-                .error_code = {}};
+        // result == 0 is end-of-file: a successful read of nothing.
+        return static_cast<std::size_t>(result);
     }
 #endif
 }
 
-WriteResult File::write(std::span<const char> buffer)
+expected<std::size_t, std::error_code> File::write(std::span<const char> buffer)
 {
 #if defined(_WIN32)
     (void)buffer;
-    static_assert(false, "Windows file write is not implemented yet");
+    return unexpected<std::error_code>(std::make_error_code(std::errc::function_not_supported));
 #else
     auto total = std::size_t{0};
-    while (buffer.size() > 0)
+    while (!buffer.empty())
     {
         const auto result = ::write(handle_, buffer.data(), buffer.size());
         if (result < 0)
@@ -69,22 +61,18 @@ WriteResult File::write(std::span<const char> buffer)
             {
                 continue;
             }
-            return {.status = WriteStatus::kError,
-                    .bytes_transferred = total,
-                    .error_code = std::error_code(errno, std::system_category())};
+            return unexpected<std::error_code>(std::error_code(errno, std::system_category()));
         }
         if (result == 0)
         {
-            return {.status = WriteStatus::kError,
-                    .bytes_transferred = total,
-                    .error_code = std::make_error_code(std::errc::io_error)};
+            return unexpected<std::error_code>(std::make_error_code(std::errc::io_error));
         }
 
         total += static_cast<std::size_t>(result);
         buffer = buffer.subspan(static_cast<std::size_t>(result));
     }
 
-    return {.status = WriteStatus::kDone, .bytes_transferred = total, .error_code = {}};
+    return total;
 #endif
 }
 

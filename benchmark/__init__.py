@@ -36,20 +36,36 @@ def random_value(rng: random.Random, index: int) -> str:
     return "".join(rng.choice(alphabet) for _ in range(size))
 
 
-def keys(count: int) -> Iterator[str]:
+def keys(count: int, start: int = 0) -> Iterator[str]:
     """The keys a run is about, without the values: removing them does not care
-    what they hold."""
-    for index in range(count):
-        yield f"item:{index:05d}"
+    what they hold.
+
+    `item:0`, `item:1`, ... up to `item:start + count - 1`. The number is written
+    as it is -- no padding -- so the keys do not sort in the order they were
+    written, and a range is two numbers rather than a width."""
+    if count < 0 or start < 0:
+        raise ValueError(f"a run of {count} keys starting at {start} names no keys")
+    for index in range(start, start + count):
+        yield f"item:{index}"
 
 
-def records(seed: int, count: int) -> Iterator[tuple[str, str]]:
-    """The `count` key/value pairs a run is about, in the order they are
-    written. The rng walks the indexes in order, so the same seed and count give
-    the same pairs wherever they are generated."""
-    rng = random.Random(seed)
-    for index, key in enumerate(keys(count)):
-        yield key, random_value(rng, index)
+def value_for(seed: int, index: int) -> str:
+    """One key's value, from the seed and the key's own number.
+
+    A value belongs to its key rather than to a place in a run, so the same key
+    holds the same value wherever it is asked for and a range can be written,
+    checked or removed on its own. Both numbers go into what the rng is seeded
+    with, so two different keys cannot walk the same stream of choices."""
+    return random_value(random.Random(f"{seed}:{index}"), index)
+
+
+def records(seed: int, count: int, start: int = 0) -> Iterator[tuple[str, str]]:
+    """The `count` key/value pairs a run is about, from `start` upwards, in the
+    order they are written. The values come from the seed and the key's own
+    number, so a check can be given a range and does not have to know how much
+    was written before it."""
+    for index, key in enumerate(keys(count, start), start=start):
+        yield key, value_for(seed, index)
 
 
 # How fast a run went, and what the server held while it did it. The server's

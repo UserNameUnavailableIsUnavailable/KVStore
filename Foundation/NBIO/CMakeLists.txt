@@ -16,22 +16,22 @@ target_sources(
     EpollMultiplexer.cpp
     ConditionVariable.cpp
     FileStream.cpp
-    AcceptChannel.cpp
+    TcpAcceptChannel.cpp
     NBIO.cpp
-    NotifyChannel.cpp
-    RDMA_AcceptChannel.cpp
-    RDMA_ConnectChannel.cpp
-    RDMA_ReceiveChannel.cpp
-    RDMA_SendChannel.cpp
-    RDMA_Session.cpp
-    ReadChannel.cpp
-    ReceiveChannel.cpp
-    SendChannel.cpp
-    Session.cpp
-    SignalChannel.cpp
-    TimerChannel.cpp
+    EventNotifyChannel.cpp
+    RdmaAcceptChannel.cpp
+    RdmaConnectChannel.cpp
+    RdmaReceiveChannel.cpp
+    RdmaSendChannel.cpp
+    RdmaSession.cpp
+    FileReadChannel.cpp
+    TcpReceiveChannel.cpp
+    TcpSendChannel.cpp
+    TcpSession.cpp
+    SystemSignalChannel.cpp
+    SystemTimerChannel.cpp
     URingMultiplexer.cpp
-    WriteChannel.cpp
+    FileWriteChannel.cpp
 )
 
 target_link_libraries(
@@ -40,3 +40,7 @@ target_link_libraries(
     PkgConfig::liburing
     spdlog::spdlog
 )
+
+if(KVSTORE_BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
+endif()

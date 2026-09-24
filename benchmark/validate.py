@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default=DEFAULT_HOST, help="Server to read from")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port it serves clients on")
     parser.add_argument("--count", type=int, default=DEFAULT_COUNT, help="Number of records to check")
+    parser.add_argument("--start", type=int, default=0, help="Number the keys begin at (item:0 by default)")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Seed the values were generated from")
     parser.add_argument("--server-pid", type=int, default=None,
                         help="Server process to report memory for (default: the process listening on the port)")
@@ -53,7 +54,7 @@ def main() -> int:
     meter = Meter(port=args.port, server_pid=args.server_pid)
 
     checked = 0
-    for key, value in records(args.seed, args.count):
+    for key, value in records(args.seed, args.count, args.start):
         actual = client.get(key)
         checked += 1
         if actual != value:
@@ -62,7 +63,8 @@ def main() -> int:
             # caller wait while they are all read.
             print(flush=True)  # finish the line the progress was on
             print(f"mismatch at {key}: expected {described(value)}, found {described(actual)}", file=sys.stderr)
-            print(f"the values come from --seed {args.seed}: both scripts have to be given the same one", file=sys.stderr)
+            print(f"the values come from --seed {args.seed}, for the range --start {args.start} "
+                  f"--count {args.count}: the writing script has to be given the same ones", file=sys.stderr)
             meter.report(checked)
             return 1
         if checked % PROGRESS_EVERY == 0 or checked == args.count:

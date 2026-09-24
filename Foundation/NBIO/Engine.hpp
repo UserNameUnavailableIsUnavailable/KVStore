@@ -2,19 +2,19 @@
 
 #include <Foundation/Async/Scheduler.hpp>
 
-#include <Foundation/Core/Notifier.hpp>
-#include <Foundation/Core/Signal.hpp>
-#include <Foundation/Core/Timer.hpp>
+#include <Foundation/Core/EventNotifier.hpp>
+#include <Foundation/Core/SystemSignal.hpp>
+#include <Foundation/Core/SystemTimer.hpp>
 
-#include <Foundation/NBIO/AcceptChannel.hpp>
+#include <Foundation/NBIO/TcpAcceptChannel.hpp>
 #include <Foundation/NBIO/EpollMultiplexer.hpp>
 #include <functional>
 #include <memory>
 
 #include "Multiplexer.hpp"
-#include "NotifyChannel.hpp"
-#include "SignalChannel.hpp"
-#include "TimerChannel.hpp"
+#include "EventNotifyChannel.hpp"
+#include "SystemSignalChannel.hpp"
+#include "SystemTimerChannel.hpp"
 
 namespace Foundation::NBIO
 {
@@ -63,14 +63,14 @@ class Engine
     // The channel carrying application-generated events. ConditionVariable
     // binds to it, so an application event travels the same path as a kernel
     // event: hand the waiter over, let the multiplexer dispatch it.
-    static NotifyChannel &notify_channel();
+    static EventNotifyChannel &notify_channel();
 
     // The standing channels owned by the engine.
-    static TimerChannel &timer_channel();
+    static SystemTimerChannel &timer_channel();
 
     // Lazily created: constructing the signal channel intercepts SIGINT and
     // SIGTERM, which must only happen if the application asks for it.
-    static SignalChannel &signal_channel();
+    static SystemSignalChannel &signal_channel();
 
   private:
     explicit Engine(std::unique_ptr<Multiplexer> multiplexer);
@@ -79,12 +79,12 @@ class Engine
 
     std::unique_ptr<Multiplexer> multiplexer_;
     Foundation::Async::Scheduler scheduler_;
-    Foundation::Core::Timer timer_;
-    TimerChannel timer_channel_;
-    Foundation::Core::Notifier notifier_;
-    NotifyChannel notify_channel_;
-    std::unique_ptr<Foundation::Core::Signal> signal_;
-    std::unique_ptr<SignalChannel> signal_channel_;
+    Foundation::Core::SystemTimer timer_;
+    SystemTimerChannel timer_channel_;
+    Foundation::Core::EventNotifier notifier_;
+    EventNotifyChannel notify_channel_;
+    std::unique_ptr<Foundation::Core::SystemSignal> signal_;
+    std::unique_ptr<SystemSignalChannel> signal_channel_;
 
     static thread_local std::unique_ptr<Engine> engine_;
 };

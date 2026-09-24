@@ -5,6 +5,7 @@
 #include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/Async/Scheduler.hpp>
 #include <Foundation/Async/Task.hpp>
+#include <set>
 
 #include <chrono>
 #include <cstddef>
@@ -16,7 +17,7 @@
 
 namespace Foundation::NBIO
 {
-class URingMultiplexer final : public Foundation::NBIO::Multiplexer
+class URingMultiplexer final : public Multiplexer
 {
   public:
     using Handle = io_uring *;
@@ -29,27 +30,24 @@ class URingMultiplexer final : public Foundation::NBIO::Multiplexer
     void run() override;
     void run_for(std::chrono::milliseconds timeout) override;
     void add_channel(Foundation::NBIO::Channel *channel) override;
-    void update_channel(Foundation::NBIO::Channel *channel) override;
     void delete_channel(Foundation::NBIO::Channel *channel) noexcept override;
 
   private:
     void run_impl(int timeout_ms);
 
     // Turn the channel's next operation into a submission queue entry. Answers
-    // false when the channel has nothing to hand over or the submission queue is
-    // full; the caller asks again on a later pass. `unpublished` is how many entries
-    // this pass has filled in but not handed to the kernel yet.
-    bool prepare(Foundation::NBIO::Channel *channel, std::size_t &unpublished);
+    // false when the channel has nothing to hand over, an operation is already in
+    // flight for it, or the submission queue is full.
+    bool prepare(Foundation::NBIO::Channel *channel);
     void submit();
-    // Reap every ready completion: advance each channel's batch first, then
-    // conclude and wake it, once no completion is left to write into it.
+    // Reap every ready completion: spread each outcome over the channel's batch,
+    // then ask the channel to wake what it answered and arm what is left.
     void handle_completions();
     io_uring ring_;
-    // fd -> channels living on that fd (simplex channels share a socket).
-    std::unordered_multimap<int, Foundation::NBIO::Channel *> registered_channels_;
-    // Channels whose operation is armed but not yet handed to the kernel. FIFO,
-    // so a burst of submissions cannot starve any single channel.
-    std::vector<Foundation::NBIO::Channel *> pending_submissions_;
+    // Channels currently armed: the ones submit() asks for work.
+    std::set<Channel*> channels_;
+    // Channels whose operation is already with the kernel.
+    std::set<Channel*> in_flight_;
 };
 } // namespace Foundation::NBIO
 #endif // defined(__linux__)

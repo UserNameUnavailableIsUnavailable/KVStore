@@ -71,13 +71,15 @@ void Server::run(const ServerOptions &options)
     const std::uint16_t replication_port = detail::Resolve("replication-port", options.replication_port,
                                                            declared.replication_port, ServerOptions::kDefaultReplicationPort);
     const std::string replication_address =
-        detail::Resolve("replication-address", options.replication_address, declared.replication_address,
-                        std::string{ServerOptions::kDefaultReplicationAddress});
+        detail::Resolve("replication-ip", options.replication_address, declared.replication_address,
+                        std::string{ServerOptions::kDefaultReplicationSocketAddress});
+    const std::string rdma_device =
+        detail::Resolve("rdma-device", options.rdma_device, declared.rdma_device, std::string{});
 
     // Whether this instance is a replica is part of the same settling, so a flag
     // and a file line that both name a master would be a question rather than a
     // setting: the command line is the answer.
-    const std::optional<Foundation::Core::Address> master = options.master ? options.master : declared.master;
+    const std::optional<Foundation::Core::SocketAddress> master = options.master ? options.master : declared.master;
     if (options.master && declared.master)
     {
         spdlog::warn("config: the file's 'replicaof' is ignored; the command line named a master");
@@ -108,6 +110,7 @@ void Server::run(const ServerOptions &options)
     ReplicationService::Options replication_options{
         .listen_port = replication_port,
         .listen_address = replication_address,
+        .rdma_device = rdma_device,
         .master = master,
     };
     ReplicationService::Host host{
@@ -188,7 +191,7 @@ Foundation::NBIO::Task<void> Server::start(std::uint16_t port, std::vector<Comma
 
     try
     {
-        co_await serve(Foundation::Core::Address::from_ipv4("0.0.0.0", port));
+        co_await serve(Foundation::Core::SocketAddress::from_v4("0.0.0.0", port));
     }
     catch (const std::exception &error)
     {
@@ -231,12 +234,12 @@ Foundation::NBIO::Task<void> Server::apply_commands(std::vector<CommandLine> com
     }
 }
 
-Foundation::NBIO::Task<void> Server::serve(const Foundation::Core::Address &address)
+Foundation::NBIO::Task<void> Server::serve(const Foundation::Core::SocketAddress &address)
 {
     co_await std::move(accept_clients(Foundation::NBIO::bind(address)));
 }
 
-Foundation::NBIO::Task<void> Server::accept_clients(std::unique_ptr<Foundation::NBIO::AcceptChannel> acceptor)
+Foundation::NBIO::Task<void> Server::accept_clients(std::unique_ptr<Foundation::NBIO::TcpAcceptChannel> acceptor)
 {
     while (true)
     {
@@ -246,7 +249,7 @@ Foundation::NBIO::Task<void> Server::accept_clients(std::unique_ptr<Foundation::
             continue;
         }
         auto &[socket, address] = *result;
-        Foundation::NBIO::spawn(serve_client(std::make_shared<Session>(Foundation::NBIO::establish(std::move(socket)))));
+        Foundation::NBIO::spawn(serve_client(std::make_shared<TcpSession>(Foundation::NBIO::establish(std::move(socket)))));
     }
 }
 
@@ -259,7 +262,7 @@ namespace
 constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
 } // namespace
 
-    Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<Session> session)
+    Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<TcpSession> session)
 {
     // A pipeline can hold more than one command, and a single command can be
     // larger than a socket read, so the receive buffer starts roomy and is
@@ -359,7 +362,7 @@ constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
     }
 }
 
-std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, Session &session)
+std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, TcpSession &session)
 {
     // A read of one key is most of what a server is asked, and it is worth
     // answering without building a command for it. The answer needs the key the
@@ -384,7 +387,7 @@ std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view
     return RESP::Object(RESP::BulkString{.value = store_.get(session.lookup_key)});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::dispatch(Session &session, KV::Command command)
+Foundation::NBIO::Task<RESP::Object> Server::dispatch(TcpSession &session, KV::Command command)
 {
     if (command.type == KV::CommandType::kMulti)
     {
@@ -606,6 +609,10 @@ std::optional<std::string> Server::config_value(const std::string &parameter) co
     if (parameter == "port")
     {
         return std::to_string(port_);
+    }
+    if (parameter == "rdma_device")
+    {
+        return rdma_device_;
     }
     if (parameter == "replication_address")
     {

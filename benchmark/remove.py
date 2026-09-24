@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default=DEFAULT_HOST, help="Server to delete from")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port it serves clients on")
     parser.add_argument("--count", type=int, default=DEFAULT_COUNT, help="Number of records to remove")
+    parser.add_argument("--start", type=int, default=0, help="Number the keys begin at (item:0 by default)")
     parser.add_argument("--server-pid", type=int, default=None,
                         help="Server process to report memory for (default: the process listening on the port)")
     return parser.parse_args()
@@ -36,7 +37,7 @@ def main() -> int:
     meter = Meter(port=args.port, server_pid=args.server_pid)
 
     removed = 0
-    for index, key in enumerate(keys(args.count), start=1):
+    for index, key in enumerate(keys(args.count, args.start), start=1):
         # DEL answers with how many keys it removed, which is 0 for one that was
         # never there -- so the count says what was actually in the server.
         removed += int(client.delete(key))
