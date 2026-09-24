@@ -18,11 +18,9 @@ void Scheduler::run()
     // and the loop must not sleep through it.
     idle_(ready_.empty() && finished_.empty());
 
-    // Swap so coroutines that become ready during this batch run in the next
-    // iteration, and so resume() can submit without invalidating the loop.
-    std::vector<Coroutine> batch;
-    batch.swap(ready_);
-    for (const Coroutine &coroutine : batch)
+    assert(batch_.empty());
+    std::swap(ready_, batch_);
+    for (const Coroutine &coroutine : batch_)
     {
         if (!coroutine)
         {
@@ -39,6 +37,7 @@ void Scheduler::run()
         }
         coroutine.handle.resume();
     }
+    batch_.clear();
 
     for (const auto &control_block : finished_)
     {
@@ -54,7 +53,6 @@ void Scheduler::run()
         roots_.fetch_sub(1, std::memory_order_acq_rel);
     }
     finished_.clear();
-
     running_.store(false, std::memory_order_release);
 }
 

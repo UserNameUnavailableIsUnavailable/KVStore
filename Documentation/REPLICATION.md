@@ -17,14 +17,14 @@ The service is described by two things a caller gives it:
 
 ```
 Server --port 8080 \
-       --replication-port 9000 --replication-address 192.168.0.201
+       --replication-port 9000 --replication-ip 192.168.0.201
 Server --port 8081 --replicaof 192.168.0.201:9000
 ```
 
 - `--port` — the TCP port clients connect to.
 - `--replication-port` — the RDMA port this server serves snapshots on. `0`
   (the default) serves none.
-- `--replication-address` — the local address the RDMA listener binds. It has to
+- `--replication-ip` — the local address the RDMA listener binds. It has to
   name the RDMA device (`siw0` is `192.168.0.201` on the development machine): a
   wildcard such as `0.0.0.0` is accepted by `rdma_bind_addr` but binds no device,
   so a replication port without an address that names one is refused at startup
@@ -65,8 +65,11 @@ Server --port 8081 --replicaof 192.168.0.201:9000
    transfer complete. The link stays up afterwards: that is what the incremental
    stream will be pushed over.
 
-`BGSAVE` is the only snapshot command; it forks a child, which is why it is not
-called `SAVE`.
+`BGSAVE` forks a child, which writes the RDB while the server keeps serving, and
+`SAVE` writes the same image in the server's own process, so the server stands
+still until it is on disk and answers `+OK` when it is. Neither runs on a
+schedule: a snapshot is asked for by name, and `BGSAVE` is the one to ask for
+while clients are being served.
 
 Because the transfer is a file and the store is only replaced after the file
 validates, an interrupted full sync leaves the replica exactly as it was.
@@ -79,7 +82,7 @@ nesting needs no special case.
 
 ## The transfer protocol
 
-Moving a payload over an RDMA session is `Application/Server/RDMA_Transfer`.
+Moving a payload over an RDMA session is `Application/Server/RdmaTransfer`.
 Four messages, each starting with its operation as a NUL-terminated word, and
 all numbers in network byte order — big endian — as the snapshot's own lengths
 are, so the high byte of a count is where a reader looks for it rather than

@@ -10,7 +10,7 @@
 #include <mutex>
 #include <utility>
 
-#include "NotifyChannel.hpp"
+#include "EventNotifyChannel.hpp"
 #include "Runtime.hpp"
 
 namespace Foundation::NBIO
@@ -75,7 +75,7 @@ class ConditionVariable
     friend struct ConditionVariableAwaiter;
 
     std::mutex mutex_;
-    NotifyChannel &channel_;
+    EventNotifyChannel &channel_;
     std::deque<Async::Coroutine> notifiees_;
     std::size_t stock_{0};
     std::atomic_bool broadcasting_{false};
@@ -123,14 +123,20 @@ bool ConditionVariableAwaiter<Predicate>::await_suspend(std::coroutine_handle<Pr
 
         if (condition_variable.stock_ > 0)
         {
+            // A notification that arrived before this wait: nothing to sleep for.
             condition_variable.stock_--;
+            return true;
         }
-        else
-        {
-            condition_variable.notifiees_.push_back(std::move(coroutine));
-            return true; // registered on the condition variable
-        }
+
+        condition_variable.notifiees_.push_back(std::move(coroutine));
     }
+
+    // This wait is going to sleep, so from here until it is resumed a notification
+    // has to be seen: the notifier prepares its read and arms for it. Arming belongs
+    // here rather than in the notifier's constructor, which would have it watch a
+    // condition variable nobody is waiting on, and rather than in park(), which runs
+    // on whichever thread notifies and must not touch this engine's state.
+    condition_variable.channel_.waiter_registered();
     return true;
 }
 } // namespace Foundation::NBIO

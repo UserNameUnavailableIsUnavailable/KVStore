@@ -7,7 +7,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 
-#include <Foundation/Core/Socket.hpp>
+#include <Foundation/Core/TcpSocket.hpp>
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -17,115 +17,383 @@
 #include <system_error>
 
 #include "Channel.hpp"
-#include "AcceptChannel.hpp"
-#include "RDMA_AcceptChannel.hpp"
-#include "RDMA_ConnectChannel.hpp"
-#include "RDMA_ReceiveChannel.hpp"
-#include "RDMA_SendChannel.hpp"
+#include "TcpAcceptChannel.hpp"
+#include "RdmaAcceptChannel.hpp"
+#include "RdmaConnectChannel.hpp"
+#include "RdmaReceiveChannel.hpp"
+#include "RdmaSendChannel.hpp"
 #include "FileStream.hpp"
-#include "ReadChannel.hpp"
-#include "NotifyChannel.hpp"
-#include "ReceiveChannel.hpp"
-#include "SendChannel.hpp"
-#include "SignalChannel.hpp"
-#include "WriteChannel.hpp"
-#include "TimerChannel.hpp"
+#include "FileReadChannel.hpp"
+#include "EventNotifyChannel.hpp"
+#include "TcpReceiveChannel.hpp"
+#include "TcpSendChannel.hpp"
+#include "SystemSignalChannel.hpp"
+#include "FileWriteChannel.hpp"
+#include "SystemTimerChannel.hpp"
 
 #define MAKE_ERROR_CODE(e) std::error_code(e, std::system_category())
 
 namespace Foundation::NBIO
 {
-#define ThrowUringError(error, what)                                                                                   \
-    throw std::system_error(error, std::system_category(),                                                             \
-                            std::string(what) + ": " + std::system_category().message(error));
+#define ThrowUringError(error, what) \
+    throw std::system_error(error, std::system_category(), std::string(what) + ": " + std::system_category().message(error));
 
-// The channels that carry per-operation waits. They are queued for a submission
-// only while they have work the kernel has not been given yet; the others (a
-// timer, a notifier, a signal, an RDMA stream) are queued whenever they are armed.
-static bool waits_per_operation(ChannelType type)
+void URingMultiplexer::run()
 {
-    switch (type)
-    {
-    case ChannelType::kReceive:
-    case ChannelType::kSend:
-    case ChannelType::kRead:
-    case ChannelType::kWrite:
-    case ChannelType::kAccept:
-        return true;
-    default:
-        return false;
-    }
+    run_impl(-1);
 }
 
-// Does this channel have work the kernel has not been given yet? Only the channels
-// that carry per-operation waits are asked: the others are queued whenever they are
-// armed.
-static bool has_prepared(Foundation::NBIO::Channel *channel)
+void URingMultiplexer::run_for(std::chrono::milliseconds timeout)
+{
+    auto now = std::chrono::steady_clock::now();
+    const auto due = now + timeout;
+    do
+    {
+        const auto remaining = (due - now).count();
+        const auto ms = remaining > INT_MAX ? INT_MAX : remaining;
+        run_impl(static_cast<int>(ms));
+        now = std::chrono::steady_clock::now();
+    } while (now < due);
+}
+
+void URingMultiplexer::run_impl(int timeout_ms)
+{
+    // 1. Give the kernel every operation that is waiting to start.
+    submit();
+    // 2. wait for at least one completion (unless asked not to block).
+    io_uring_cqe *cqe = nullptr;
+    int ret = 0;
+    if (timeout_ms < 0)
+    {
+        do
+        {
+            ret = ::io_uring_wait_cqe(&ring_, &cqe);
+        } while (ret == -EINTR || ret == EINTR);
+    }
+    else
+    {
+        __kernel_timespec ts{.tv_sec = static_cast<long long>(timeout_ms / 1000),
+                             .tv_nsec = static_cast<long long>(timeout_ms % 1000) * 1000000LL};
+        do
+        {
+            ret = ::io_uring_wait_cqe_timeout(&ring_, &cqe, &ts);
+        } while (ret == -EINTR || ret == EINTR);
+    }
+    // -ETIME simply means "nothing completed" for the timeout variant.
+    if (ret < 0 && ret != -ETIME)
+    {
+        ThrowUringError(-ret, "io_uring_wait_cqe failed");
+    }
+
+    // 3. Reap everything that is ready. A resumed coroutine may arm the next
+    //    operation, so submit again to keep latency down.
+    handle_completions();
+    submit();
+}
+
+void URingMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
+{
+    // Registration is the whole of arming: the channel is asked for work until it
+    // disarms.
+    channels_.insert(channel);
+}
+
+void URingMultiplexer::delete_channel(Channel *channel) noexcept
+{
+    // TODO: cancel or drain the channel's in-flight operation before its frame
+    // goes away; until then a completion naming a deleted channel is dropped.
+    channels_.erase(channel);
+    in_flight_.erase(channel);
+}
+
+// One completion's outcome into the batch it belongs to: the result is spread over
+// the submissions the operation covered, in queue order.
+static void advance(Foundation::NBIO::Channel *channel, int result)
 {
     switch (channel->type())
     {
     case ChannelType::kReceive:
-        return static_cast<ReceiveChannel *>(channel)->has_prepared();
+    {
+        auto &payload = std::get<ReceivePayload>(static_cast<TcpReceiveChannel *>(channel)->submit());
+        if (result < 0)
+        {
+            if (result == -EAGAIN || result == -EWOULDBLOCK)
+            {
+                break; // not ready is not an answer
+            }
+            const std::error_code failure{-result, std::system_category()};
+            while (auto *submission = payload.next_submission())
+            {
+                submission->status = Core::OperationStatus::kError;
+                submission->error_code = failure;
+                payload.complete();
+            }
+        }
+        else if (result == 0)
+        {
+            while (auto *submission = payload.next_submission())
+            {
+                submission->status = Core::OperationStatus::kDone;
+                submission->bytes = 0;
+                submission->error_code = {};
+                payload.complete();
+            }
+        }
+        else
+        {
+            std::size_t remaining = static_cast<std::size_t>(result);
+            while (remaining > 0)
+            {
+                auto *submission = payload.next_submission();
+                if (submission == nullptr)
+                {
+                    break;
+                }
+                const std::size_t taken = std::min(remaining, submission->buffer.size());
+                submission->status = Core::OperationStatus::kDone;
+                submission->bytes = taken;
+                submission->error_code = {};
+                payload.complete();
+                remaining -= taken;
+            }
+        }
+        break;
+    }
     case ChannelType::kSend:
-        return static_cast<SendChannel *>(channel)->has_prepared();
+    {
+        auto &payload = std::get<SendPayload>(static_cast<TcpSendChannel *>(channel)->submit());
+        if (result < 0)
+        {
+            if (result == -EAGAIN || result == -EWOULDBLOCK)
+            {
+                break;
+            }
+            const std::error_code failure{-result, std::system_category()};
+            while (auto *submission = payload.next_submission())
+            {
+                submission->status = Core::OperationStatus::kError;
+                submission->error_code = failure;
+                payload.complete();
+            }
+        }
+        else if (result == 0)
+        {
+            auto *submission = payload.next_submission();
+            if (submission != nullptr && !submission->buffer.empty())
+            {
+                submission->status = Core::OperationStatus::kError;
+                submission->error_code = std::make_error_code(std::errc::io_error);
+                payload.complete();
+            }
+        }
+        else
+        {
+            std::size_t remaining = static_cast<std::size_t>(result);
+            while (remaining > 0)
+            {
+                auto *submission = payload.next_submission();
+                if (submission == nullptr)
+                {
+                    break;
+                }
+                const std::size_t size = submission->buffer.size();
+                const std::size_t taken = std::min(remaining, size);
+                submission->bytes += taken;
+                remaining -= taken;
+                if (taken == size)
+                {
+                    submission->status = Core::OperationStatus::kDone;
+                    submission->error_code = {};
+                    payload.complete();
+                }
+                else
+                {
+                    submission->buffer = submission->buffer.subspan(taken);
+                    break;
+                }
+            }
+        }
+        break;
+    }
     case ChannelType::kRead:
-        return static_cast<ReadChannel *>(channel)->has_prepared();
+    {
+        auto &payload = std::get<ReadPayload>(static_cast<FileReadChannel *>(channel)->submit());
+        if (result < 0)
+        {
+            const std::error_code failure{-result, std::system_category()};
+            while (auto *submission = payload.next_submission())
+            {
+                submission->status = Core::OperationStatus::kError;
+                submission->error_code = failure;
+                payload.complete();
+            }
+        }
+        else
+        {
+            payload.advance_offset(static_cast<std::size_t>(result));
+            std::size_t remaining = static_cast<std::size_t>(result);
+            while (auto *submission = payload.next_submission())
+            {
+                if (remaining == 0)
+                {
+                    // A short read on a regular file is its end.
+                    submission->status = Core::OperationStatus::kDone;
+                    submission->bytes = 0;
+                    submission->error_code = {};
+                    payload.complete();
+                    continue;
+                }
+                const std::size_t taken = std::min(remaining, submission->buffer.size());
+                submission->status = Core::OperationStatus::kDone;
+                submission->bytes = taken;
+                submission->error_code = {};
+                payload.complete();
+                remaining -= taken;
+            }
+        }
+        break;
+    }
     case ChannelType::kWrite:
-        return static_cast<WriteChannel *>(channel)->has_prepared();
+    {
+        auto &payload = std::get<WritePayload>(static_cast<FileWriteChannel *>(channel)->submit());
+        if (result < 0)
+        {
+            const std::error_code failure{-result, std::system_category()};
+            while (auto *submission = payload.next_submission())
+            {
+                submission->status = Core::OperationStatus::kError;
+                submission->error_code = failure;
+                payload.complete();
+            }
+        }
+        else
+        {
+            payload.advance_offset(static_cast<std::size_t>(result));
+            std::size_t remaining = static_cast<std::size_t>(result);
+            while (remaining > 0)
+            {
+                auto *submission = payload.next_submission();
+                if (submission == nullptr)
+                {
+                    break;
+                }
+                const std::size_t size = submission->buffer.size();
+                const std::size_t taken = std::min(remaining, size);
+                submission->bytes += taken;
+                remaining -= taken;
+                if (taken == size)
+                {
+                    submission->status = Core::OperationStatus::kDone;
+                    submission->error_code = {};
+                    payload.complete();
+                }
+                else
+                {
+                    submission->buffer = submission->buffer.subspan(taken);
+                    break;
+                }
+            }
+        }
+        break;
+    }
     case ChannelType::kAccept:
-        return static_cast<AcceptChannel *>(channel)->has_prepared();
+    {
+        auto &payload = std::get<AcceptPayload>(static_cast<TcpAcceptChannel *>(channel)->submit());
+        auto *submission = payload.next_submission();
+        if (submission == nullptr)
+        {
+            break;
+        }
+        if (result >= 0)
+        {
+            submission->status = Core::OperationStatus::kDone;
+            submission->socket = Core::TcpSocket::adopt(static_cast<std::uintptr_t>(result));
+            submission->error_code = {};
+            payload.complete();
+        }
+        else if (result == -EAGAIN || result == -EWOULDBLOCK)
+        {
+            // Not ready is not an answer: the wait keeps its place.
+        }
+        else
+        {
+            submission->status = Core::OperationStatus::kError;
+            submission->error_code = std::error_code(-result, std::system_category());
+            payload.complete();
+        }
+        break;
+    }
+    // A poll completion only says the fd became readable; the channels that poll
+    // reap their own events in complete().
     default:
-        return false;
+        break;
     }
 }
 
-// Wakes what a completion answered and lets the channel say what it owes next.
-// Every channel is driven through here, which is why the multiplexer never has to
-// know which of them keep a queue of waits.
-static void resume_channel(Foundation::NBIO::Channel *channel)
+// Asks the channel to wake what a completion answered and arm what is still owed.
+static void complete_channel(Foundation::NBIO::Channel *channel)
 {
     switch (channel->type())
     {
     case ChannelType::kReceive:
-        static_cast<ReceiveChannel *>(channel)->handle_completion();
+        static_cast<TcpReceiveChannel *>(channel)->complete();
         break;
     case ChannelType::kSend:
-        static_cast<SendChannel *>(channel)->handle_completion();
+        static_cast<TcpSendChannel *>(channel)->complete();
         break;
     case ChannelType::kRead:
-        static_cast<ReadChannel *>(channel)->handle_completion();
+        static_cast<FileReadChannel *>(channel)->complete();
         break;
     case ChannelType::kWrite:
-        static_cast<WriteChannel *>(channel)->handle_completion();
+        static_cast<FileWriteChannel *>(channel)->complete();
         break;
     case ChannelType::kAccept:
-        static_cast<AcceptChannel *>(channel)->handle_completion();
+        static_cast<TcpAcceptChannel *>(channel)->complete();
         break;
-    case ChannelType::kTimer:
-        static_cast<TimerChannel *>(channel)->handle_completion();
+    case ChannelType::kSystemTimer:
+        static_cast<SystemTimerChannel *>(channel)->complete();
         break;
     case ChannelType::kNotify:
-        static_cast<NotifyChannel *>(channel)->handle_completion();
+        static_cast<EventNotifyChannel *>(channel)->complete();
         break;
-    case ChannelType::kSignal:
-        static_cast<SignalChannel *>(channel)->handle_completion();
+    case ChannelType::kSystemSignal:
+        static_cast<SystemSignalChannel *>(channel)->complete();
         break;
-    case ChannelType::kRDMA_Accept:
-        static_cast<RDMA_AcceptChannel *>(channel)->handle_completion();
+    case ChannelType::kRdmaAccept:
+        static_cast<RdmaAcceptChannel *>(channel)->complete();
         break;
-    case ChannelType::kRDMA_Connect:
-        static_cast<RDMA_ConnectChannel *>(channel)->handle_completion();
+    case ChannelType::kRdmaConnect:
+        static_cast<RdmaConnectChannel *>(channel)->complete();
         break;
-    case ChannelType::kRDMA_Send:
-        static_cast<RDMA_SendChannel *>(channel)->handle_completion();
+    case ChannelType::kRdmaSend:
+        static_cast<RdmaSendChannel *>(channel)->complete();
         break;
-    case ChannelType::kRDMA_Receive:
-        static_cast<RDMA_ReceiveChannel *>(channel)->handle_completion();
+    case ChannelType::kRdmaReceive:
+        static_cast<RdmaReceiveChannel *>(channel)->complete();
         break;
     default:
         break;
     }
 }
+
+// Builds a one-shot poll for a poll-channel, whose whole wait is the poll.
+template <typename PollPayloadType>
+static io_uring_sqe *prepare_poll_sqe(io_uring *ring, Foundation::NBIO::Channel *channel, PollPayloadType &payload)
+{
+    if (!payload.wants_poll())
+    {
+        return nullptr;
+    }
+    io_uring_sqe *sqe = ::io_uring_get_sqe(ring);
+    if (sqe == nullptr)
+    {
+        return nullptr;
+    }
+    payload.take_poll();
+    ::io_uring_prep_poll_add(sqe, channel->native_handle(), POLLIN);
+    return sqe;
+}
+
 
 URingMultiplexer::URingMultiplexer(std::uint32_t submission_capacity, std::uint32_t completion_capacity) :
 	Multiplexer(MultiplexerType::kURing)
@@ -160,176 +428,189 @@ URingMultiplexer::~URingMultiplexer() noexcept
 
 bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
 {
-    if (waits_per_operation(channel->type()) && !has_prepared(channel))
+    // One operation per channel is with the kernel at a time.
+    if (in_flight_.contains(channel))
     {
-        // Nothing the kernel can take. A channel that carries per-operation waits
-        // arms itself the moment it has some, so this is the normal state for one
-        // whose operation is already in flight.
         return false;
     }
 
-    io_uring_sqe *sqe = ::io_uring_get_sqe(&ring_);
-    if (sqe == nullptr)
+    io_uring_sqe *sqe = nullptr;
+    switch (channel->type())
     {
-        // Submission queue is full: hand the entries prepared so far to the
-        // kernel to make room, then try once more.
-        ::io_uring_submit(&ring_);
+    case Foundation::NBIO::ChannelType::kReceive:
+    {
+        // Every prepared receive goes in one submission, and the kernel fills the
+        // buffers in the order they were queued.
+        auto *receive = static_cast<TcpReceiveChannel *>(channel);
+        auto &payload = std::get<ReceivePayload>(receive->submit());
+        if (payload.size() == 0)
+        {
+            return false; // nothing to receive for
+        }
+        auto &message = payload.header();
         sqe = ::io_uring_get_sqe(&ring_);
         if (sqe == nullptr)
         {
-            return false; // still full: the caller retries on a later iteration
-        }
-    }
-
-    switch (channel->type())
-    {
-    case Foundation::NBIO::ChannelType::kReceive: {
-        // Every prepared receive goes in one submission, and the kernel fills the
-        // buffers in the order they were queued.
-        auto *receive = static_cast<ReceiveChannel *>(channel);
-        if (receive->count_prepared() == 0)
-        {
             return false;
         }
-        ::io_uring_prep_recvmsg(sqe, receive->native_handle(), const_cast<msghdr *>(&receive->message_batch()), 0);
+        ::io_uring_prep_recvmsg(sqe, receive->native_handle(), &message, 0);
         break;
     }
-    case Foundation::NBIO::ChannelType::kSend: {
+    case Foundation::NBIO::ChannelType::kSend:
+    {
         // One sendmsg for the whole queue: a stream has to keep the order, so the
         // sends cannot be submitted as separate operations.
-        auto *send = static_cast<SendChannel *>(channel);
-        if (send->count_prepared() == 0)
+        auto *send = static_cast<TcpSendChannel *>(channel);
+        auto &payload = std::get<SendPayload>(send->submit());
+        if (payload.size() == 0)
+        {
+            return false; // nothing to send
+        }
+        auto &message = payload.header();
+        sqe = ::io_uring_get_sqe(&ring_);
+        if (sqe == nullptr)
         {
             return false;
         }
-        ::io_uring_prep_sendmsg(sqe, send->native_handle(), const_cast<msghdr *>(&send->message_batch()), MSG_NOSIGNAL);
+        ::io_uring_prep_sendmsg(sqe, send->native_handle(), &message, MSG_NOSIGNAL);
         break;
     }
-    case Foundation::NBIO::ChannelType::kRead: {
+    case Foundation::NBIO::ChannelType::kRead:
+    {
         // Every prepared read goes in one submission: they cover consecutive
         // stretches of the file, so the kernel takes them as one vector.
-        auto *read = static_cast<ReadChannel *>(channel);
-        if (read->count_prepared() == 0)
+        auto *read = static_cast<FileReadChannel *>(channel);
+        auto &payload = std::get<ReadPayload>(read->submit());
+        if (payload.size() == 0)
+        {
+            return false; // nothing to read for
+        }
+        auto &vectors = payload.header();
+        sqe = ::io_uring_get_sqe(&ring_);
+        if (sqe == nullptr)
         {
             return false;
         }
-        const auto vectors = read->vectors();
         ::io_uring_prep_readv(sqe, read->native_handle(), vectors.data(), static_cast<unsigned>(vectors.size()),
-                              static_cast<__u64>(read->front_offset()));
+                              static_cast<__u64>(payload.offset()));
         break;
     }
-    case Foundation::NBIO::ChannelType::kWrite: {
+    case Foundation::NBIO::ChannelType::kWrite:
+    {
         // Every prepared write goes in one submission: they follow one another in
         // the file, so the kernel takes them as one vector.
-        auto *write = static_cast<WriteChannel *>(channel);
-        if (write->count_prepared() == 0)
+        auto *write = static_cast<FileWriteChannel *>(channel);
+        auto &payload = std::get<WritePayload>(write->submit());
+        if (payload.size() == 0)
+        {
+            return false; // nothing to write
+        }
+        auto &vectors = payload.header();
+        sqe = ::io_uring_get_sqe(&ring_);
+        if (sqe == nullptr)
         {
             return false;
         }
-        const auto vectors = write->vectors();
         ::io_uring_prep_writev(sqe, write->native_handle(), vectors.data(), static_cast<unsigned>(vectors.size()),
-                               static_cast<__u64>(write->front_offset()));
+                               static_cast<__u64>(payload.offset()));
         break;
     }
-    case Foundation::NBIO::ChannelType::kAccept: {
-        // One accept covers one wait: the answer names the channel, not the wait
-        // it belongs to, so exactly one may be with the kernel at a time.
-        auto *accept = static_cast<AcceptChannel *>(channel);
-        if (accept->count_prepared() == 0)
+    case Foundation::NBIO::ChannelType::kAccept:
+    {
+        // Taking a connection cannot be vectorised, so one operation covers one
+        // wait -- the wait at the front of the queue is the whole of what this ask
+        // can hand over.
+        auto *accept = static_cast<TcpAcceptChannel *>(channel);
+        auto &payload = std::get<AcceptPayload>(accept->submit());
+        if (payload.size() == 0)
+        {
+            return false; // nobody waiting
+        }
+        payload.bundle();
+        auto *submission = payload.next_submission();
+        if (submission == nullptr)
         {
             return false;
         }
-
-        PendingAccept *waiting = accept->submitted_front();
-        // Let the kernel write the peer address straight into the waiting frame's
-        // result, which is alive for as long as that frame is parked.
-        waiting->result().address.length() = waiting->result().address.capacity();
-        ::io_uring_prep_accept(sqe, accept->native_handle(), waiting->result().address.storage<sockaddr>(),
-                               &waiting->result().address.length(), 0);
+        sqe = ::io_uring_get_sqe(&ring_);
+        if (sqe == nullptr)
+        {
+            return false;
+        }
+        // The kernel writes the peer address straight into the waiting frame's
+        // communication, which is alive for as long as that frame is parked.
+        ::io_uring_prep_accept(sqe, accept->native_handle(), submission->address.storage(),
+                               &submission->address.length(), 0);
         break;
     }
-    case Foundation::NBIO::ChannelType::kTimer: {
-        // A timerfd read completes when the timer fires, returning (and
-        // draining) the 8-byte expiration count -- so a single read both waits
-        // and consumes the event, matching the completion model.
-        auto timer_channel = static_cast<TimerChannel *>(channel);
-        auto &timer_expirations = timer_channel->last_expirations();
-        ::io_uring_prep_read(sqe, timer_channel->native_handle(), &timer_expirations, sizeof(timer_expirations), 0);
+    // The channels that carry one wait move no data through the ring: a one-shot
+    // poll is the entire wait, and they drain the descriptor themselves.
+    case Foundation::NBIO::ChannelType::kSystemTimer:
+    {
+        auto &payload = std::get<SystemTimerPayload>(static_cast<SystemTimerChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
         break;
     }
-    case Foundation::NBIO::ChannelType::kNotify: {
-        auto notify_channel = static_cast<NotifyChannel*>(channel);
-        auto &count = static_cast<NotifyChannel *>(channel)->count();
-        ::io_uring_prep_read(sqe, notify_channel->native_handle(), &count, sizeof(count), 0);
+    case Foundation::NBIO::ChannelType::kNotify:
+    {
+        auto &payload = std::get<NotifyPayload>(static_cast<EventNotifyChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
         break;
     }
-    case Foundation::NBIO::ChannelType::kSignal: {
-        auto signal_channel = static_cast<SignalChannel*>(channel);
-        auto &count = static_cast<SignalChannel *>(channel)->count();
-        ::io_uring_prep_read(sqe, signal_channel->native_handle(), &count, sizeof(count), 0);
+    case Foundation::NBIO::ChannelType::kSystemSignal:
+    {
+        auto &payload = std::get<SystemSignalPayload>(static_cast<SystemSignalChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
         break;
     }
-    // The RDMA channels move no data through the ring. They wait for an event on
-    // a file descriptor -- a connection-management event, or a work completion
-    // on the stream's completion channel -- and then reap it themselves in
-    // handle_completion(). A one-shot poll on that fd is the entire wait; the
-    // channel re-arms it until it has something to report.
-    case Foundation::NBIO::ChannelType::kRDMA_Accept:
-    case Foundation::NBIO::ChannelType::kRDMA_Connect:
-    case Foundation::NBIO::ChannelType::kRDMA_Send:
-    case Foundation::NBIO::ChannelType::kRDMA_Receive:
-		::io_uring_prep_poll_add(sqe, channel->native_handle(), POLLIN);
-		break;
+    case Foundation::NBIO::ChannelType::kRdmaAccept:
+    {
+        auto &payload = std::get<RdmaAcceptPayload>(static_cast<RdmaAcceptChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
+        break;
+    }
+    case Foundation::NBIO::ChannelType::kRdmaConnect:
+    {
+        auto &payload = std::get<RdmaConnectPayload>(static_cast<RdmaConnectChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
+        break;
+    }
+    case Foundation::NBIO::ChannelType::kRdmaSend:
+    {
+        auto &payload = std::get<RdmaSendPayload>(static_cast<RdmaSendChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
+        break;
+    }
+    case Foundation::NBIO::ChannelType::kRdmaReceive:
+    {
+        auto &payload = std::get<RdmaReceivePayload>(static_cast<RdmaReceiveChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload);
+        break;
+    }
     default:
+        return false;
+    }
+
+    if (sqe == nullptr)
+    {
         return false;
     }
 
     // The channel identifies itself; its type says which operation completed.
     ::io_uring_sqe_set_data(sqe, channel);
+    in_flight_.insert(channel);
     return true;
 }
 
 void URingMultiplexer::submit()
 {
-    if (pending_submissions_.empty())
+    bool handed_over = false;
+    for (Foundation::NBIO::Channel *channel : channels_)
     {
-        return;
+        handed_over = prepare(channel) || handed_over;
     }
 
-    std::size_t handed_over = 0;
-    std::vector<Foundation::NBIO::Channel *> still_waiting;
-    still_waiting.reserve(pending_submissions_.size());
-
-    for (Foundation::NBIO::Channel *channel : pending_submissions_)
-    {
-        if (waits_per_operation(channel->type()) && !has_prepared(channel))
-        {
-            // Nothing left to hand over: the channel arms itself when there is,
-            // so it leaves the queue until then.
-            continue;
-        }
-
-        if (!prepare(channel))
-        {
-            // The submission queue is exhausted: this channel and everything
-            // behind it keep their places, and their order, for the next pass.
-            still_waiting.push_back(channel);
-            continue;
-        }
-
-        ++handed_over;
-
-        // A channel may have more than one operation to hand over -- an accept
-        // covers one wait at a time -- so it stays queued while it has more.
-        if (has_prepared(channel))
-        {
-            still_waiting.push_back(channel);
-        }
-    }
-
-    pending_submissions_.swap(still_waiting);
-
-    if (handed_over > 0)
+    if (handed_over)
     {
         const int ret = ::io_uring_submit(&ring_);
         if (ret < 0)
@@ -339,177 +620,43 @@ void URingMultiplexer::submit()
     }
 }
 
-void URingMultiplexer::complete(Foundation::NBIO::Channel *channel, int result)
-{
-    switch (channel->type())
-    {
-    case Foundation::NBIO::ChannelType::kReceive:
-        static_cast<ReceiveChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kSend:
-        static_cast<SendChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kRead:
-        static_cast<ReadChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kWrite:
-        static_cast<WriteChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kAccept:
-        static_cast<AcceptChannel *>(channel)->complete_tasks(result);
-        break;
-    case Foundation::NBIO::ChannelType::kTimer:
-        // The read already drained the timerfd. Waking the entries that have come
-        // due is all that is left, and resume_channel() does it.
-        break;
-    // A poll completion only reports that the fd became readable (its result is a
-    // revents mask, not a byte count), and a notifier or signal read leaves the
-    // reaping to the channel. There is nothing to write into a wait here.
-    case Foundation::NBIO::ChannelType::kNotify:
-    case Foundation::NBIO::ChannelType::kSignal:
-    case Foundation::NBIO::ChannelType::kRDMA_Accept:
-    case Foundation::NBIO::ChannelType::kRDMA_Connect:
-    case Foundation::NBIO::ChannelType::kRDMA_Send:
-    case Foundation::NBIO::ChannelType::kRDMA_Receive:
-        break;
-    default:
-        break;
-    }
-}
-
 void URingMultiplexer::handle_completions()
 {
+    // A channel can have several completions in one pass -- an accept covers one
+    // wait, and one wait is one operation -- so every completion is advanced first
+    // and only then is each channel asked to reap what it answered. A resumed
+    // coroutine is free to prepare more work, and that must not happen while a
+    // completion is still being written into the batch it is about to join.
+    std::vector<Foundation::NBIO::Channel *> answered;
+    answered.reserve(8);
+
     io_uring_cqe *cqe = nullptr;
     while (::io_uring_peek_cqe(&ring_, &cqe) == 0 && cqe != nullptr)
     {
         auto *channel = static_cast<Foundation::NBIO::Channel *>(::io_uring_cqe_get_data(cqe));
         if (channel != nullptr)
         {
-            // Hand the outcome to the channel, which turns it into the answers of
-            // the waits it covers, then let it wake them and do its own bookkeeping.
-            complete(channel, cqe->res);
-            resume_channel(channel);
+            in_flight_.erase(channel);
+            // A channel deleted while its operation was in flight is dropped: its
+            // frame may already be gone.
+            if (channels_.contains(channel))
+            {
+                advance(channel, cqe->res);
+                if (std::find(answered.begin(), answered.end(), channel) == answered.end())
+                {
+                    answered.push_back(channel);
+                }
+            }
         }
         ::io_uring_cqe_seen(&ring_, cqe);
     }
-}
 
-void URingMultiplexer::run_impl(int timeout_ms)
-{
-    // 1. Give the kernel every operation that is waiting to start.
-    submit();
-
-    // 2. wait for at least one completion (unless asked not to block).
-    io_uring_cqe *cqe = nullptr;
-    int ret = 0;
-    if (timeout_ms < 0)
+    for (Foundation::NBIO::Channel *channel : answered)
     {
-        do
-        {
-            ret = ::io_uring_wait_cqe(&ring_, &cqe);
-        } while (ret == -EINTR || ret == EINTR);
+        complete_channel(channel);
     }
-    else
-    {
-        __kernel_timespec ts{.tv_sec = static_cast<long long>(timeout_ms / 1000),
-                             .tv_nsec = static_cast<long long>(timeout_ms % 1000) * 1000000LL};
-        do
-        {
-            ret = ::io_uring_wait_cqe_timeout(&ring_, &cqe, &ts);
-        } while (ret == -EINTR || ret == EINTR);
-    }
-    // -ETIME simply means "nothing completed" for the timeout variant.
-    if (ret < 0 && ret != -ETIME)
-    {
-        ThrowUringError(-ret, "io_uring_wait_cqe failed");
-    }
-
-    // 3. Reap everything that is ready. A resumed coroutine may arm the next
-    //    operation, so submit again to keep latency down.
-    handle_completions();
-    submit();
 }
 
-void URingMultiplexer::run()
-{
-    run_impl(-1);
-}
 
-void URingMultiplexer::run_for(std::chrono::milliseconds timeout)
-{
-    auto now = std::chrono::steady_clock::now();
-    const auto due = now + timeout;
-    do
-    {
-        const auto remaining = (due - now).count();
-        const auto ms = remaining > INT_MAX ? INT_MAX : remaining;
-        run_impl(static_cast<int>(ms));
-        now = std::chrono::steady_clock::now();
-    } while (now < due);
-}
-
-void URingMultiplexer::add_channel(Foundation::NBIO::Channel *channel)
-{
-    const auto fd = channel->native_handle();
-
-    // This backend performs no data movement of its own: it runs a submission
-    // phase and reports completions back into the channel. Registration only
-    // needs to recognise the channel type.
-    switch (channel->type())
-    {
-    case Foundation::NBIO::ChannelType::kReceive:
-    case Foundation::NBIO::ChannelType::kSend:
-    case Foundation::NBIO::ChannelType::kRead:
-    case Foundation::NBIO::ChannelType::kWrite:
-    case Foundation::NBIO::ChannelType::kAccept:
-    case Foundation::NBIO::ChannelType::kTimer:
-    case Foundation::NBIO::ChannelType::kNotify:
-    // Recognised, but only polled: the channel reaps its own events.
-    case Foundation::NBIO::ChannelType::kRDMA_Accept:
-    case Foundation::NBIO::ChannelType::kRDMA_Connect:
-    case Foundation::NBIO::ChannelType::kRDMA_Send:
-    case Foundation::NBIO::ChannelType::kRDMA_Receive:
-        break;
-    default:
-        throw std::logic_error("URingMultiplexer: unsupported channel type");
-    }
-
-    registered_channels_.emplace(fd, channel);
-}
-
-void URingMultiplexer::update_channel(Foundation::NBIO::Channel *channel)
-{
-    // Called by Channel::Arm()/Disarm(). "Armed" means an operation is pending,
-    // so it needs a submission queue entry; disarmed means drop any queued one.
-    if (channel->armed())
-    {
-        if (std::find(pending_submissions_.begin(), pending_submissions_.end(), channel) == pending_submissions_.end())
-        {
-            pending_submissions_.push_back(channel);
-        }
-        return;
-    }
-    std::erase(pending_submissions_, channel);
-}
-
-void URingMultiplexer::delete_channel(Foundation::NBIO::Channel *channel) noexcept
-{
-    const auto fd = channel->native_handle();
-    auto range = registered_channels_.equal_range(fd);
-    for (auto it = range.first; it != range.second; ++it)
-    {
-        if (it->second == channel)
-        {
-            registered_channels_.erase(it);
-            break;
-        }
-    }
-    // Drop any submission that has not reached the kernel yet.
-    std::erase(pending_submissions_, channel);
-    // TODO: cancel operations already in flight (IORING_OP_ASYNC_cancel) and
-    // wait for the cancellation to complete before the channel's buffers go
-    // away. Today channels outlive their in-flight operations because a session
-    // is only reclaimed after its coroutine finishes.
-}
 } // namespace Foundation::NBIO
 #endif // defined(__linux__)

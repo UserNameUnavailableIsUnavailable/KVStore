@@ -21,7 +21,7 @@ ReplicationService::Options ListenOn(std::string address, std::uint16_t port)
 }
 } // namespace
 
-TEST(ReplicationServiceTesting, AWildcardAddressIsRefusedForTheReplicationPort)
+TEST(ReplicationServiceTesting, AWildcardSocketAddressIsRefusedForTheReplicationPort)
 {
     // A wildcard is accepted by rdma_bind_addr but names no device, so the
     // listener would die on the first thing that needs one -- a protection domain
@@ -31,19 +31,19 @@ TEST(ReplicationServiceTesting, AWildcardAddressIsRefusedForTheReplicationPort)
     EXPECT_THROW(ReplicationService(ListenOn("::", 8081), {}), std::invalid_argument);
 }
 
-TEST(ReplicationServiceTesting, ADeviceAddressIsWhatTheListenerNeeds)
+TEST(ReplicationServiceTesting, ADeviceSocketAddressIsWhatTheListenerNeeds)
 {
     // Building the service only decides; no device is touched until the listener
     // is served, so this needs no RDMA device to run.
     EXPECT_NO_THROW(ReplicationService(ListenOn("192.168.0.201", 8081), {}));
 }
 
-TEST(ReplicationServiceTesting, WithoutAReplicationPortTheAddressDoesNotMatter)
+TEST(ReplicationServiceTesting, WithoutAReplicationPortTheSocketAddressDoesNotMatter)
 {
     EXPECT_NO_THROW(ReplicationService(ListenOn("0.0.0.0", 0), {}));
 }
 
-TEST(ReplicationServiceTesting, AnAddressIsNotWhereThePortGoes)
+TEST(ReplicationServiceTesting, AnSocketAddressIsNotWhereThePortGoes)
 {
     // `192.168.0.201:8081` where an address belongs: the port has an option of
     // its own, and a listener that is handed the two together would bind none --
@@ -61,6 +61,6 @@ TEST(ReplicationServiceTesting, ThePoolsHaveToCarryOneConnection)
     options.chunk_count = 1;
     EXPECT_THROW(ReplicationService(options, {}), std::invalid_argument);
 
-    options.chunk_count = 2 * Foundation::Core::RDMA_Stream::kSendChunks;
+    options.chunk_count = 2 * Foundation::Core::RdmaStream::kSendChunks;
     EXPECT_NO_THROW(ReplicationService(options, {}));
 }

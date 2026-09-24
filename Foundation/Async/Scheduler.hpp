@@ -91,6 +91,7 @@ class Scheduler
     void reap_cancelled();
 
     std::vector<Coroutine> ready_;                     // ready, not yet run
+    std::vector<Coroutine> batch_; // a coroutine resumed may submit a new coroutine into ready_, so we swap ready_ into batch_ before each run
     std::atomic_size_t roots_{0};                      // the number of all spawned coroutines (root coroutines are always created by spawn())
     std::vector<std::shared_ptr<CoroutineControlBlock>> finished_; // terminal, awaiting destruction
     std::vector<std::shared_ptr<CoroutineControlBlock>> cancelled_; // cancellation requests, any thread

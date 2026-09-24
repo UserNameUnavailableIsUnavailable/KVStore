@@ -4,7 +4,7 @@
 
 ## C++20 协程异步框架（NBIO）
 
-I/O 多路复用同时支持 epoll（reactor）与 io_uring（proactor）两种后端，启动时二选一。多路复用器通过单工通道（SendChannel / ReceiveChannel 等）完成事件派发：I/O 请求在通道内排队，复用器收到内核事件后回调将挂起的协程置为就绪。
+I/O 多路复用同时支持 epoll（reactor）与 io_uring（proactor）两种后端，启动时二选一。多路复用器通过单工通道（TcpSendChannel / TcpReceiveChannel 等）完成事件派发：I/O 请求在通道内排队，复用器收到内核事件后回调将挂起的协程置为就绪。
 
 reactor 路径（epoll）将通道内排队的 I/O 汇聚为一次 readv / writev / pwritev 提交；proactor 路径（io_uring）则在准备阶段直接批量下发全部排队请求，并按完成事件推进读写偏移。
 
@@ -16,7 +16,7 @@ C++20 协程任务调度器：支持对称转移（final_suspend 返回 continua
 
 条件变量：基于 eventfd 的 ConditionVariable 提供跨线程协程条件等待/唤醒原语。
 
-网络、文件 I/O 通道：异步的 Socket 收发、文件读写。
+网络、文件 I/O 通道：异步的 TcpSocket 收发、文件读写。
 
 RDMA 通道：基于 iWARP 协议的 RDMA 收发通道。每个监听/连接端点持有独立的发送、接收内存池（由该端点接纳的连接共享这一对池），内存池基于 bitmap 管理块的分配与回收。
 
@@ -67,10 +67,10 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
 
 ### RDMA 硬件
 
-复制与 `RDMA_*` 测试需要一块 RDMA 设备或软件模拟：
+复制与 `RDMA*` 测试需要一块 RDMA 设备或软件模拟：
 
 ```bash
-sudo sudo rdma link add siw0 type siw netdev <dev>
+sudo rdma link add siw0 type siw netdev <dev>
 ```
 
 ## 构建
@@ -88,9 +88,10 @@ cmake --build build
 | `Server` | 服务器：`build/Application/Server/Server` |
 | `Client` | 命令行客户端：`build/Application/Client/Client` |
 | `FoundationTesting`、`ServerTesting` | 单元测试可执行文件 |
-| `Echo`、`Sleep`、`Grace`、`SignalSvc`、`ScopedSignalService`、`Condition` | NBIO 示例 |
-| `RDMA_Echo`、`RDMA_AsyncEcho` | RDMA 示例 |
-| `Tutorial_RDMA_Server`、`Tutorial_RDMA_Client` | `Tutorial/RDMA` 的原生 verbs 例子 |
+| `Echo`、`Sleep`、`Grace`、`SystemSignalSvc`、`ScopedSystemSignalService`、`Condition` | NBIO 示例 |
+| `RdmaEcho`、`RdmaAsyncEcho` | RDMA 示例 |
+| `Tutorial_RdmaServer`、`Tutorial_RdmaClient` | `Tutorial/RDMA` 的原生 verbs 例子 |
+| `RdmaFileBenchmark` | RDMA 链路吞吐基准（NBIO 层），需 `-DKVSTORE_BUILD_BENCHMARKS=ON` |
 
 ## 测试
 
@@ -111,7 +112,7 @@ ctest --test-dir build --output-on-failure
 
 # 主从（同一台机器上的两个实例）
 ./build/Application/Server/Server \
-    --port 8080 --replication-port 8081 --replication-address 192.168.0.201
+    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201
 ./build/Application/Server/Server \
     --port 8082 --replicaof 192.168.0.201:8081
 
@@ -139,6 +140,31 @@ config appendonly yes
 config port 8082
 replicaof 192.168.0.201 8081
 ```
+
+## 基准测试
+
+C++ 基准默认不参与构建，配置时打开开关即可：
+
+```bash
+export KVSTORE_RDMA_ADDRESS=192.168.0.201
+export KVSTORE_RDMA_DEVICE=siw2
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKVSTORE_BUILD_BENCHMARKS=ON
+cmake --build build --target RdmaFileBenchmark
+./build/Foundation/NBIO/benchmark/Release/RdmaFileBenchmark
+```
+
+`RdmaFileBenchmark` 量的是 RDMA 链路本身，走的就是复制链路所用的那套 NBIO channel，两端
+都在同一个进程里、各占一个引擎一个线程：一条连接，一个 connector 一个 acceptor，默认
+1 GiB 随机载荷，两端各自报吞吐。`--size` 是载荷字节数，`--file` 改为从磁盘读，
+`--multiplexer` 选 epoll 或 io_uring，`--port` 指定端口（0 表示自动挑一个空闲的）。
+消息大小不是选项：它就是 resource manager 的 chunk 大小——发送拿到的是它，接收落进去的
+也是它。
+
+发送端会把自己的“未被确认”消息数压在接收端已投递的 receive 之内，和 `RdmaTransfer` 用的
+是同一个窗口——因为一条消息到达时若接收端没有已投递的 receive，它既不会被排队也不会被
+拒绝，而是直接把 queue pair 以 `RNR_RETRY_EXC_ERR` 拆掉。跑挂的运行会带着两端各自走到哪
+一步退出，而不是一直挂着。`benchmark/` 下的 Python 脚本测的是整个服务器，结果记在
+`benchmark/result.md`。
 
 ## 文档
 
