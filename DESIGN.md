@@ -4,7 +4,7 @@
 
 This KVStore design has the following layers:
 
-- TcpSession Layer: The client initiates a session with the server, during which the client sends requests, and the server responds.
+- TcpSessionService Layer: The client initiates a session with the server, during which the client sends requests, and the server responds.
   - Connection Control, SocketAddress, Port, Timeout, etc.
   - Networking Model: For now, we only support the Linux platform.
     - Reactor: `epoll` + C++ 20 coroutine-based event loop.

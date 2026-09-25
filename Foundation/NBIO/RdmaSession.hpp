@@ -15,16 +15,16 @@ namespace Foundation::NBIO
 {
 class Multiplexer;
 
-class RdmaSession final
+class RdmaSessionService final
 {
   public:
-    RdmaSession(Foundation::Core::RdmaConnector connection, Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
+    RdmaSessionService(Foundation::Core::RdmaConnector connection, Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
 
-    RdmaSession(const RdmaSession &) = delete;
-    RdmaSession &operator=(const RdmaSession &) = delete;
-    RdmaSession(RdmaSession &&) = delete;
-    RdmaSession &operator=(RdmaSession &&) = delete;
-    ~RdmaSession() noexcept = default;
+    RdmaSessionService(const RdmaSessionService &) = delete;
+    RdmaSessionService &operator=(const RdmaSessionService &) = delete;
+    RdmaSessionService(RdmaSessionService &&) = delete;
+    RdmaSessionService &operator=(RdmaSessionService &&) = delete;
+    ~RdmaSessionService() noexcept = default;
 
     // Hands one acquired send chunk to the device and returns; poll_send() is
     // what waits for the completions that hand the chunks back.

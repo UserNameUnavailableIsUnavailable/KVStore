@@ -236,20 +236,27 @@ Foundation::NBIO::Task<void> Server::apply_commands(std::vector<CommandLine> com
 
 Foundation::NBIO::Task<void> Server::serve(const Foundation::Core::SocketAddress &address)
 {
-    co_await std::move(accept_clients(Foundation::NBIO::bind(address)));
+    // The listener lives here, in the frame of the loop that uses it, because the
+    // accept channel keeps a reference to the acceptor it waits on.
+    Foundation::NBIO::TcpAcceptService listener{address};
+    co_await accept_clients(listener);
 }
 
-Foundation::NBIO::Task<void> Server::accept_clients(std::unique_ptr<Foundation::NBIO::TcpAcceptChannel> acceptor)
+Foundation::NBIO::Task<void> Server::accept_clients(Foundation::NBIO::TcpAcceptService &listener)
 {
     while (true)
     {
-        auto result = co_await acceptor->accept();
-        if (!result)
+        auto accepted = co_await listener.accept();
+        if (!accepted)
         {
             continue;
         }
-        auto &[socket, address] = *result;
-        Foundation::NBIO::spawn(serve_client(std::make_shared<TcpSession>(Foundation::NBIO::establish(std::move(socket)))));
+        // What accepting hands over is the whole connection: the session that owns it
+        // from here, and the address it came from -- which nothing on this side can
+        // know, because the other end chose it.
+        auto connection = std::move(*accepted);
+        Foundation::NBIO::spawn(
+            serve_client(std::make_shared<TcpSessionService>(std::move(connection.first))));
     }
 }
 
@@ -262,7 +269,7 @@ namespace
 constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
 } // namespace
 
-    Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<TcpSession> session)
+    Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> session)
 {
     // A pipeline can hold more than one command, and a single command can be
     // larger than a socket read, so the receive buffer starts roomy and is
@@ -362,7 +369,7 @@ constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
     }
 }
 
-std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, TcpSession &session)
+std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, TcpSessionService &session)
 {
     // A read of one key is most of what a server is asked, and it is worth
     // answering without building a command for it. The answer needs the key the
@@ -387,7 +394,7 @@ std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view
     return RESP::Object(RESP::BulkString{.value = store_.get(session.lookup_key)});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::dispatch(TcpSession &session, KV::Command command)
+Foundation::NBIO::Task<RESP::Object> Server::dispatch(TcpSessionService &session, KV::Command command)
 {
     if (command.type == KV::CommandType::kMulti)
     {

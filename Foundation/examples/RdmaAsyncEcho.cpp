@@ -19,7 +19,7 @@
 #include <Foundation/NBIO/Engine.hpp>
 #include <Foundation/NBIO/RdmaAcceptChannel.hpp>
 #include <Foundation/NBIO/RdmaConnectChannel.hpp>
-#include <Foundation/NBIO/RdmaSession.hpp>
+#include <Foundation/NBIO/RdmaSessionService.hpp>
 #include <Foundation/NBIO/URingMultiplexer.hpp>
 
 #include <Foundation/Core/SocketAddress.hpp>
@@ -71,7 +71,7 @@ NBIO::Task<void> RunServer(const char *host, std::uint16_t port)
         spdlog::warn("accept failed: {}", accepted.error());
         co_return;
     }
-    std::shared_ptr<NBIO::RdmaSession> session = std::move(*accepted);
+    std::shared_ptr<NBIO::RdmaSessionService> session = std::move(*accepted);
     std::printf("accepted\n");
 
     std::size_t echoed = 0;
@@ -148,7 +148,7 @@ NBIO::Task<void> RunClient(const char *host, std::uint16_t port, std::size_t pay
         matched = false;
         co_return;
     }
-    std::shared_ptr<NBIO::RdmaSession> session = std::move(*connected);
+    std::shared_ptr<NBIO::RdmaSessionService> session = std::move(*connected);
     std::printf("connected\n");
 
     // A position-dependent pattern, so a reply that arrives out of order or

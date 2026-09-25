@@ -3,7 +3,7 @@
 
 #include "Receiver.hpp"
 
-#include <Foundation/NBIO/TcpSession.hpp>
+#include <Foundation/NBIO/TcpSessionService.hpp>
 #include <Foundation/Core/Buffer.hpp>
 #include <Foundation/Core/TcpSocket.hpp>
 
@@ -20,7 +20,7 @@ namespace
 constexpr std::size_t kReadHeadroom = 16U * 1024U;
 } // namespace
 
-Receiver::Receiver(Foundation::NBIO::TcpSession &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
+Receiver::Receiver(Foundation::NBIO::TcpSessionService &session, ::Foundation::Core::Buffer &buffer) : session_(session), buffer_(buffer)
 {
 }
 

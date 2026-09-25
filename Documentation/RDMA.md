@@ -33,7 +33,7 @@ as decisions land.
   `Foundation::RDMA::run()` and `Foundation::RDMA::spawn()`.
 - Reliable, connection-oriented, ordered data transfer — "TCP-like" semantics —
   for the first version.
-- A server path (`listen_on` → `accept` → `TcpSession`) that mirrors the `NBIO`
+- A server path (`listen_on` → `accept` → `TcpSessionService`) that mirrors the `NBIO`
   server path closely enough that the RESP layer can be reused without changes
   to its logic.
 - Memory-safety and lifetime guarantees at least as strong as `NBIO`: a channel
@@ -64,10 +64,10 @@ first version needs:
 | Teardown notification | `RDMA_CM_EVENT_DISCONNECTED` |
 
 Because RC `SEND`/`RECV` is message-oriented while RESP is a byte stream, the
-`TcpSession` exposes a **byte-stream** interface identical in signature to
-`NBIO::TcpSession::receive`/`send`. RESP is self-delimiting, so as long as bytes
+`TcpSessionService` exposes a **byte-stream** interface identical in signature to
+`NBIO::TcpSessionService::receive`/`send`. RESP is self-delimiting, so as long as bytes
 arrive in order (guaranteed by RC) the framing works unchanged. Message
-boundaries are an implementation detail the `TcpSession` hides.
+boundaries are an implementation detail the `TcpSessionService` hides.
 
 ### What "reliable (TCP)" means here, concretely
 
@@ -149,7 +149,7 @@ flowchart TD
         CONN["Connection (rdma_cm_id + QP + CQ)"]
         DEV["Device (ibv_context + PD)"]
         MEM["MemoryRegion (ibv_reg_mr pool)"]
-        SESS["TcpSession (byte stream)"]
+        SESS["TcpSessionService (byte stream)"]
     end
 
     subgraph Core["Foundation::Core"]
@@ -684,16 +684,16 @@ class MemoryRegion
 
 Receives are posted against slots from this arena. Received bytes are then
 copied into the caller's `Core::Buffer` before resuming its coroutine, which
-keeps `TcpSession::receive` byte-for-byte compatible with `NBIO`. The copy is a
+keeps `TcpSessionService::receive` byte-for-byte compatible with `NBIO`. The copy is a
 deliberate first-version trade-off; see Open Decisions.
 
-### `TcpSession`
+### `TcpSessionService`
 
-`TcpSession` is the transport the APPLICATION talks to. Its surface matches
-`NBIO::TcpSession` so the RESP layer works unchanged:
+`TcpSessionService` is the transport the APPLICATION talks to. Its surface matches
+`NBIO::TcpSessionService` so the RESP layer works unchanged:
 
 ```cpp
-class TcpSession : protected std::enable_shared_from_this<TcpSession>
+class TcpSessionService : protected std::enable_shared_from_this<TcpSessionService>
 {
   public:
     Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
@@ -729,8 +729,8 @@ std::unique_ptr<Listener> listen_on(const Foundation::Core::SocketAddress &addre
                                     int backlog = 128);
 
 // ---- connection ----
-Task<std::shared_ptr<TcpSession>> connect_to(const Foundation::Core::SocketAddress &address);
-std::shared_ptr<TcpSession> establish_with(Connection connection);
+Task<std::shared_ptr<TcpSessionService>> connect_to(const Foundation::Core::SocketAddress &address);
+std::shared_ptr<TcpSessionService> establish_with(Connection connection);
 } // namespace Foundation::RDMA
 ```
 
@@ -780,7 +780,7 @@ sequenceDiagram
     E->>E: create QP, post initial RECVs
     E->>CM: rdma_connect
     CM-->>E: RDMA_CM_EVENT_ESTABLISHED
-    E->>C: resume connect_to() with a TcpSession
+    E->>C: resume connect_to() with a TcpSessionService
 ```
 
 CM events are delivered on the CM event channel fd, which is registered with the
@@ -818,7 +818,7 @@ Foundation/RDMA/
   Connection.hpp / .cpp     // rdma_cm_id + QP (the object a channel pins to)
   Device.hpp / .cpp         // ibv_context + PD
   MemoryRegion.hpp / .cpp   // registered arena + slot pool
-  TcpSession.hpp / .cpp
+  TcpSessionService.hpp / .cpp
   Types.hpp                 // ChannelType, status mapping
 ```
 
@@ -881,7 +881,7 @@ so that non-Linux configuration is unaffected.
 |---|---|---|
 | M0 | Skeleton: `CMakeLists.txt`, `Runtime.hpp`, `Engine`, `RDMA::run()`, idle hook, standing timer/notify/signal channels, `sleep_for`. | A no-op coroutine plus a timer runs on the RDMA engine, with no verbs linked yet. |
 | M1 | `Device`, `Connection`, `MemoryRegion`, `Channel`, `Multiplexer` with CQ polling; two-sided `SEND`/`RECV` over a loopback QP pair. | A handshake-free loopback exchange delivers bytes reliably. |
-| M2 | `rdma_cm` listener + connector; `TcpSession` byte stream; `Listener::accept()`; `establish_with`. | A client can `connect_to` a server, exchange an ordered byte stream, and disconnect cleanly. |
+| M2 | `rdma_cm` listener + connector; `TcpSessionService` byte stream; `Listener::accept()`; `establish_with`. | A client can `connect_to` a server, exchange an ordered byte stream, and disconnect cleanly. |
 | M3 | Reliability: flush/disconnect handling, receive-slot backpressure, cancellation safety, RESP integration. | The RESP server runs on the RDMA backend under the existing test suite. |
 | M4 | Performance: zero-copy receive, completion batching, tunable CQ/slot counts. | Measured throughput/latency recorded against the `NBIO` backends. |
 
@@ -900,8 +900,8 @@ so that non-Linux configuration is unaffected.
    | `Foundation::Async` | `Task`, `Coroutine`, `Scheduler` |
    | `Foundation::Core` | `SocketAddress`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
    | `Foundation::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
-   | `Foundation::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSession`, file channels |
-   | `Foundation::RDMA` | RDMA multiplexer, RDMA channels, `TcpSession`, `MemoryRegion` |
+   | `Foundation::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
+   | `Foundation::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |
 
    Each backend then supplies only its multiplexer, its data-path channels, its
    `Runtime` alias and its default-multiplexer factory. Everything else is

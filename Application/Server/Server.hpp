@@ -17,8 +17,8 @@
 
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/NBIO/TcpAcceptChannel.hpp>
-#include <Foundation/NBIO/TcpSession.hpp>
+#include <Foundation/NBIO/TcpAcceptService.hpp>
+#include <Foundation/NBIO/TcpSessionService.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <Application/RESP/RESP.hpp>
@@ -51,14 +51,14 @@ struct ServerOptions
     std::optional<std::filesystem::path> config_file{};
 };
 
-class TcpSession
+class TcpSessionService
 {
   public:
-    explicit TcpSession(std::shared_ptr<Foundation::NBIO::TcpSession> transport) : transport_(std::move(transport))
+    explicit TcpSessionService(std::shared_ptr<Foundation::NBIO::TcpSessionService> transport) : transport_(std::move(transport))
     {
     }
 
-    Foundation::NBIO::TcpSession &transport() const noexcept
+    Foundation::NBIO::TcpSessionService &transport() const noexcept
     {
         return *transport_;
     }
@@ -71,7 +71,7 @@ class TcpSession
     std::string lookup_key;
 
   private:
-    std::shared_ptr<Foundation::NBIO::TcpSession> transport_;
+    std::shared_ptr<Foundation::NBIO::TcpSessionService> transport_;
 };
 
 class Server
@@ -93,16 +93,18 @@ class Server
     Foundation::NBIO::Task<void> apply_commands(std::vector<CommandLine> commands);
 
     Foundation::NBIO::Task<void> serve(const Foundation::Core::SocketAddress &address);
-    Foundation::NBIO::Task<void> accept_clients(std::unique_ptr<Foundation::NBIO::TcpAcceptChannel> listener);
-    Foundation::NBIO::Task<void> serve_client(std::shared_ptr<TcpSession> session);
+    // The listener is the caller's: it owns the acceptor the channel waits on, so it
+    // has to outlive the loop that accepts through it.
+    Foundation::NBIO::Task<void> accept_clients(Foundation::NBIO::TcpAcceptService &listener);
+    Foundation::NBIO::Task<void> serve_client(std::shared_ptr<TcpSessionService> session);
 
   private:
     // The answer to a command that reads one key, or nothing when the request is
     // not one: see the definition for why it is worth answering before a command
     // is built for it.
-    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words, TcpSession &session);
+    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words, TcpSessionService &session);
 
-    Foundation::NBIO::Task<RESP::Object> dispatch(TcpSession &session, KV::Command command);
+    Foundation::NBIO::Task<RESP::Object> dispatch(TcpSessionService &session, KV::Command command);
     Foundation::NBIO::Task<RESP::Object> execute(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command &command);

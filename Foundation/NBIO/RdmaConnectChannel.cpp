@@ -33,7 +33,7 @@ class RdmaConnectAwaiter
             // The session owns the connection from here on: the connector the caller
             // holds is moved from, and this channel never connects it again.
             channel_.job().session =
-            std::make_shared<RdmaSession>(std::move(channel_.connector()), channel_.multiplexer(), channel_.scheduler());
+            std::make_shared<RdmaSessionService>(std::move(channel_.connector()), channel_.multiplexer(), channel_.scheduler());
         }
         else
         {
@@ -42,7 +42,7 @@ class RdmaConnectAwaiter
         return false;
     }
 
-    Core::expected<std::shared_ptr<RdmaSession>, std::string> await_resume()
+    Core::expected<std::shared_ptr<RdmaSessionService>, std::string> await_resume()
     {
         auto &job = channel_.job();
         if (job.session)
@@ -76,7 +76,7 @@ RdmaConnectChannel::~RdmaConnectChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-Task<Core::expected<std::shared_ptr<RdmaSession>, std::string>> RdmaConnectChannel::connect(Foundation::Core::SocketAddress peer)
+Task<Core::expected<std::shared_ptr<RdmaSessionService>, std::string>> RdmaConnectChannel::connect(Foundation::Core::SocketAddress peer)
 {
     co_return co_await detail::RdmaConnectAwaiter{*this, std::move(peer)};
 }

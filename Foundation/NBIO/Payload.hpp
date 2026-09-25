@@ -227,6 +227,7 @@ private:
 namespace Foundation::NBIO
 {
 class TcpAcceptChannel;
+class TcpConnectChannel;
 class TcpSendChannel;
 class TcpReceiveChannel;
 class FileReadChannel;
@@ -240,6 +241,7 @@ class RdmaSendChannel;
 class RdmaReceiveChannel;
 
 using AcceptPayload = detail::CommunicationPayload<TcpAcceptChannel>;
+using ConnectPayload = detail::PollPayload<TcpConnectChannel>;
 using SendPayload = detail::MessagePayload<TcpSendChannel>;
 using ReceivePayload = detail::MessagePayload<TcpReceiveChannel>;
 using ReadPayload = detail::IOVectorPayload<FileReadChannel>;
@@ -254,6 +256,7 @@ using RdmaReceivePayload = detail::PollPayload<RdmaReceiveChannel>;
 
 using Payload = std::variant<
     AcceptPayload,
+    ConnectPayload,
     SendPayload,
     ReceivePayload,
     ReadPayload,

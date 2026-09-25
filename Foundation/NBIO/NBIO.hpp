@@ -13,10 +13,14 @@
 #include <memory>
 
 #include "FileStream.hpp"
-#include "TcpAcceptChannel.hpp"
-#include "RdmaSession.hpp"
+#include "FileStreamService.hpp"
+#include "RdmaSessionService.hpp"
 #include "Runtime.hpp"
-#include "TcpSession.hpp"
+#include "SystemSignalService.hpp"
+#include "SystemTimeService.hpp"
+#include "TcpAcceptService.hpp"
+#include "TcpConnectService.hpp"
+#include "TcpSessionService.hpp"
 
 // Umbrella header for the NBIO backend: the non-blocking I/O runtime built on
 // epoll / io_uring. Everything here is backend-specific; the generic coroutine
@@ -38,17 +42,15 @@ Foundation::Async::CoroutineToken spawn(Task<T> task)
     return Foundation::Async::spawn(std::move(task));
 }
 
-Task<void> sleep_until(std::chrono::steady_clock::time_point time_point);
+// Waiting is not a free function: the timer and the signal handling belong to the
+// runtime, and SystemTimeService::sleep and SystemSignalService::wait are how a task
+// reaches them.
 
-Task<void> sleep_for(std::chrono::steady_clock::duration duration);
-
-// Suspends until SIGINT/SIGTERM is delivered. The common shutdown idiom is:
-// co_await when_any(AcceptLoop(), wait_for_signal()).
-Task<void> wait_for_signal();
-
+// Internal: what a file's channels are built on. A caller opens a file through
+// FileStreamService, and this is what that service is made of.
 std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
 
-std::unique_ptr<TcpAcceptChannel> bind(const Foundation::Core::SocketAddress &address, int backlog = 4096);
-
-std::shared_ptr<TcpSession> establish(Foundation::Core::TcpSocket socket);
+// A listener is a TcpAcceptService and a connection is a TcpConnectService: neither is
+// a free function, because each is attached to the engine of the thread that made it,
+// and because what a caller is handed back is a session rather than a channel.
 } // namespace Foundation::NBIO

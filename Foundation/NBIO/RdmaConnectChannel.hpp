@@ -10,7 +10,7 @@
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include "Channel.hpp"
-#include "RdmaSession.hpp"
+#include "RdmaSessionService.hpp"
 #include <Foundation/NBIO/Payload.hpp>
 
 #include <memory>
@@ -25,7 +25,7 @@ class RdmaConnectChannel final : public Channel
 
     struct PendingConnect
     {
-        std::shared_ptr<RdmaSession> session{};
+        std::shared_ptr<RdmaSessionService> session{};
         std::string error;
     };
 
@@ -35,7 +35,7 @@ class RdmaConnectChannel final : public Channel
                         Foundation::Async::Scheduler &scheduler);
     ~RdmaConnectChannel() noexcept;
 
-    Task<Core::expected<std::shared_ptr<RdmaSession>, std::string>> connect(Foundation::Core::SocketAddress peer);
+    Task<Core::expected<std::shared_ptr<RdmaSessionService>, std::string>> connect(Foundation::Core::SocketAddress peer);
 
     // The operation this channel wants from the backend is a one-shot poll; the
     // payload carries only whether one is already out there.

@@ -10,7 +10,7 @@
 
 namespace RESP
 {
-Sender::Sender(Foundation::NBIO::TcpSession &session, Foundation::Core::Buffer &buffer)
+Sender::Sender(Foundation::NBIO::TcpSessionService &session, Foundation::Core::Buffer &buffer)
     : session_(session), buffer_(buffer)
 {
     if (!buffer.is_empty())

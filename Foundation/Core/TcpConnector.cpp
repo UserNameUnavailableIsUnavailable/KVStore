@@ -10,8 +10,9 @@ TcpConnector::TcpConnector(SocketAddress::Family family) :
 TcpConnector::TcpConnector(TcpSocket socket) noexcept :
     socket_(std::move(socket))
 {
-    // The socket arrives connected or accepted, so both lookups normally succeed.
-    capture_addresses();
+    // Nothing to do: the socket arrives connected or accepted, and where the two
+    // ends are is the caller's business -- whoever made the connection is the one
+    // that knows the addresses it asked for.
 }
 
 expected<void, std::error_code> TcpConnector::bind(const SocketAddress &local) noexcept
@@ -21,14 +22,38 @@ expected<void, std::error_code> TcpConnector::bind(const SocketAddress &local) n
 
 expected<void, std::error_code> TcpConnector::connect(const SocketAddress &peer) noexcept
 {
-    if (auto result = socket_.connect(peer); !result) [[unlikely]]
+    if (auto started = start_connect(peer); !started) [[unlikely]]
     {
-        return unexpected<std::error_code>(result.error());
+        return started;
     }
-    // The connection is up, so this is where the two addresses become known: before
-    // it there was a socket and a peer to reach, and after it there is a connection
-    // with an end on each side.
-    capture_addresses();
+    // The handshake is the kernel's from here, and on a blocking socket it has
+    // happened by the time the call above returned: what is left for either kind is
+    // the verdict, which finish_connect() reads.
+    return finish_connect();
+}
+
+expected<void, std::error_code> TcpConnector::start_connect(const SocketAddress &peer) noexcept
+{
+    if (auto connected = socket_.connect(peer); !connected) [[unlikely]]
+    {
+        // A connect that is under way is what a non-blocking socket reports instead
+        // of blocking. That is not a failure and not a finished handshake either: it
+        // is the socket saying the kernel has it now.
+        const std::error_code &why = connected.error();
+        if (why != std::errc::operation_in_progress && why != std::errc::connection_already_in_progress)
+        {
+            return unexpected<std::error_code>(why);
+        }
+    }
+    return {};
+}
+
+expected<void, std::error_code> TcpConnector::finish_connect() noexcept
+{
+    if (auto settled = socket_.take_error(); !settled) [[unlikely]]
+    {
+        return settled;
+    }
     return {};
 }
 
@@ -48,17 +73,12 @@ expected<void, std::error_code> TcpConnector::shutdown(TcpSocket::ShutdownHow ho
     // descriptor, reporting nothing, so there is no error to forward; the
     // signature keeps the door open for a platform that does report one.
     socket_.shutdown(how);
-    clear_addresses();
     return {};
 }
 
 void TcpConnector::close() noexcept
 {
     socket_.close();
-    // The addresses went with the descriptor. A closed connection that still
-    // reported one would be saying something that is no longer true, and the
-    // accessors have no way of saying it is not.
-    clear_addresses();
 }
 
 expected<void, std::error_code> TcpConnector::non_blocking(bool toggle) noexcept
@@ -69,28 +89,5 @@ expected<void, std::error_code> TcpConnector::non_blocking(bool toggle) noexcept
 expected<void, std::error_code> TcpConnector::reuse_address(bool toggle) noexcept
 {
     return socket_.reuse_address(toggle);
-}
-
-void TcpConnector::capture_addresses() noexcept
-{
-    // A failure would mean the socket is not what this object was promised, and
-    // there is nowhere to report it from here: `connect` and the constructor the
-    // acceptor uses are `noexcept`, and the accessors return a reference. The
-    // address it is about is left invalid instead, which is what
-    // `SocketAddress::is_valid` is for.
-    if (auto address = socket_.local_address())
-    {
-        local_address_ = *address;
-    }
-    if (auto address = socket_.peer_address())
-    {
-        peer_address_ = *address;
-    }
-}
-
-void TcpConnector::clear_addresses() noexcept
-{
-    local_address_ = SocketAddress{};
-    peer_address_ = SocketAddress{};
 }
 } // namespace Foundation::Core

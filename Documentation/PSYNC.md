@@ -39,10 +39,10 @@ unknown id or an expired offset receives a full stream.
 
 Once the connection between the master and the slave is established, the conncetion persists.
 
-The replica owns a persistent master `TcpSession` for the lifetime of the
-replication link. The master keeps a persistent `TcpSession` for every registered
+The replica owns a persistent master `TcpSessionService` for the lifetime of the
+replication link. The master keeps a persistent `TcpSessionService` for every registered
 replica, independently of the ordinary client session that received the initial
-`PSYNC` request. TcpSocket descriptors remain inside each `TcpSession` and are used
+`PSYNC` request. TcpSocket descriptors remain inside each `TcpSessionService` and are used
 only where operating-system I/O requires them.
 
 1. The slave initiates a connection with the master by `SLAVEOF`.

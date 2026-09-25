@@ -39,7 +39,7 @@
 #include <Foundation/NBIO/NBIO.hpp>
 #include <Foundation/NBIO/RdmaAcceptChannel.hpp>
 #include <Foundation/NBIO/RdmaConnectChannel.hpp>
-#include <Foundation/NBIO/RdmaSession.hpp>
+#include <Foundation/NBIO/RdmaSessionService.hpp>
 #include <Foundation/NBIO/URingMultiplexer.hpp>
 
 #include <CLI/CLI.hpp>
@@ -170,7 +170,7 @@ std::array<char, kReportBytes> Encode(const Report &report) noexcept
 // to be a completion for this direction: a wake-up, not an end to anything -- the
 // end of a link arrives as an error, because a link that has gone can never
 // satisfy the wait.
-NBIO::Task<Core::expected<std::span<char>, std::string>> NextMessage(NBIO::RdmaSession &session)
+NBIO::Task<Core::expected<std::span<char>, std::string>> NextMessage(NBIO::RdmaSessionService &session)
 {
     while (true)
     {
@@ -188,7 +188,7 @@ NBIO::Task<Core::expected<std::span<char>, std::string>> NextMessage(NBIO::RdmaS
 
 // One message off the send pool, waited for: the control plane carries a handful
 // of messages per transfer, and each one is what the other end is waiting on.
-NBIO::Task<Core::expected<void, std::string>> SendReport(NBIO::RdmaSession &session, const Report &report)
+NBIO::Task<Core::expected<void, std::string>> SendReport(NBIO::RdmaSessionService &session, const Report &report)
 {
     const auto message = Encode(report);
     while (true)
@@ -234,7 +234,7 @@ NBIO::Task<Core::expected<void, std::string>> SendReport(NBIO::RdmaSession &sess
 // stands. Reading them all in one pass is what keeps a window that has opened up
 // from being used one message per wake-up, which would make the transfer a round
 // trip per message rather than a stream.
-NBIO::Task<Core::expected<void, std::string>> HarvestCredits(NBIO::RdmaSession &session, std::size_t &credited)
+NBIO::Task<Core::expected<void, std::string>> HarvestCredits(NBIO::RdmaSessionService &session, std::size_t &credited)
 {
     while (true)
     {
@@ -276,7 +276,7 @@ NBIO::Task<Core::expected<void, std::string>> HarvestCredits(NBIO::RdmaSession &
 // Everything already waiting was taken in by the caller, so this is one report and
 // no more -- and it is the wait that makes this a measurement of the receiver as
 // much as of the device.
-NBIO::Task<Core::expected<void, std::string>> WaitForCredit(NBIO::RdmaSession &session, std::size_t &credited)
+NBIO::Task<Core::expected<void, std::string>> WaitForCredit(NBIO::RdmaSessionService &session, std::size_t &credited)
 {
     auto incoming = co_await NextMessage(session);
     if (!incoming) [[unlikely]]
@@ -312,7 +312,7 @@ NBIO::Task<void> Send(NBIO::RdmaAcceptChannel &channel, const std::vector<char> 
         outcome.failure = "the connection was not admitted: " + admitted.error();
         co_return;
     }
-    NBIO::RdmaSession &session = **admitted;
+    NBIO::RdmaSessionService &session = **admitted;
 
     const auto messages = (payload.size() + message - 1) / message;
 
@@ -468,7 +468,7 @@ NBIO::Task<void> Receive(NBIO::RdmaConnectChannel &channel, Core::SocketAddress 
         outcome.failure = "the connection was not established: " + connected.error();
         co_return;
     }
-    NBIO::RdmaSession &session = **connected;
+    NBIO::RdmaSessionService &session = **connected;
 
     auto announcement = co_await NextMessage(session);
     if (!announcement) [[unlikely]]

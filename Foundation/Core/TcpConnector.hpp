@@ -29,8 +29,6 @@ class TcpConnector
     friend void swap(TcpConnector &left, TcpConnector &right) noexcept
     {
         left.socket_.swap(right.socket_);
-        std::swap(left.local_address_, right.local_address_);
-        std::swap(left.peer_address_, right.peer_address_);
     }
 
     // Pins the local address this connection comes from, before connecting. Left
@@ -39,7 +37,26 @@ class TcpConnector
 
     // Connects to a peer and captures the addresses the connection ended up with.
     // What is left is a connection that can send, receive and close.
+    //
+    // This is the form for a socket that blocks: the handshake has finished -- or
+    // failed -- by the time it returns. It cannot be used on a socket that has been
+    // made non-blocking, because there would be nothing here to wait in; that is
+    // what the two halves below are for.
     expected<void, std::error_code> connect(const SocketAddress &peer) noexcept;
+
+    // Begins a connection: the peer is looked up and the SYN goes out. Whether the
+    // handshake has finished when this returns is the socket's business -- a blocking
+    // socket has finished it, a non-blocking one reports a connect under way and has
+    // not -- and either way the rest is the kernel's. finish_connect() reports how it
+    // went, so a caller with an event loop can wait for the socket to become writable
+    // instead of waiting in here.
+    expected<void, std::error_code> start_connect(const SocketAddress &peer) noexcept;
+
+    // Reports how a connection begun with start_connect() ended, and captures the two
+    // addresses it ended with. Only meaningful once the socket is writable: before
+    // that the handshake is still in flight, and a socket that has been neither
+    // refused nor made has no error to report either.
+    expected<void, std::error_code> finish_connect() noexcept;
 
     // Returns the number of bytes handed to the kernel, which may be less than
     // `buffer.size()`. A peer that went away is a real failure here, reported as
@@ -70,21 +87,6 @@ class TcpConnector
     expected<void, std::error_code> non_blocking(bool toggle = true) noexcept;
     expected<void, std::error_code> reuse_address(bool toggle = true) noexcept;
 
-    // The addresses captured when the connection was established, invalid before
-    // that and after it is over. They are cached because these accessors are
-    // `noexcept` and cannot report a failing `getsockname`/`getpeername`: a lookup
-    // that fails leaves the address it is about default-constructed, which
-    // `SocketAddress::is_valid` reports.
-    const SocketAddress &local_address() const noexcept
-    {
-        return local_address_;
-    }
-
-    const SocketAddress &peer_address() const noexcept
-    {
-        return peer_address_;
-    }
-
   private:
     friend class TcpAcceptor;
 
@@ -93,11 +95,6 @@ class TcpConnector
     // private and the listener is the one that can call it.
     explicit TcpConnector(TcpSocket socket) noexcept;
 
-    void capture_addresses() noexcept;
-    void clear_addresses() noexcept;
-
     TcpSocket socket_;
-    SocketAddress local_address_;
-    SocketAddress peer_address_;
 };
 } // namespace Foundation::Core

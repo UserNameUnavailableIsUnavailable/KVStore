@@ -32,7 +32,7 @@ class RdmaAcceptAwaiter
         return true;
     }
 
-    Core::expected<std::shared_ptr<RdmaSession>, std::string> await_resume()
+    Core::expected<std::shared_ptr<RdmaSessionService>, std::string> await_resume()
     {
         auto &job = channel_.job();
         if (job.session)
@@ -67,7 +67,7 @@ RdmaAcceptChannel::~RdmaAcceptChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-Task<Core::expected<std::shared_ptr<RdmaSession>, std::string>> RdmaAcceptChannel::accept()
+Task<Core::expected<std::shared_ptr<RdmaSessionService>, std::string>> RdmaAcceptChannel::accept()
 {
     co_return co_await detail::RdmaAcceptAwaiter{*this};
 }
@@ -100,7 +100,7 @@ void RdmaAcceptChannel::complete()
         // whoever is waiting on the engine.
         try
         {
-            job().session = std::make_shared<RdmaSession>(std::move(**accepted), multiplexer_, scheduler_);
+            job().session = std::make_shared<RdmaSessionService>(std::move(**accepted), multiplexer_, scheduler_);
             job().error = {};
         }
         catch (const std::exception &failure)

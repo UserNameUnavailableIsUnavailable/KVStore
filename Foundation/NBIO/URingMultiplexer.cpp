@@ -18,6 +18,7 @@
 
 #include "Channel.hpp"
 #include "TcpAcceptChannel.hpp"
+#include "TcpConnectChannel.hpp"
 #include "RdmaAcceptChannel.hpp"
 #include "RdmaConnectChannel.hpp"
 #include "RdmaReceiveChannel.hpp"
@@ -365,6 +366,9 @@ static void complete_channel(Foundation::NBIO::Channel *channel)
     case ChannelType::kRdmaConnect:
         static_cast<RdmaConnectChannel *>(channel)->complete();
         break;
+    case ChannelType::kConnect:
+        static_cast<TcpConnectChannel *>(channel)->complete();
+        break;
     case ChannelType::kRdmaSend:
         static_cast<RdmaSendChannel *>(channel)->complete();
         break;
@@ -376,9 +380,12 @@ static void complete_channel(Foundation::NBIO::Channel *channel)
     }
 }
 
-// Builds a one-shot poll for a poll-channel, whose whole wait is the poll.
+// Builds a one-shot poll for a poll-channel, whose whole wait is the poll. Which
+// readiness that is belongs to the channel: most of them wait to be readable, a
+// connect waits to be writable.
 template <typename PollPayloadType>
-static io_uring_sqe *prepare_poll_sqe(io_uring *ring, Foundation::NBIO::Channel *channel, PollPayloadType &payload)
+static io_uring_sqe *prepare_poll_sqe(io_uring *ring, Foundation::NBIO::Channel *channel, PollPayloadType &payload,
+                                      int mask = POLLIN)
 {
     if (!payload.wants_poll())
     {
@@ -390,7 +397,7 @@ static io_uring_sqe *prepare_poll_sqe(io_uring *ring, Foundation::NBIO::Channel 
         return nullptr;
     }
     payload.take_poll();
-    ::io_uring_prep_poll_add(sqe, channel->native_handle(), POLLIN);
+    ::io_uring_prep_poll_add(sqe, channel->native_handle(), mask);
     return sqe;
 }
 
@@ -573,6 +580,12 @@ bool URingMultiplexer::prepare(Foundation::NBIO::Channel *channel)
     {
         auto &payload = std::get<RdmaConnectPayload>(static_cast<RdmaConnectChannel *>(channel)->submit());
         sqe = prepare_poll_sqe(&ring_, channel, payload);
+        break;
+    }
+    case Foundation::NBIO::ChannelType::kConnect:
+    {
+        auto &payload = std::get<ConnectPayload>(static_cast<TcpConnectChannel *>(channel)->submit());
+        sqe = prepare_poll_sqe(&ring_, channel, payload, POLLOUT);
         break;
     }
     case Foundation::NBIO::ChannelType::kRdmaSend:

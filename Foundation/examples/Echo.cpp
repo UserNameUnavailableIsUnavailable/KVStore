@@ -14,23 +14,23 @@ using namespace Foundation;
 NBIO::Task<void> Service()
 {
     auto address = Core::SocketAddress::from_v4("127.0.0.1", 8080);
-    auto acceptor = NBIO::bind(address);
+    NBIO::TcpAcceptService acceptor{address};
     while (true)
     {
-        auto result = co_await acceptor->accept();
-        if (!result)
+        auto accepted = co_await acceptor.accept();
+        if (!accepted)
         {
             std::cout << "[conn] failed\n";
             co_return;
         }
-        auto session = NBIO::establish(std::move(result->first));
+        auto session = std::move(accepted->first);
         // A coroutine lambda is fine, but: (1) Spawn takes a Task, so the
         // lambda must be INVOKED here; (2) captures live in the closure, not
         // the coroutine frame -- the temporary closure dies before the lazy
         // task ever runs, so anything it needs must arrive as a by-value
         // parameter (parameters are moved into the frame at call time).
         NBIO::spawn(
-            [](std::shared_ptr<NBIO::TcpSession> session) -> NBIO::Task<void> {
+            [](std::shared_ptr<NBIO::TcpSessionService> session) -> NBIO::Task<void> {
                 auto buffer = std::make_unique<::Foundation::Core::Buffer>(1024);
                 while (true)
                 {

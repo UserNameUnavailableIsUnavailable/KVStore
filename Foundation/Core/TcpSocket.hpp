@@ -89,6 +89,13 @@ class TcpSocket
     expected<void, std::error_code> connect(const SocketAddress &peer) noexcept;
 
     expected<void, std::error_code> non_blocking(bool toggle = true) noexcept;
+
+    // The pending error on the connection, which is what a connect that has not
+    // finished leaves behind: nothing once the handshake has been made, and the
+    // reason it was not otherwise. Reading it clears it, because that is what the
+    // kernel does with `SO_ERROR` -- so a caller that looks once has looked.
+    expected<void, std::error_code> take_error() const noexcept;
+
     expected<void, std::error_code> reuse_address(bool toggle = true) noexcept;
     expected<void, std::error_code> reuse_port(bool toggle = true) noexcept;
     expected<void, std::error_code> keep_alive(bool toggle = true) noexcept;

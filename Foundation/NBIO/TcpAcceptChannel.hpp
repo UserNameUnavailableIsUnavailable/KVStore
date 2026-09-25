@@ -2,6 +2,8 @@
 
 #include <Foundation/Async/Coroutine.hpp>
 #include <Foundation/Core/SocketAddress.hpp>
+#include <Foundation/Core/TcpAcceptor.hpp>
+#include <Foundation/Core/TcpConnector.hpp>
 #include <Foundation/NBIO/Channel.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/NBIO/Multiplexer.hpp>
@@ -21,23 +23,28 @@ class AcceptAwaiter;
 class TcpAcceptChannel final : public Foundation::NBIO::Channel
 {
   public:
-    TcpAcceptChannel(Foundation::Core::TcpSocket socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
+    TcpAcceptChannel(Foundation::Core::TcpAcceptor &acceptor, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     ~TcpAcceptChannel() noexcept;
 
-    Foundation::NBIO::Task<Core::expected<std::pair<Core::TcpSocket, Core::SocketAddress>, std::error_code>> accept();
+    // The next peer that connects, as the connection it arrived on and the address it
+    // came from: the socket is accepted on the listener's descriptor by the backend,
+    // and the listener is what turns it into a connector -- a connection of the
+    // accepted kind can only be made by a listener, because the peer is what makes
+    // its data path mean anything.
+    Foundation::NBIO::Task<Core::expected<std::pair<Core::TcpConnector, Core::SocketAddress>, std::error_code>> accept();
 
     // The operation the backend is asked to perform lives in the payload; the
     // backend fills the communication slots and asks the channel to reap them.
     Payload &submit();
     void complete();
 
-    Foundation::Core::TcpSocket &socket() noexcept
+    Foundation::Core::TcpAcceptor &acceptor() noexcept
     {
-        return listener_;
+        return acceptor_;
     }
-    const Foundation::Core::TcpSocket &socket() const noexcept
+    const Foundation::Core::TcpAcceptor &acceptor() const noexcept
     {
-        return listener_;
+        return acceptor_;
     }
 
   private:
@@ -47,7 +54,7 @@ class TcpAcceptChannel final : public Foundation::NBIO::Channel
     // armed is what tells the backend to look at the channel.
     void prepare(Async::Coroutine waiter, Core::Communication *result);
 
-    Foundation::Core::TcpSocket listener_;
+    Foundation::Core::TcpAcceptor &acceptor_;
     // One waiter per communication slot, in queue order.
     std::deque<Async::Coroutine> waiters_;
     Payload payload_{AcceptPayload{}};

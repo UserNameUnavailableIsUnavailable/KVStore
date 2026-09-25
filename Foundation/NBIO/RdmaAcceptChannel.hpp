@@ -8,7 +8,7 @@
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include "Channel.hpp"
-#include "RdmaSession.hpp"
+#include "RdmaSessionService.hpp"
 #include <Foundation/NBIO/Payload.hpp>
 
 #include <memory>
@@ -24,7 +24,7 @@ class RdmaAcceptChannel final : public Channel
 
     struct PendingAccept
     {
-        std::shared_ptr<RdmaSession> session{};
+        std::shared_ptr<RdmaSessionService> session{};
         // Why no connection can be admitted any more, empty while none has
         // failed.
         std::string error{};
@@ -34,7 +34,7 @@ class RdmaAcceptChannel final : public Channel
                        Foundation::Async::Scheduler &scheduler);
     ~RdmaAcceptChannel() noexcept;
 
-    Task<Core::expected<std::shared_ptr<RdmaSession>, std::string>> accept();
+    Task<Core::expected<std::shared_ptr<RdmaSessionService>, std::string>> accept();
 
     // The operation this channel wants from the backend is a one-shot poll; the
     // payload carries only whether one is already out there.

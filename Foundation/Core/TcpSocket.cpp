@@ -261,6 +261,29 @@ expected<void, std::error_code> TcpSocket::non_blocking(bool toggle) noexcept
     return {};
 }
 
+expected<void, std::error_code> TcpSocket::take_error() const noexcept
+{
+    int pending = 0;
+#if defined(_WIN32)
+    int length = static_cast<int>(sizeof(pending));
+    if (::getsockopt(handle_, SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&pending), &length) < 0)
+#elif defined(__linux__)
+    ::socklen_t length = static_cast<::socklen_t>(sizeof(pending));
+    if (::getsockopt(handle_, SOL_SOCKET, SO_ERROR, &pending, &length) < 0)
+#endif
+    {
+        return unexpected<std::error_code>(last_error());
+    }
+    if (pending != 0)
+    {
+        // The error comes back as the number the socket would have reported, and
+        // the system category is what turns it into the same code an operation that
+        // failed outright would have carried.
+        return unexpected<std::error_code>(pending, std::system_category());
+    }
+    return {};
+}
+
 template <typename T> std::error_code TcpSocket::set_native_option(int level, int option, const T &value) noexcept
 {
 #if defined(_WIN32)
