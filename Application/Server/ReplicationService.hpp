@@ -12,7 +12,7 @@
 #include <Foundation/NBIO/ConditionVariable.hpp>
 #include <Foundation/NBIO/RdmaAcceptChannel.hpp>
 #include <Foundation/NBIO/RdmaConnectChannel.hpp>
-#include <Foundation/NBIO/RdmaSession.hpp>
+#include <Foundation/NBIO/RdmaSessionService.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include <cstdint>
@@ -141,15 +141,15 @@ class ReplicationService
         }
     };
 
-    Foundation::NBIO::Task<void> serve_replica(std::shared_ptr<Foundation::NBIO::RdmaSession> session);
+    Foundation::NBIO::Task<void> serve_replica(std::shared_ptr<Foundation::NBIO::RdmaSessionService> session);
     // One full synchronization over a fresh link: the master's RDB file arrives,
     // is validated, and becomes the store. Answers the log offset the snapshot was
     // taken at -- where following on from it starts -- or nothing when that did
     // not happen.
-    Foundation::NBIO::Task<std::optional<std::uint64_t>> full_sync(Foundation::NBIO::RdmaSession &session);
+    Foundation::NBIO::Task<std::optional<std::uint64_t>> full_sync(Foundation::NBIO::RdmaSessionService &session);
     // Keeps the link once the snapshot is done, applying the writes the master has
     // for this replica from `offset` onwards, one batch at a time.
-    Foundation::NBIO::Task<void> follow_master(Foundation::NBIO::RdmaSession &session, std::uint64_t offset);
+    Foundation::NBIO::Task<void> follow_master(Foundation::NBIO::RdmaSessionService &session, std::uint64_t offset);
 
     // A cursor at the end of the log as it stands, which is where the snapshot
     // being served ends, and the recording that has to go with it. Nothing when
@@ -185,11 +185,11 @@ class ReplicationService
         // Held first, and held at all: the connection borrows this device.
         std::shared_ptr<Foundation::Core::RdmaResourceManager> resources;
         Foundation::Core::RdmaConnector connector;
-        std::shared_ptr<Foundation::NBIO::RdmaSession> session;
+        std::shared_ptr<Foundation::NBIO::RdmaSessionService> session;
     };
     std::unique_ptr<ReplicaLink> link_;
 
-    std::vector<std::shared_ptr<Foundation::NBIO::RdmaSession>> sessions_;
+    std::vector<std::shared_ptr<Foundation::NBIO::RdmaSessionService>> sessions_;
 };
 } // namespace KV
 

@@ -27,7 +27,7 @@ std::span<const char> AsBytes(std::string_view text) noexcept
 
 // Why a link stopped carrying messages, for the log. No error at all means the
 // peer is simply gone.
-std::string LinkState(NBIO::RdmaSession &session)
+std::string LinkState(NBIO::RdmaSessionService &session)
 {
     const auto &stream = session.connection();
     if (stream.failed())
@@ -87,7 +87,7 @@ enum class SendOutcome
 // nothing waited for. The completion that hands the chunk back is a later
 // concern, and reporting it is what poll_send is for. `error` is filled in
 // whenever the answer is kFailed.
-SendOutcome SendMessage(NBIO::RdmaSession &session, std::span<const char> message, std::string &error)
+SendOutcome SendMessage(NBIO::RdmaSessionService &session, std::span<const char> message, std::string &error)
 {
     auto acquired = session.send_channel().acquire();
     if (!acquired) [[unlikely]]
@@ -118,7 +118,7 @@ SendOutcome SendMessage(NBIO::RdmaSession &session, std::span<const char> messag
 
 // A message that is part of the conversation rather than the payload: waited for
 // a chunk to put it in, because losing one would stall the other end.
-NBIO::Task<bool> SendControl(NBIO::RdmaSession &session, std::span<const char> message)
+NBIO::Task<bool> SendControl(NBIO::RdmaSessionService &session, std::span<const char> message)
 {
     while (true)
     {
@@ -186,7 +186,7 @@ enum class ReportStatus
 // `wait`. An empty queue is a status of its own rather than a failure in the
 // non-waiting case, which is what lets the sender take in what is already there
 // without parking on nothing.
-NBIO::Task<ReportStatus> ReadReport(NBIO::RdmaSession &session, std::uint64_t packets, bool wait, Progress &progress)
+NBIO::Task<ReportStatus> ReadReport(NBIO::RdmaSessionService &session, std::uint64_t packets, bool wait, Progress &progress)
 {
     auto received = co_await (wait ? session.receive() : session.try_receive());
     if (!received) [[unlikely]]
@@ -235,7 +235,7 @@ NBIO::Task<ReportStatus> ReadReport(NBIO::RdmaSession &session, std::uint64_t pa
 
 // Waits for the next report and folds it in, answering false when the link ended
 // before one arrived.
-NBIO::Task<bool> WaitForReport(NBIO::RdmaSession &session, std::uint64_t packets, Progress &progress)
+NBIO::Task<bool> WaitForReport(NBIO::RdmaSessionService &session, std::uint64_t packets, Progress &progress)
 {
     co_return co_await ReadReport(session, packets, true, progress) == ReportStatus::kTaken;
 }
@@ -243,7 +243,7 @@ NBIO::Task<bool> WaitForReport(NBIO::RdmaSession &session, std::uint64_t packets
 // Takes in every report that has already arrived, so a window that has been
 // opened up is used in one pass rather than one packet per wake-up. Answers
 // false when the link ended; an empty queue is the case it is here for.
-NBIO::Task<bool> HarvestReports(NBIO::RdmaSession &session, std::uint64_t packets, Progress &progress)
+NBIO::Task<bool> HarvestReports(NBIO::RdmaSessionService &session, std::uint64_t packets, Progress &progress)
 {
     while (true)
     {
@@ -437,7 +437,7 @@ std::uint64_t PacketCount(std::uintmax_t payload_size, std::size_t packet_size) 
     return (static_cast<std::uint64_t>(payload_size) + packet_size - 1) / packet_size;
 }
 
-Foundation::NBIO::Task<std::optional<TransferOffer>> AcceptTransfer(NBIO::RdmaSession &session)
+Foundation::NBIO::Task<std::optional<TransferOffer>> AcceptTransfer(NBIO::RdmaSessionService &session)
 {
     auto received = co_await session.receive();
     if (!received) [[unlikely]]
@@ -488,7 +488,7 @@ std::uint32_t AgreedChunkSize(const TransferOffer &offer, std::size_t packet_siz
 }
 } // namespace
 
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendPayload(NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendPayload(NBIO::RdmaSessionService &session,
                                                                  const TransferOffer &offer, PayloadKind sending,
                                                                  std::uint64_t end_offset, std::uintmax_t size,
                                                                  const PacketReader &read, std::size_t packet_size)
@@ -649,7 +649,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendPayload(NBIO::RdmaSess
     co_return offset;
 }
 
-Foundation::NBIO::Task<std::optional<TransferResult>> ReceivePayload(NBIO::RdmaSession &session, PayloadKind kind,
+Foundation::NBIO::Task<std::optional<TransferResult>> ReceivePayload(NBIO::RdmaSessionService &session, PayloadKind kind,
                                                                     std::uint64_t offset, const PacketWriter &write,
                                                                     std::size_t chunk_size)
 {
@@ -809,7 +809,7 @@ Foundation::NBIO::Task<std::optional<TransferResult>> ReceivePayload(NBIO::RdmaS
     co_return TransferResult{.bytes = written_bytes, .offset = end_offset};
 }
 
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(NBIO::RdmaSessionService &session,
                                                                const std::filesystem::path &path,
                                                                std::size_t packet_size)
 {
@@ -821,7 +821,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(NBIO::RdmaSession
     co_return co_await SendFile(session, *offer, path, packet_size);
 }
 
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(NBIO::RdmaSession &session, const TransferOffer &offer,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(NBIO::RdmaSessionService &session, const TransferOffer &offer,
                                                                const std::filesystem::path &path,
                                                                std::size_t packet_size, std::uint64_t offset)
 {
@@ -848,7 +848,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(NBIO::RdmaSession
     co_return co_await SendPayload(session, offer, PayloadKind::kSnapshot, offset, size, read, packet_size);
 }
 
-Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveFile(NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveFile(NBIO::RdmaSessionService &session,
                                                                   const std::filesystem::path &path,
                                                                   std::size_t chunk_size)
 {
@@ -887,7 +887,7 @@ Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveFile(NBIO::RdmaSess
     co_return received;
 }
 
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendCommands(NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendCommands(NBIO::RdmaSessionService &session,
                                                                    const TransferOffer &offer,
                                                                    std::uint64_t end_offset, std::uintmax_t size,
                                                                    const PacketReader &read,
@@ -896,7 +896,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendCommands(NBIO::RdmaSes
     co_return co_await SendPayload(session, offer, PayloadKind::kCommands, end_offset, size, read, packet_size);
 }
 
-Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveCommands(NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveCommands(NBIO::RdmaSessionService &session,
                                                                       std::uint64_t offset,
                                                                       const PacketWriter &write,
                                                                       std::size_t chunk_size)

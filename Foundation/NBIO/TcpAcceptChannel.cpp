@@ -13,14 +13,16 @@
 
 namespace Foundation::NBIO
 {
-TcpAcceptChannel::TcpAcceptChannel(Foundation::Core::TcpSocket socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-    : Channel(Foundation::NBIO::ChannelType::kAccept, static_cast<std::uintptr_t>(socket.native_handle()), multiplexer, scheduler), listener_(std::move(socket))
+TcpAcceptChannel::TcpAcceptChannel(Foundation::Core::TcpAcceptor &acceptor, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
+    : Channel(Foundation::NBIO::ChannelType::kAccept, static_cast<std::uintptr_t>(acceptor.native_handle()), multiplexer, scheduler), acceptor_(acceptor)
 {
-    if (!listener_.is_valid())
+    if (!acceptor_.is_valid())
     {
-        throw std::logic_error("invalid socket");
+        throw std::logic_error("invalid acceptor");
     }
-    if (auto result = listener_.non_blocking(true); !result)
+    // The listener has to be polled rather than waited on: an accept that blocks in
+    // the call would hold the whole engine.
+    if (auto result = acceptor_.non_blocking(true); !result)
     {
         throw std::system_error(result.error(), "non_blocking failed");
     }
@@ -66,14 +68,17 @@ class AcceptAwaiter
 
 // The accept body, as a plain coroutine whose channel is an ordinary parameter
 // (see the note on TcpAcceptChannel::accept).
-static Foundation::NBIO::Task<Core::expected<std::pair<Core::TcpSocket, Core::SocketAddress>, std::error_code>> AcceptOn(TcpAcceptChannel &channel)
+static Foundation::NBIO::Task<Core::expected<std::pair<Core::TcpConnector, Core::SocketAddress>, std::error_code>> AcceptOn(TcpAcceptChannel &channel)
 {
     auto result = co_await AcceptAwaiter(channel);
     if (result.status == Core::OperationStatus::kError)
     {
         co_return Core::unexpected<std::error_code>(std::move(result.error_code));
     }
-    co_return std::make_pair(std::move(result.socket), std::move(result.address));
+    // The socket the kernel accepted is connected to a peer, so the listener is what
+    // turns it into the connection this end now has; the address is the one thing
+    // about it that the accepted side did not already know.
+    co_return std::make_pair(channel.acceptor().adopt(std::move(result.socket)), std::move(result.address));
 }
 
 void TcpAcceptChannel::prepare(Async::Coroutine waiter, Core::Communication *communication)
@@ -113,7 +118,7 @@ void TcpAcceptChannel::complete()
     }
 }
 
-Foundation::NBIO::Task<Core::expected<std::pair<Core::TcpSocket, Core::SocketAddress>, std::error_code>> TcpAcceptChannel::accept()
+Foundation::NBIO::Task<Core::expected<std::pair<Core::TcpConnector, Core::SocketAddress>, std::error_code>> TcpAcceptChannel::accept()
 {
     // Deliberately not a member coroutine: the implicit object parameter of a
     // member coroutine is laid out by the compiler in the same frame slot the

@@ -7,7 +7,7 @@
 #include <Foundation/Async/Task.hpp>
 
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/TcpSocket.hpp>
+#include <Foundation/Core/TcpConnector.hpp>
 #include <Foundation/NBIO/Payload.hpp>
 #include <deque>
 #include <span>
@@ -20,7 +20,7 @@ class ReceiveAwaiter;
 class TcpReceiveChannel final : public Foundation::NBIO::Channel
 {
   public:
-    explicit TcpReceiveChannel(Foundation::Core::TcpSocket &socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
+    explicit TcpReceiveChannel(Foundation::Core::TcpConnector &connector, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     ~TcpReceiveChannel() noexcept;
 
     Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> receive(std::span<char> buffer);
@@ -30,13 +30,13 @@ class TcpReceiveChannel final : public Foundation::NBIO::Channel
     Payload &submit();
     void complete();
 
-    Foundation::Core::TcpSocket &socket() noexcept
+    Foundation::Core::TcpConnector &connector() noexcept
     {
-        return socket_;
+        return connector_;
     }
-    const Foundation::Core::TcpSocket &socket() const noexcept
+    const Foundation::Core::TcpConnector &connector() const noexcept
     {
-        return socket_;
+        return connector_;
     }
 
   private:
@@ -46,7 +46,7 @@ class TcpReceiveChannel final : public Foundation::NBIO::Channel
     // being armed is what tells the backend to look at the channel.
     void prepare(Async::Coroutine waiter, Core::Transmission *transmission);
 
-    Foundation::Core::TcpSocket &socket_;
+    Foundation::Core::TcpConnector &connector_;
     // One waiter per transmission, in queue order.
     std::deque<Async::Coroutine> waiters_;
     Payload payload_{ReceivePayload{}};

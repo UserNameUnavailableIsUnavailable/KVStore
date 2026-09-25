@@ -30,7 +30,7 @@ namespace NBIO = Foundation::NBIO;
 
 // Waits for the link to end. Nothing follows a snapshot yet, so this is where
 // the master's side of a live link spends its time.
-NBIO::Task<void> ParkUntilPeerCloses(NBIO::RdmaSession &session)
+NBIO::Task<void> ParkUntilPeerCloses(NBIO::RdmaSessionService &session)
 {
     while (true)
     {
@@ -156,7 +156,7 @@ void ReplicationService::prune_sessions()
 {
     // A session is only referred to by this list once the coroutine serving it
     // has finished, and its chunks only go back to the pools once it is gone.
-    std::erase_if(sessions_, [](const std::shared_ptr<NBIO::RdmaSession> &session) {
+    std::erase_if(sessions_, [](const std::shared_ptr<NBIO::RdmaSessionService> &session) {
         return session.use_count() == 1;
     });
 }
@@ -203,7 +203,7 @@ Foundation::NBIO::Task<void> ReplicationService::serve()
     }
 }
 
-Foundation::NBIO::Task<void> ReplicationService::serve_replica(std::shared_ptr<NBIO::RdmaSession> session)
+Foundation::NBIO::Task<void> ReplicationService::serve_replica(std::shared_ptr<NBIO::RdmaSessionService> session)
 {
     try
     {
@@ -309,7 +309,7 @@ Foundation::NBIO::Task<void> ReplicationService::serve_replica(std::shared_ptr<N
     spdlog::info("replication: replica link closed");
 }
 
-Foundation::NBIO::Task<std::optional<std::uint64_t>> ReplicationService::full_sync(NBIO::RdmaSession &session)
+Foundation::NBIO::Task<std::optional<std::uint64_t>> ReplicationService::full_sync(NBIO::RdmaSessionService &session)
 {
     // The master's RDB arrives as a file: it lands beside the RDB path and is
     // moved onto it only once every packet has arrived, so a transfer that dies
@@ -343,7 +343,7 @@ Foundation::NBIO::Task<std::optional<std::uint64_t>> ReplicationService::full_sy
     co_return received->offset;
 }
 
-Foundation::NBIO::Task<void> ReplicationService::follow_master(NBIO::RdmaSession &session, std::uint64_t offset)
+Foundation::NBIO::Task<void> ReplicationService::follow_master(NBIO::RdmaSessionService &session, std::uint64_t offset)
 {
     // The incremental half, one batch at a time: ask from what has been applied,
     // apply what comes back, ask again. The request carries the position, so the
@@ -449,7 +449,7 @@ Foundation::NBIO::Task<void> ReplicationService::follow()
         }
 
         link_.reset();
-        co_await NBIO::sleep_for(std::chrono::seconds(1));
+        co_await NBIO::SystemTimeService{}.sleep(std::chrono::seconds(1));
     }
 }
 } // namespace KV

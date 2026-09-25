@@ -6,7 +6,6 @@
 #include <Foundation/Core/SystemSignal.hpp>
 #include <Foundation/Core/SystemTimer.hpp>
 
-#include <Foundation/NBIO/TcpAcceptChannel.hpp>
 #include <Foundation/NBIO/EpollMultiplexer.hpp>
 #include <functional>
 #include <memory>
@@ -89,6 +88,6 @@ class Engine
     static thread_local std::unique_ptr<Engine> engine_;
 };
 
-// Creates the platform default backend (epoll on Linux).
+// Creates the platform default backend
 std::unique_ptr<Multiplexer> make_default_multiplexer();
 } // namespace Foundation::NBIO

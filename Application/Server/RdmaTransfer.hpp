@@ -2,7 +2,7 @@
 #if defined(__linux__)
 
 #include <Foundation/Core/RdmaConnector.hpp>
-#include <Foundation/NBIO/RdmaSession.hpp>
+#include <Foundation/NBIO/RdmaSessionService.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include <cstddef>
@@ -239,7 +239,7 @@ struct TransferResult
 
 // Waits for a receiver to open a transfer and answers what it offered. Nothing
 // when what arrived was not an opening.
-Foundation::NBIO::Task<std::optional<TransferOffer>> AcceptTransfer(Foundation::NBIO::RdmaSession &session);
+Foundation::NBIO::Task<std::optional<TransferOffer>> AcceptTransfer(Foundation::NBIO::RdmaSessionService &session);
 
 // Sends `size` bytes over an already open transfer, one packet per message, and
 // never more than the window's worth unacknowledged. `sending` is what this end
@@ -250,7 +250,7 @@ Foundation::NBIO::Task<std::optional<TransferOffer>> AcceptTransfer(Foundation::
 // the receiver where to follow from. `packet_size` is this end's own chunk size,
 // which is the most a packet can be. Answers how many bytes the receiver says it
 // wrote out.
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendPayload(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendPayload(Foundation::NBIO::RdmaSessionService &session,
                                                                  const TransferOffer &offer, PayloadKind sending,
                                                                  std::uint64_t end_offset, std::uintmax_t size,
                                                                  const PacketReader &read, std::size_t packet_size);
@@ -261,14 +261,14 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendPayload(Foundation::NB
 // receive it lands in is truncated rather than refused. `offset` is where it
 // wants a run of commands to start, and answers with where the payload left the
 // log.
-Foundation::NBIO::Task<std::optional<TransferResult>> ReceivePayload(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<TransferResult>> ReceivePayload(Foundation::NBIO::RdmaSessionService &session,
                                                                      PayloadKind kind, std::uint64_t offset,
                                                                      const PacketWriter &write,
                                                                      std::size_t chunk_size);
 
 // The two ends over a file. Both cut it at the negotiated size, which is the
 // size of one message.
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(Foundation::NBIO::RdmaSessionService &session,
                                                                const std::filesystem::path &path,
                                                                std::size_t packet_size);
 
@@ -276,7 +276,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(Foundation::NBIO:
 // do something between the two -- take the snapshot it is about to send, say --
 // waits for the opening itself and then calls this. `offset` is the log position
 // the image is taken at, which is where a replica follows from.
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(Foundation::NBIO::RdmaSessionService &session,
                                                               const TransferOffer &offer,
                                                               const std::filesystem::path &path,
                                                               std::size_t packet_size, std::uint64_t offset = 0);
@@ -285,7 +285,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendFile(Foundation::NBIO:
 // the log position the image belongs to, or nothing when the transfer did not
 // complete, in which case `path` is left as it was: the bytes land beside it and
 // are moved onto it only once all of them are here.
-Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveFile(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveFile(Foundation::NBIO::RdmaSessionService &session,
                                                                  const std::filesystem::path &path,
                                                                  std::size_t chunk_size);
 
@@ -294,7 +294,7 @@ Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveFile(Foundation::NB
 // in the middle of one is the normal case rather than an error, and the `write`
 // that takes them is what decodes and applies them. `end_offset` is where the run
 // leaves the master's log.
-Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendCommands(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendCommands(Foundation::NBIO::RdmaSessionService &session,
                                                                   const TransferOffer &offer,
                                                                   std::uint64_t end_offset, std::uintmax_t size,
                                                                   const PacketReader &read,
@@ -302,7 +302,7 @@ Foundation::NBIO::Task<std::optional<std::uintmax_t>> SendCommands(Foundation::N
 
 // Asks for the commands the master has applied from `offset` onwards, handing
 // every packet to `write`.
-Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveCommands(Foundation::NBIO::RdmaSession &session,
+Foundation::NBIO::Task<std::optional<TransferResult>> ReceiveCommands(Foundation::NBIO::RdmaSessionService &session,
                                                                      std::uint64_t offset,
                                                                      const PacketWriter &write,
                                                                      std::size_t chunk_size);

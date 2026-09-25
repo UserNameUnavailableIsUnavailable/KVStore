@@ -33,6 +33,18 @@ expected<TcpConnector, std::error_code> TcpAcceptor::accept() noexcept
     return TcpConnector(std::move(result->first));
 }
 
+TcpConnector TcpAcceptor::adopt(TcpSocket socket) const noexcept
+{
+    // The only thing needed here is the right to build an accepted-end connector,
+    // which is the friendship this class has and nothing else depends on.
+    return TcpConnector(std::move(socket));
+}
+
+expected<void, std::error_code> TcpAcceptor::reuse_address(bool toggle) noexcept
+{
+    return socket_.reuse_address(toggle);
+}
+
 expected<void, std::error_code> TcpAcceptor::non_blocking(bool toggle) noexcept
 {
     return socket_.non_blocking(toggle);

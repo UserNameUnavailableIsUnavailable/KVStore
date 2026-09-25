@@ -7,7 +7,7 @@
 // them is answered and that the order a stream needs is kept.
 #include <Foundation/NBIO/NBIO.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/TcpSession.hpp>
+#include <Foundation/NBIO/TcpSessionService.hpp>
 #include <Foundation/NBIO/URingMultiplexer.hpp>
 
 #include <Foundation/Async/Coroutine.hpp>
@@ -47,7 +47,7 @@ std::string ChunkBytes(std::size_t writer, std::size_t index)
     return "chunk-" + std::to_string(writer) + ":" + std::to_string(index) + ";";
 }
 
-Foundation::NBIO::Task<void> send_chunks(std::shared_ptr<Foundation::NBIO::TcpSession> session, std::size_t writer)
+Foundation::NBIO::Task<void> send_chunks(std::shared_ptr<Foundation::NBIO::TcpSessionService> session, std::size_t writer)
 {
     for (std::size_t index = 0; index < kChunks; ++index)
     {
@@ -56,7 +56,7 @@ Foundation::NBIO::Task<void> send_chunks(std::shared_ptr<Foundation::NBIO::TcpSe
     }
 }
 
-Foundation::NBIO::Task<void> receive_chunk(std::shared_ptr<Foundation::NBIO::TcpSession> session, std::vector<std::string> &into,
+Foundation::NBIO::Task<void> receive_chunk(std::shared_ptr<Foundation::NBIO::TcpSessionService> session, std::vector<std::string> &into,
                                            std::size_t index, std::size_t size)
 {
     std::string bytes(size, '\0');
@@ -79,7 +79,7 @@ std::vector<Foundation::Core::TcpSocket> connect_clients(const Foundation::Core:
     return clients;
 }
 
-Foundation::NBIO::Task<void> accept_one(Foundation::NBIO::TcpAcceptChannel &acceptor, std::size_t &accepted)
+Foundation::NBIO::Task<void> accept_one(Foundation::NBIO::TcpAcceptService &acceptor, std::size_t &accepted)
 {
     auto connection = co_await acceptor.accept();
     if (connection)
@@ -88,7 +88,7 @@ Foundation::NBIO::Task<void> accept_one(Foundation::NBIO::TcpAcceptChannel &acce
     }
 }
 
-Foundation::NBIO::Task<void> accept_all(Foundation::NBIO::TcpAcceptChannel &acceptor, std::size_t &accepted)
+Foundation::NBIO::Task<void> accept_all(Foundation::NBIO::TcpAcceptService &acceptor, std::size_t &accepted)
 {
     std::vector<Foundation::Async::CoroutineToken> waiters;
     waiters.reserve(kWriters);
@@ -102,14 +102,16 @@ Foundation::NBIO::Task<void> accept_all(Foundation::NBIO::TcpAcceptChannel &acce
     }
 }
 
-Foundation::NBIO::Task<void> accept_and_send(Foundation::NBIO::TcpAcceptChannel &acceptor)
+Foundation::NBIO::Task<void> accept_and_send(Foundation::NBIO::TcpAcceptService &acceptor)
 {
     auto connection = co_await acceptor.accept();
     if (!connection)
     {
         co_return;
     }
-    auto session = Foundation::NBIO::establish(std::move(connection->first));
+    // Accepting hands over the session, so there is nothing left to establish: the
+    // connection it carries is already the one the peer made.
+    auto session = std::move(connection->first);
 
     std::vector<Foundation::Async::CoroutineToken> writers;
     writers.reserve(kWriters);
@@ -123,7 +125,7 @@ Foundation::NBIO::Task<void> accept_and_send(Foundation::NBIO::TcpAcceptChannel 
     }
 }
 
-Foundation::NBIO::Task<void> accept_and_receive(Foundation::NBIO::TcpAcceptChannel &acceptor,
+Foundation::NBIO::Task<void> accept_and_receive(Foundation::NBIO::TcpAcceptService &acceptor,
                                                 Foundation::Core::TcpSocket &client, const std::string &sent,
                                                 std::vector<std::string> &received, std::size_t bytes_per_receiver)
 {
@@ -132,7 +134,7 @@ Foundation::NBIO::Task<void> accept_and_receive(Foundation::NBIO::TcpAcceptChann
     {
         co_return;
     }
-    auto session = Foundation::NBIO::establish(std::move(connection->first));
+    auto session = std::move(connection->first);
 
     std::vector<Foundation::Async::CoroutineToken> waiters;
     waiters.reserve(received.size());
@@ -141,7 +143,7 @@ Foundation::NBIO::Task<void> accept_and_receive(Foundation::NBIO::TcpAcceptChann
         waiters.push_back(Foundation::NBIO::spawn(receive_chunk(session, received, index, bytes_per_receiver)));
     }
 
-    co_await Foundation::NBIO::sleep_for(std::chrono::milliseconds(20));
+    co_await Foundation::NBIO::SystemTimeService{}.sleep(std::chrono::milliseconds(20));
     const auto sent_result = client.send(std::span<const char>{sent.data(), sent.size()});
     EXPECT_TRUE(sent_result);
     EXPECT_EQ(*sent_result, sent.size());
@@ -156,15 +158,14 @@ Foundation::NBIO::Task<void> accept_and_receive(Foundation::NBIO::TcpAcceptChann
 TEST(TcpSocketChannelTesting, OneReadinessEventServesEveryWaitingAccept)
 {
     const auto address = TestSocketAddress();
-    auto acceptor = Foundation::NBIO::bind(address);
-    ASSERT_NE(acceptor, nullptr);
+    Foundation::NBIO::TcpAcceptService acceptor{address};
 
     // The clients connect before anybody accepts, so one readiness event later all
     // of them are there to be taken.
     auto clients = connect_clients(address, kWriters);
 
     std::size_t accepted = 0;
-    Foundation::NBIO::run(accept_all(*acceptor, accepted));
+    Foundation::NBIO::run(accept_all(acceptor, accepted));
 
     EXPECT_EQ(accepted, kWriters) << "every waiter has to be answered";
 }
@@ -176,13 +177,12 @@ TEST(TcpSocketChannelTesting, EveryWaitingAcceptIsAnsweredOnURing)
     Foundation::NBIO::initialize(std::make_unique<Foundation::NBIO::URingMultiplexer>());
 
     const auto address = TestSocketAddress();
-    auto acceptor = Foundation::NBIO::bind(address);
-    ASSERT_NE(acceptor, nullptr);
+    Foundation::NBIO::TcpAcceptService acceptor{address};
 
     auto clients = connect_clients(address, kWriters);
 
     std::size_t accepted = 0;
-    Foundation::NBIO::run(accept_all(*acceptor, accepted));
+    Foundation::NBIO::run(accept_all(acceptor, accepted));
 
     EXPECT_EQ(accepted, kWriters) << "every waiter has to be answered";
 }
@@ -190,13 +190,12 @@ TEST(TcpSocketChannelTesting, EveryWaitingAcceptIsAnsweredOnURing)
 TEST(TcpSocketChannelTesting, SendsFromManyCoroutinesKeepTheOrderTheyQueuedIn)
 {
     const auto address = TestSocketAddress();
-    auto acceptor = Foundation::NBIO::bind(address);
-    ASSERT_NE(acceptor, nullptr);
+    Foundation::NBIO::TcpAcceptService acceptor{address};
 
     auto client = Foundation::Core::TcpSocket{address.family(), Foundation::Core::TcpSocket::Type::kStream};
     ASSERT_TRUE(client.connect(address));
 
-    Foundation::NBIO::run(accept_and_send(*acceptor));
+    Foundation::NBIO::run(accept_and_send(acceptor));
 
     // Read the whole stream back: everything every writer asked to send, and in an
     // order that keeps each writer's own chunks in the order it wrote them.
@@ -246,8 +245,7 @@ TEST(TcpSocketChannelTesting, SendsFromManyCoroutinesKeepTheOrderTheyQueuedIn)
 TEST(TcpSocketChannelTesting, ReceivesFromManyCoroutinesShareWhatArrived)
 {
     const auto address = TestSocketAddress();
-    auto acceptor = Foundation::NBIO::bind(address);
-    ASSERT_NE(acceptor, nullptr);
+    Foundation::NBIO::TcpAcceptService acceptor{address};
 
     auto client = Foundation::Core::TcpSocket{address.family(), Foundation::Core::TcpSocket::Type::kStream};
     ASSERT_TRUE(client.connect(address));
@@ -259,7 +257,7 @@ TEST(TcpSocketChannelTesting, ReceivesFromManyCoroutinesShareWhatArrived)
     const std::string sent(kBytes, 'x');
     std::vector<std::string> received(kReceivers);
 
-    Foundation::NBIO::run(accept_and_receive(*acceptor, client, sent, received, kBytesPerReceiver));
+    Foundation::NBIO::run(accept_and_receive(acceptor, client, sent, received, kBytesPerReceiver));
 
     // Whatever arrived was handed to the waiters in the order they queued, so each
     // one of them has some of it and together they have all of it.

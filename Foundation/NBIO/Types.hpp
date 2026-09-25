@@ -24,6 +24,9 @@ enum class MultiplexerType
 enum class ChannelType
 {
     kAccept,
+    // A connection being made: the socket becoming writable is the completion, and
+    // what it means is the socket's own answer rather than the readiness itself.
+    kConnect,
     kReceive,
     kSend,
     kRead,

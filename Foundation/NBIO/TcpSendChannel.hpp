@@ -9,7 +9,7 @@
 #include <Foundation/Async/Task.hpp>
 
 #include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/TcpSocket.hpp>
+#include <Foundation/Core/TcpConnector.hpp>
 
 #include <deque>
 #include <span>
@@ -22,7 +22,7 @@ class SendAwaiter;
 class TcpSendChannel final : public Foundation::NBIO::Channel
 {
   public:
-    explicit TcpSendChannel(Foundation::Core::TcpSocket &socket, Foundation::Async::Scheduler &scheduler, Foundation::NBIO::Multiplexer &multiplexer);
+    explicit TcpSendChannel(Foundation::Core::TcpConnector &connector, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     ~TcpSendChannel() noexcept;
 
     Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> send(std::span<const char> buffer);
@@ -32,21 +32,12 @@ class TcpSendChannel final : public Foundation::NBIO::Channel
     Payload &submit();
     void complete();
 
-    Foundation::Core::TcpSocket &socket() noexcept
-    {
-        return socket_;
-    }
-    const Foundation::Core::TcpSocket &socket() const noexcept
-    {
-        return socket_;
-    }
-
   private:
     friend class SendAwaiter;
 
     void prepare(Foundation::Async::Coroutine waiter, Core::Transmission *transmission);
 
-    Foundation::Core::TcpSocket &socket_;
+    Foundation::Core::TcpConnector &connector_;
     // One waiter per transmission, in queue order.
     std::deque<Async::Coroutine> waiters_;
     Payload payload_{SendPayload{}};

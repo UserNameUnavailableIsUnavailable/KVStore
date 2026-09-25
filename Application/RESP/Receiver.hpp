@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-#include <Foundation/NBIO/TcpSession.hpp>
+#include <Foundation/NBIO/TcpSessionService.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <Application/RESP/RESP.hpp>
@@ -31,7 +31,7 @@ class Receiver
         std::optional<Object> object;
     };
 
-    Receiver(Foundation::NBIO::TcpSession &session, ::Foundation::Core::Buffer &buffer);
+    Receiver(Foundation::NBIO::TcpSessionService &session, ::Foundation::Core::Buffer &buffer);
     ~Receiver() noexcept;
 
     Foundation::NBIO::Task<std::optional<Object>> receive();
@@ -88,7 +88,7 @@ class Receiver
     // start in the middle of that command and read its arguments as commands.
     Decoder &decoder();
 
-    Foundation::NBIO::TcpSession &session_;
+    Foundation::NBIO::TcpSessionService &session_;
     Foundation::Core::Buffer &buffer_;
     std::optional<Decoder> pending_;
     // The words of the last command handed out, and how many bytes of the buffer

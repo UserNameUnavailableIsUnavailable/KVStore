@@ -3,8 +3,7 @@
 #include <Foundation/NBIO/Payload.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
-#include <Foundation/Core/TcpSocket.hpp>
-#include <optional>
+#include <Foundation/Core/TcpConnector.hpp>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -51,14 +50,16 @@ class ReceiveAwaiter
     Core::Transmission transmission_{};
 };
 
-TcpReceiveChannel::TcpReceiveChannel(Foundation::Core::TcpSocket &socket, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-    : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kReceive, static_cast<std::uintptr_t>(socket.native_handle()), multiplexer, scheduler), socket_(socket)
+TcpReceiveChannel::TcpReceiveChannel(Foundation::Core::TcpConnector &connector, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
+    : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kReceive, static_cast<std::uintptr_t>(connector.native_handle()), multiplexer, scheduler), connector_(connector)
 {
-    if (!socket.is_valid())
+    if (!connector_.is_valid())
     {
-        throw std::logic_error("invalid socket");
+        throw std::logic_error("invalid connector");
     }
-    if (auto result = socket_.non_blocking(true); !result)
+    // A receive that blocks in the call would hold the whole engine until the peer
+    // sent something, so the connection is non-blocking from here.
+    if (auto result = connector_.non_blocking(true); !result)
     {
         throw std::system_error(result.error(), "non_blocking failed");
     }

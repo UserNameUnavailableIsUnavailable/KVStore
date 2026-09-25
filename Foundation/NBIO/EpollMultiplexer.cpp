@@ -23,6 +23,7 @@
 #include "Multiplexer.hpp"
 #include "FileStream.hpp"
 #include "TcpAcceptChannel.hpp"
+#include "TcpConnectChannel.hpp"
 #include "FileReadChannel.hpp"
 #include "TcpReceiveChannel.hpp"
 #include "TcpSendChannel.hpp"
@@ -67,12 +68,14 @@ static constexpr std::uint32_t native_flags_for(Foundation::NBIO::ChannelType ty
     case Foundation::NBIO::ChannelType::kNotify:
     case Foundation::NBIO::ChannelType::kRdmaAccept:
     case Foundation::NBIO::ChannelType::kRdmaConnect:
-    // A stream's completion channel becomes readable when a work completion
-    // lands; both simplex halves watch that same fd.
     case Foundation::NBIO::ChannelType::kRdmaSend:
     case Foundation::NBIO::ChannelType::kRdmaReceive:
     case Foundation::NBIO::ChannelType::kSystemSignal:
         return EPOLLIN;
+    // A connect is finished the moment the socket will take bytes: writability is
+    // the readiness that means the handshake is over.
+    case Foundation::NBIO::ChannelType::kConnect:
+        return EPOLLOUT;
     case Foundation::NBIO::ChannelType::kSend:
     case Foundation::NBIO::ChannelType::kWrite:
         return EPOLLOUT;
@@ -173,6 +176,12 @@ void EpollMultiplexer::run_impl(int timeout_ms)
                 break;
             case Foundation::NBIO::ChannelType::kRdmaConnect:
                 static_cast<RdmaConnectChannel *>(channel)->complete();
+                break;
+            // Nothing to read and nothing to write: the readiness is the whole of the
+            // completion, and the channel is the one that knows what to ask the
+            // socket about it.
+            case Foundation::NBIO::ChannelType::kConnect:
+                static_cast<TcpConnectChannel *>(channel)->complete();
                 break;
             case Foundation::NBIO::ChannelType::kRdmaSend:
                 static_cast<RdmaSendChannel *>(channel)->complete();

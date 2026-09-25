@@ -4,7 +4,6 @@
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include <Foundation/Core/TcpSocket.hpp>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -53,14 +52,14 @@ class SendAwaiter
     Core::Transmission transmission_{};
 };
 
-TcpSendChannel::TcpSendChannel(Foundation::Core::TcpSocket &socket, Foundation::Async::Scheduler &scheduler, Foundation::NBIO::Multiplexer &multiplexer)
-    : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kSend, socket.native_handle(), multiplexer, scheduler), socket_(socket)
+TcpSendChannel::TcpSendChannel(Foundation::Core::TcpConnector &connector, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
+    : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kSend, connector.native_handle(), multiplexer, scheduler), connector_(connector)
 {
-    if (!socket_.is_valid())
+    if (!connector.is_valid())
     {
         throw std::logic_error("socket is invalid");
     }
-    if (auto result = socket_.non_blocking(true); !result)
+    if (auto result = connector.non_blocking(true); !result)
     {
         throw std::system_error(result.error(), "non_blocking failed");
     }

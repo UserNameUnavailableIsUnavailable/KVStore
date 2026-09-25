@@ -210,13 +210,16 @@ std::vector<std::string> Tokenize(const std::string &line)
 
 Foundation::NBIO::Task<void> run_client(Foundation::Core::SocketAddress address, std::string host, std::uint16_t port)
 {
-    Foundation::Core::TcpSocket socket(address.family(), Foundation::Core::TcpSocket::Type::kStream);
-    if (auto result = socket.connect(address); !result)
+    // The connect service makes the connection and hands back the session that owns it;
+    // the channel that waited for the handshake is gone by the time this returns.
+    Foundation::NBIO::TcpConnectService gateway{address.family()};
+    auto connected = co_await gateway.connect(address);
+    if (!connected)
     {
-        std::cerr << "connect failed: " << result.error().message() << '\n';
+        std::cerr << "connect failed: " << connected.error().message() << '\n';
         co_return;
     }
-    auto session = Foundation::NBIO::establish(std::move(socket));
+    auto session = std::move(*connected);
 
     std::cout << "connected to " << host << ':' << port << '\n';
 
