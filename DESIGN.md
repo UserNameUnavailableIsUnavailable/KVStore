@@ -21,8 +21,9 @@ This KVStore design has the following layers:
     - `TTL <key>`: Returns the TTL of the key.
     - `SAVE`: Trigger a snapshot of the KVStore.
     - `CONFIG GET <parameter>` / `CONFIG SET <parameter> <value>`: Redis-shaped configuration, used to turn append-only persistence on or off (`CONFIG SET appendonly yes|no`).
-    - `SLAVEOF`: Create a replica of the master.
-    - `PSYNC`: Trigger partial sync between the master and slave.
+    - `SLAVEOF <ip> <port>`: Makes this instance a replica of the master at that RDMA address. A command a client sends; the instance is read-only from the moment it is accepted.
+    - `PSYNC <replid> <offset>`: The synchronization request the two servers exchange over the replication link. Not part of the client interface.
+- Replication Layer: The master streams its snapshot and then every write it applies; the replica applies them in order.
 - Cache Layer: Responsible for executing commands, lifecycle management.
   - Operations: The following operations are supported, each operation starts with a status and a simple message indicating the success or failure of the operation.
   - Data structure: The following four data structures are supported:

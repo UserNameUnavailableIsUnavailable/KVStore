@@ -1,7 +1,10 @@
-// The RDMA link's throughput, measured the way the replication link uses it: one
-// chunk per message, as many messages in flight as the receiver can take, and a
-// receiver that reports what it has taken so the sender stays inside what it has
-// posted.
+// The RDMA link's throughput, measured the way a user of it would: one chunk per
+// message, as many messages in flight as the receiver can take, and a receiver that
+// reports what it has taken so the sender stays inside what it has posted.
+//
+// This is the raw session, with its flow control built here rather than taken from
+// RdmaDeliverService -- which is the layer that does the same job for replication,
+// and is where that belongs. What is being measured is the session underneath it.
 //
 // Both ends are in this process, on two engines in two threads -- which is what
 // two servers are, one engine each -- because what is being measured is the
@@ -22,8 +25,7 @@
 // completions does not see that coming, because a completion says the message was
 // *delivered*, not that the receiver has finished with the buffer it landed in --
 // so it will eventually be a whole window ahead of the receiver and break the
-// connection. Hence the credits below, which are the same window the replication
-// transfer runs on, and hence the count printed with every run.
+// connection. Hence the credits below, and hence the count printed with every run.
 
 #if defined(__linux__)
 

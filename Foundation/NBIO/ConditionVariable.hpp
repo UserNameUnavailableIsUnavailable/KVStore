@@ -123,9 +123,16 @@ bool ConditionVariableAwaiter<Predicate>::await_suspend(std::coroutine_handle<Pr
 
         if (condition_variable.stock_ > 0)
         {
-            // A notification that arrived before this wait: nothing to sleep for.
+            // A notification that arrived before this wait: nothing to sleep for, so
+            // resume rather than suspend. Suspending here would park the coroutine
+            // without registering it -- notify_* only ever wakes what is in
+            // notifiees_, and this waiter is not -- so the notification would be
+            // consumed and the wait would then last for good. Resuming re-runs the
+            // wait() loop, whose predicate decides whether there is really nothing
+            // left to wait for, and a second pass registers as usual with the stock
+            // spent.
             condition_variable.stock_--;
-            return true;
+            return false;
         }
 
         condition_variable.notifiees_.push_back(std::move(coroutine));

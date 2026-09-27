@@ -47,24 +47,29 @@ std::vector<CommandLine> ReadCommandFile(const std::filesystem::path &path);
 RESP::Object CommandRequest(const CommandLine &line);
 
 // The lines of a file that are settings rather than commands. They are the facts
-// a server has to know before it exists -- the port it answers clients on,
-// whether and where it serves replicas, and the master it follows -- so they are
-// read while it is being put together, and taken out of the list of commands:
+// a server has to know before it exists -- the port it answers clients on, whether
+// and where it serves replicas, and whether it keeps an append-only log -- so they
+// are read while it is being put together, and taken out of the list of commands:
 //
 //   config port <port>
 //   config rdma_device <name>
 //   config replication_address <ip> <port>
-//   replicaof <ip> <port>       (or slaveof, the older name)
+//   config appendonly <yes|no>
 //
-// Nothing means this file did not say: what the command line named wins over all
-// of it, and a value no one named falls back to the server's own default.
+// Which master this instance follows is not among them: SLAVEOF names one, and a
+// client sends it once the server is answering. Nothing means this file did not
+// say: what the command line named wins over all of it, and a value no one named
+// falls back to the server's own default.
 struct StartupSettings
 {
     std::optional<std::uint16_t> port;
     std::optional<std::uint16_t> replication_port;
     std::optional<std::string> replication_address;
     std::optional<std::string> rdma_device;
-    std::optional<Foundation::Core::SocketAddress> master;
+    // Whether this instance keeps an append-only log. It is read before the store
+    // is loaded because it decides which of the two files the store comes from:
+    // see Server::run.
+    std::optional<bool> appendonly;
 };
 
 // Reads those lines out of the file, and takes them out of `lines` so that what

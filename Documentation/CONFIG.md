@@ -20,8 +20,8 @@ AOF and out to the replicas exactly as it would from a client.
 # the shape the settings take: a CONFIG command, one per line
 config port 8080
 config replication_address 192.168.0.201 8081
+config rdma_device siw0
 config appendonly yes
-replicaof 192.168.0.201 8081
 ```
 
 - Lines split on whitespace. A double-quoted run is one argument, and inside it a
@@ -35,20 +35,44 @@ replicaof 192.168.0.201 8081
   the file and the line: `master.conf:2: ERR unknown command 'frobnicate'`. A
   configuration is applied or this instance does not come up; it never serves
   clients with half of a file.
-- **A few settings are not commands.** Two of them name what the server *is*
-rather than something for it to do, and they are read while it is being put
-together: the port it answers clients on, and the address and port it serves
-replicas from, which have to be known before a socket is bound. They are written
-as the `CONFIG` commands they are, and taken out of the list instead of run:
+- **A few settings are not commands.** These name what the server *is* rather
+than something for it to do, so they are read while it is being put together and
+taken out of the list instead of run. They are written as the `CONFIG` commands
+they are:
 
   ```
-  config port 8080                          # clients connect here
+  config port 8080                              # clients connect here
   config replication_address 192.168.0.201 8081 # replicas connect here, over RDMA
+  config rdma_device siw0                       # the device that link runs on
+  config appendonly yes                         # keep a log of every write
   ```
 
-  The address has to name the RDMA device: a wildcard such as `0.0.0.0` is
-  accepted by `rdma_bind_addr` and names no device at all, so it is refused — at
-  validation, and again when the service that listens is built.
+  `port`, `replication_address` and `rdma_device` have to be known before a socket
+  is bound or a channel is opened, and a running server refuses them: there is
+  nothing left to rebind. The address has to name the RDMA device — a wildcard such
+  as `0.0.0.0` is accepted by `rdma_bind_addr` and names no device at all, so it is
+  refused at validation, and again when the service that listens is built.
+
+  `appendonly` is here for a different reason: it decides **which of the two files
+  the store is read from**. The log and the image are alternatives, not a sequence —
+  the log is the store when this instance was told to keep one and there is one to
+  read, and the RDB is what is left for every other case:
+
+  | log kept | `appendonly.aof` | store comes from |
+  |---|---|---|
+  | yes | present | the log; the RDB is not read |
+  | yes | absent | the RDB, and the log is created |
+  | no | present | the RDB, with a warning that the log is being ignored |
+  | no | absent | the RDB |
+
+  Reading a log on top of an image would apply commands the image already holds,
+  and an image newer than the log would have the log's older values put back over
+  it; reading only one of them is what avoids both.
+
+  Unlike the other three, `appendonly` is not frozen: a client may still send
+  `CONFIG SET appendonly yes|no`, and what that changes is what happens from there
+  on. A file has to name it because the choice is made before the server accepts
+  anything, not because the choice cannot be changed.
 
   Everywhere else the rule is one setting, one line. A second line for the same
   setting overrides the first, a flag given on the command line overrides both and
@@ -63,13 +87,13 @@ as the `CONFIG` commands they are, and taken out of the list instead of run:
   ```
 
   `CONFIG GET` still answers with what the server decided, so the settings are
-  readable even though they are not writable: `CONFIG GET port` and
-  `CONFIG GET replication_address` return the values this instance was built with.
-- `replicaof <ip> <port>` (or `slaveof`, the older spelling) is the command Redis
-  spells that way, and it is read in the same early pass: whether an instance is a
-  replica is settled before the service that follows a master is built. A real
-  `REPLICAOF`, one that can change the master of a *running* server, is the better
-  home for it and is what `SLAVEOF.md` describes.
+  readable even though they are not writable: `CONFIG GET port`,
+  `CONFIG GET replication_address` and `CONFIG GET rdma_device` return the values
+  this instance was built with.
+- Which master an instance follows is **not** a setting, and there is no
+  `replicaof` line: a master is named by `SLAVEOF <ip> <port>`, which a client
+  sends once the server is answering, and which can therefore be sent to a server
+  that is already serving clients. See `Documentation/SLAVEOF.md`.
 - `CONFIG` has a short form for exactly this: `config appendonly yes` is
   `CONFIG SET appendonly yes` with the word left out. No parameter is named like a
   subcommand, so the short form takes nothing away from the long one.

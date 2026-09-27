@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory_resource>
 #include <random>
 #include <utility>
 
@@ -98,8 +97,8 @@ class SkipListMap
     using KeyType = K;
     using ValueType = V;
 
-    explicit SkipListMap(std::pmr::memory_resource *memory_resource = std::pmr::get_default_resource())
-        : memory_resource_(memory_resource), random_engine_(std::random_device{}())
+    explicit SkipListMap()
+        : random_engine_(std::random_device{}())
     {
     }
     SkipListMap(const SkipListMap &) = delete;
@@ -279,7 +278,7 @@ class SkipListMap
         return 0;
     }
 
-    bool IsEmpty() const noexcept
+    bool is_empty() const noexcept
     {
         return sentinel_.forward[0] == nullptr;
     }
@@ -384,7 +383,6 @@ class SkipListMap
     }
 
     NodeType sentinel_;
-    std::pmr::memory_resource *memory_resource_;
     mutable std::mt19937 random_engine_;
     std::size_t size_ = 0;
     std::size_t highest_level_index_ = 0;

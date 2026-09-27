@@ -112,9 +112,11 @@ ctest --test-dir build --output-on-failure
 
 # 主从（同一台机器上的两个实例）
 ./build/Application/Server/Server \
-    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201
-./build/Application/Server/Server \
-    --port 8082 --replicaof 192.168.0.201:8081
+    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
+./build/Application/Server/Server --port 8082 --rdma-device siw0
+
+# 副本跟随哪个主节点，是运行时由客户端告诉它的
+./build/Application/Client/Client 127.0.0.1 8082 SLAVEOF 192.168.0.201 8081
 
 # 客户端：Client [host] [port]，默认 127.0.0.1:6379
 ./build/Application/Client/Client 127.0.0.1 8080
@@ -131,14 +133,15 @@ ctest --test-dir build --output-on-failure
 ```
 config port 8080
 config replication_address 192.168.0.201 8081
+config rdma_device siw0
 config appendonly yes
 ```
 
-`Application/replica.conf`（只读副本，跟随上面的主节点）：
+`Application/replica.conf`（一个已经对外服务、但还没被告知跟随谁的副本）：
 
 ```
 config port 8082
-replicaof 192.168.0.201 8081
+config rdma_device siw0
 ```
 
 ## 基准测试
@@ -160,16 +163,17 @@ cmake --build build --target RdmaFileBenchmark
 消息大小不是选项：它就是 resource manager 的 chunk 大小——发送拿到的是它，接收落进去的
 也是它。
 
-发送端会把自己的“未被确认”消息数压在接收端已投递的 receive 之内，和 `RdmaTransfer` 用的
-是同一个窗口——因为一条消息到达时若接收端没有已投递的 receive，它既不会被排队也不会被
-拒绝，而是直接把 queue pair 以 `RNR_RETRY_EXC_ERR` 拆掉。跑挂的运行会带着两端各自走到哪
-一步退出，而不是一直挂着。`benchmark/` 下的 Python 脚本测的是整个服务器，结果记在
+发送端会把自己的“未被确认”消息数压在接收端已投递的 receive 之内，和复制链路用的是同一个
+窗口——因为一条消息到达时若接收端没有已投递的 receive，它既不会被排队也不会被拒绝，而是
+直接把 queue pair 以 `RNR_RETRY_EXC_ERR` 拆掉。跑挂的运行会带着两端各自走到哪一步退出，
+而不是一直挂着。`benchmark/` 下的 Python 脚本测的是整个服务器，结果记在
 `benchmark/result.md`。
 
 ## 文档
 
 - `Documentation/REPLICATION.md` — RDMA 全量与增量同步
-- `Documentation/CONFIG.md` — 启动命令文件与两条启动期设置
+- `Documentation/CONFIG.md` — 启动命令文件与启动期设置
 - `Documentation/RDMA.md`、`Foundation/Core/RDMA.md` — RDMA 后端与运行时
-- `Documentation/PSYNC.md`、`Documentation/SLAVEOF.md` — 早期 TCP 复制设计（未实现）
+- `Documentation/PSYNC.md` — 两个服务器之间的协议；`Documentation/SLAVEOF.md` — 客户端
+  用来发起复制的命令
 - `DESIGN.md`、`PITFALLS.md` — 设计取舍与踩过的坑

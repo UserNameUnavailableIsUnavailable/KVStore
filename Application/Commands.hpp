@@ -30,6 +30,7 @@ enum class CommandType
     kConfig,
     kBgSave,
     kSave,
+    kSlaveOf,
 };
 
 // A command that mutates the store. The AOF records these, the replication log
@@ -44,6 +45,16 @@ bool IsWriteCommand(CommandType type) noexcept;
 // rebind. The name is the one a CONFIG command was validated into, in lower
 // case.
 bool IsStartupConfigParameter(std::string_view name) noexcept;
+
+// True for the CONFIG parameters a command file has to settle before the server
+// has a store: the startup settings above, and whether this instance keeps an
+// append-only log, which is what decides whether that log or the RDB is the store
+// when the server starts. Unlike a startup setting this one is not frozen -- a
+// client may still send CONFIG SET for it, and what that changes is what happens
+// from there on -- but a file has to name it before there is anything to load, so
+// a file line is taken out and applied while the server is being put together
+// rather than run as a command afterwards.
+bool IsPreloadSetting(std::string_view name) noexcept;
 
 struct PingParams
 {
@@ -138,8 +149,18 @@ struct SaveParams
 {
 };
 
+// `SLAVEOF <ip> <port>` makes this instance a replica of the master at that
+// address. It is the interface a client uses; what the two servers then say to
+// each other is PSYNC, which no client sends.
+struct SlaveOfParams
+{
+    std::string address;
+    std::uint16_t port{0};
+};
+
 using Parameters = std::variant<PingParams, GetParams, SetParams, DelParams, ExistsParams, DbSizeParams, ExpireParams, TTLParams,
-                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams, SaveParams, InfoParams>;
+                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams, SaveParams, InfoParams,
+                                SlaveOfParams>;
 
 struct Command
 {

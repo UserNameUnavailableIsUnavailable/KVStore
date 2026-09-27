@@ -4,7 +4,6 @@ add_executable(
 	ServerTesting
 	BackupTesting.cpp
 	AppendOnlyFileTesting.cpp
-	WriteHistoryTesting.cpp
 	ConfFileTesting.cpp
 	EncoderTesting.cpp
 	ScannerTesting.cpp

@@ -181,34 +181,14 @@ StartupSettings TakeStartupSettings(std::vector<CommandLine> &lines)
             continue;
         }
 
-        // `replicaof <ip> <port>`, the command Redis spells that way, which is the
-        // one command that cannot be run: it decides what this instance *is*.
-        if (EqualWord(line->arguments.front(), "replicaof") || EqualWord(line->arguments.front(), "slaveof"))
-        {
-            if (line->arguments.size() != 3)
-            {
-                throw std::runtime_error(line->Where() + ": '" + line->arguments.front() + "' wants <ip> <port>");
-            }
-            try
-            {
-                settings.master = Foundation::Core::SocketAddress::from_v4(line->arguments[1], ParsePort(*line, line->arguments[2]));
-            }
-            catch (const std::exception &error)
-            {
-                throw std::runtime_error(line->Where() + ": " + error.what());
-            }
-            line = lines.erase(line);
-            continue;
-        }
-
-        // `CONFIG <parameter> ...` for a parameter that has to be decided before
-        // the server exists. The line is validated as the command it is, so a
+        // `CONFIG <parameter> ...` for a parameter that has to be settled before
+        // the server has a store. The line is validated as the command it is, so a
         // setting and a command cannot disagree about what is well formed, and
-        // anything else -- `config appendonly yes` included -- stays in the list
+        // anything else -- `config aof_checksum yes` included -- stays in the list
         // to be run once the server is up.
         const KV::CommandValidation validation = KV::ValidateCommand(CommandRequest(*line));
         if (!validation || validation.command->type != KV::CommandType::kConfig ||
-            !KV::IsStartupConfigParameter(std::get<KV::ConfigParams>(validation.command->parameters).parameter))
+            !KV::IsPreloadSetting(std::get<KV::ConfigParams>(validation.command->parameters).parameter))
         {
             ++line; // not a setting: this one is a command, and it stays where it is
             continue;
@@ -222,6 +202,14 @@ StartupSettings TakeStartupSettings(std::vector<CommandLine> &lines)
         else if (config.parameter == "rdma_device")
         {
             settings.rdma_device = config.values.front();
+        }
+        else if (config.parameter == "appendonly")
+        {
+            // Whether there is a log decides which of the two files the store is
+            // read from, and that is settled before either one is opened: a line
+            // that said it would otherwise be applied after the choice had already
+            // been made on the default.
+            settings.appendonly = config.values.front() == "yes";
         }
         else
         {
