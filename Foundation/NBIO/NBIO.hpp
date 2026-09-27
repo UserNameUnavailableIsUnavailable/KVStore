@@ -14,6 +14,7 @@
 
 #include "FileStream.hpp"
 #include "FileStreamService.hpp"
+#include "RdmaDeliverService.hpp"
 #include "RdmaSessionService.hpp"
 #include "Runtime.hpp"
 #include "SystemSignalService.hpp"

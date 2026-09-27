@@ -91,9 +91,11 @@ packet and every credit.
 
 # a master and a replica on one machine
 ./build/Application/Server/Server \
-    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201
-./build/Application/Server/Server \
-    --port 8082 --replicaof 192.168.0.201:8081
+    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
+./build/Application/Server/Server --port 8082 --rdma-device siw0
+
+# and the replica is pointed at the master at runtime, by a client
+./build/Application/Client/Client 127.0.0.1 8082 SLAVEOF 192.168.0.201 8081
 
 # the client: Client [host] [port], 127.0.0.1:6379 by default
 ./build/Application/Client/Client 127.0.0.1 8080
@@ -111,14 +113,15 @@ command — anything a connection may send, a file may say:
 ```
 config port 8080
 config replication_address 192.168.0.201 8081
+config rdma_device siw0
 config appendonly yes
 ```
 
-`Application/replica.conf` (a read-only replica following that master):
+`Application/replica.conf` (a replica serving clients, before it is told which master):
 
 ```
 config port 8082
-replicaof 192.168.0.201 8081
+config rdma_device siw0
 ```
 
 ## Benchmarking
@@ -142,10 +145,10 @@ size is not an option: it is the resource manager's chunk size, which is what a 
 and what a receive lands in.
 
 The sender keeps its uncredited messages inside the receiver's posted receives -- the same
-window `RdmaTransfer` runs on -- because a message that arrives with no receive posted is not
-queued and not refused: the queue pair is torn down with `RNR_RETRY_EXC_ERR`. A run that
-stalls exits with a report of how far each end got rather than hanging. The Python scripts
-under `benchmark/` benchmark the whole server, and their numbers live in
+window the replication link runs on -- because a message that arrives with no receive posted
+is not queued and not refused: the queue pair is torn down with `RNR_RETRY_EXC_ERR`. A run
+that stalls exits with a report of how far each end got rather than hanging. The Python
+scripts under `benchmark/` benchmark the whole server, and their numbers live in
 `benchmark/result.md`.
 
 Things that catch people out:
@@ -155,15 +158,16 @@ Things that catch people out:
   refuses to start rather than come up unable to serve replicas.
 - Two instances on one machine cannot share a client port (both default to 8080).
 - A replica is read-only to its clients — writes get `-READONLY` — while the writes its
-  master sends are applied as they arrive.
+  master sends are applied as they arrive. Which master it follows is named at runtime by
+  `SLAVEOF <ip> <port>`, not by the command line or the file.
 - Snapshots and the AOF are written to the process's working directory: `dump.rdb`,
-  `appendonly.aof`.
+  `appendonly.aof`. Two instances that share a directory share those files.
 
 ## Documentation
 
 - `Documentation/REPLICATION.md` — RDMA full and incremental synchronization
-- `Documentation/CONFIG.md` — the startup command file and its two startup settings
+- `Documentation/CONFIG.md` — the startup command file and its startup settings
 - `Documentation/RDMA.md`, `Foundation/Core/RDMA.md` — the RDMA backend and runtime
-- `Documentation/PSYNC.md`, `Documentation/SLAVEOF.md` — an earlier TCP replication design
-  (not implemented)
+- `Documentation/PSYNC.md` — the server-to-server protocol; `Documentation/SLAVEOF.md` —
+  the command a client sends to start it
 - `DESIGN.md`, `PITFALLS.md` — design decisions and the traps hit on the way

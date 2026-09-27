@@ -76,42 +76,65 @@ void Server::run(const ServerOptions &options)
     const std::string rdma_device =
         detail::Resolve("rdma-device", options.rdma_device, declared.rdma_device, std::string{});
 
-    // Whether this instance is a replica is part of the same settling, so a flag
-    // and a file line that both name a master would be a question rather than a
-    // setting: the command line is the answer.
-    const std::optional<Foundation::Core::SocketAddress> master = options.master ? options.master : declared.master;
-    if (options.master && declared.master)
-    {
-        spdlog::warn("config: the file's 'replicaof' is ignored; the command line named a master");
-    }
-
     // What CONFIG GET answers with, and what the client port is bound on.
     port_ = port;
     replication_port_ = replication_port;
     replication_address_ = replication_address;
 
-    if (!backup_.load(store_))
+    // Which of the two files the store comes from. They are not read together: the
+    // AOF is the log of what happened and the RDB is an image of where it had got
+    // to, so replaying one on top of the other applies commands the image already
+    // holds -- or, when the image is the newer of the two, puts the log's older
+    // values back over it. Exactly one of them is the store.
+    //
+    // The log is the store when this instance was told to keep one and there is one
+    // to read. The image is what is left for every other case, the first run
+    // included, when there is neither.
+    const bool keeping_a_log = declared.appendonly.value_or(false);
+    const bool has_a_log = aof_.exists();
+    if (keeping_a_log && has_a_log)
     {
-        throw std::runtime_error("failed to load RDB snapshot");
+        // Reading it needs no runtime: replay decodes from the file and applies to
+        // the store, which is why the choice can be made and acted on here, before
+        // the engine this server will run on exists.
+        if (!aof_.replay([this](const KV::Command &command) {
+                return replay_aof_command(command);
+            }))
+        {
+            throw std::runtime_error("failed to load the append-only file");
+        }
+        spdlog::info("loaded the append-only file '{}'; the RDB is not read while there is a log",
+                     aof_.path().string());
     }
-    if (!aof_.replay([this](const KV::Command &command) {
-            return replay_aof_command(command);
-        }))
+    else
     {
-        throw std::runtime_error("failed to load AOF snapshot");
+        if (has_a_log)
+        {
+            // Worth saying: the log is right there and is not being read, and what
+            // this server answers with will look older than the operator expects for
+            // as long as that stays true.
+            spdlog::warn("the append-only file '{}' is not being read: this instance was not told to keep one",
+                         aof_.path().string());
+        }
+        else if (keeping_a_log)
+        {
+            spdlog::info("no append-only log at '{}' yet; loading the RDB", aof_.path().string());
+        }
+        if (!backup_.load(store_))
+        {
+            throw std::runtime_error("failed to load RDB snapshot");
+        }
     }
 
     // Replication is a service this server plugs in: the service owns the
     // replication port and everything on the wire, the server owns the store it
-    // snapshots and restores. A replica is read-only from the moment it is told
-    // to follow a master, whether or not the link is up yet.
-    replica_read_only_ = master.has_value();
-
+    // snapshots and restores. Whether this instance is a replica is not settled
+    // here: SLAVEOF is what says so, and it arrives once the server is answering
+    // -- which is also when this becomes read-only rather than any earlier.
     ReplicationService::Options replication_options{
         .listen_port = replication_port,
         .listen_address = replication_address,
         .rdma_device = rdma_device,
-        .master = master,
     };
     ReplicationService::Host host{
         .snapshot_file = [this] {
@@ -168,16 +191,20 @@ void Server::run(const ServerOptions &options)
     }
     Foundation::NBIO::initialize(std::move(mux));
 
+    // The log is opened once there is a runtime to open it on -- a file is a
+    // channel here, and a channel belongs to an engine -- which is after the
+    // choice of what to read from, and after reading it. Reading needed no engine;
+    // appending does.
+    if (keeping_a_log && !aof_.enable())
+    {
+        throw std::runtime_error("failed to open the append-only file");
+    }
+
     replication_ = std::make_unique<ReplicationService>(std::move(replication_options), std::move(host));
 
     if (replication_->is_master())
     {
         Foundation::NBIO::spawn(replication_->serve());
-    }
-    if (replication_->is_replica())
-    {
-        spdlog::info("replication: read-only replica of {}:{}", master->ip(), master->port());
-        Foundation::NBIO::spawn(replication_->follow());
     }
 
     Foundation::NBIO::run(start(port, std::move(commands)));
@@ -479,6 +506,9 @@ Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command &command)
     case KV::CommandType::kSave:
         response = co_await execute_save(command);
         break;
+    case KV::CommandType::kSlaveOf:
+        response = co_await execute_slaveof(command);
+        break;
     default:
         break;
     }
@@ -546,6 +576,39 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_dbsize(const KV::Command &c
     co_return RESP::Object(RESP::Integer{.value = static_cast<std::int64_t>(store_.size())});
 }
 
+// `SLAVEOF <ip> <port>`, the one command that changes what this instance is:
+// from here it is a replica, and a replica refuses its own clients' writes. The
+// address is the master's RDMA address, not the TCP one it answers clients on.
+Foundation::NBIO::Task<RESP::Object> Server::execute_slaveof(const KV::Command &command)
+{
+    const auto &slaveof = std::get<KV::SlaveOfParams>(command.parameters);
+
+    if (replication_ == nullptr) [[unlikely]]
+    {
+        co_return RESP::Object(RESP::SimpleError{.value = "ERR replication is not available on this server"});
+    }
+    if (replication_->is_replica())
+    {
+        co_return RESP::Object(RESP::SimpleError{.value = "ERR this instance already follows a master"});
+    }
+
+    const Foundation::Core::SocketAddress master =
+        Foundation::Core::SocketAddress::from_v4(slaveof.address, slaveof.port);
+    if (!replication_->slave_of(master)) [[unlikely]]
+    {
+        // The one thing that can stop it here is the device, and the service has
+        // already said which option names it.
+        co_return RESP::Object(
+            RESP::SimpleError{.value = "ERR replication needs an RDMA device; start the server with one"});
+    }
+
+    // Read-only from here, whether or not the link is up yet: what this
+    // instance's clients may write does not depend on the state of a socket, and
+    // the store it is about to replace does not belong to them any more.
+    replica_read_only_ = true;
+    co_return RESP::Object(RESP::SimpleString{.value = "OK"});
+}
+
 bool Server::replay_aof_command(const KV::Command &command)
 {
     switch (command.type)
@@ -601,6 +664,10 @@ std::optional<std::string> Server::config_value(const std::string &parameter) co
     if (parameter == "appendonly")
     {
         return aof_.enabled() ? "yes" : "no";
+    }
+    if (parameter == "aof_checksum")
+    {
+        return aof_.checksum() ? "yes" : "no";
     }
     if (parameter == "appendfsync")
     {
@@ -682,7 +749,7 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command &c
         // an empty array rather than an error -- the same as Redis.
         const std::vector<std::string> names =
             config.parameter == "*"
-                ? std::vector<std::string>{"appendonly", "appendfsync", "save", "port", "replication_address"}
+                ? std::vector<std::string>{"appendonly", "aof_checksum", "appendfsync", "save", "port", "replication_address"}
                 : std::vector<std::string>{config.parameter};
         std::vector<RESP::Object> values;
         for (const std::string &name : names)
@@ -709,6 +776,13 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command &c
         {
             aof_.disable();
         }
+    }
+    else if (config.parameter == "aof_checksum")
+    {
+        // The setting decides what is written from here on and nothing else: a log is
+        // read for whatever it holds, so toggling this never makes an existing log
+        // unreadable.
+        aof_.checksum(config.values.front() == "yes");
     }
     else if (KV::IsStartupConfigParameter(config.parameter))
     {

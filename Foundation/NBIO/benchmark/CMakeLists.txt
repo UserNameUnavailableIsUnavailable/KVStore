@@ -14,3 +14,17 @@ target_link_libraries(
     Foundation
     CLI11::CLI11
 )
+
+# The delivery layer's own end-to-end check rather than a measurement: it moves a small
+# payload each way and verifies every byte of it.
+add_executable(
+    RdmaDeliverTest
+    RdmaDeliverTest.cpp
+)
+
+target_link_libraries(
+    RdmaDeliverTest
+    PRIVATE
+    Foundation
+    CLI11::CLI11
+)

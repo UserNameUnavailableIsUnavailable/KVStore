@@ -22,25 +22,7 @@ class Scheduler;
 // object itself still lives inside that very frame.
 struct Promise
 {
-    // Frames are pooled by size class and reused, so the many small frames an
-    // await chain creates per request stop paying malloc/free each time. A frame
-    // is always destroyed through the promise's operator delete (via
-    // coroutine_handle::destroy), so every destruction path reaches the pool.
-    //
-    // The aligned overloads fall back to the global allocator: an over-aligned
-    // promise needs alignment the pool does not provide, and must be paired with
-    // the matching global aligned delete.
-    //
-    // DISABLED, and measured: the pool is slower than the default path it
-    // replaces. With 1000 clients pipelined 64 deep, the prediction-based pool
-    // reaches 129k SET / 134k GET against 148k / 154k with no pool at all (and
-    // 176k / 257k against 454k / 322k when it still used a share of the
-    // high-water mark). glibc's and jemalloc's per-thread caches already make
-    // these frame allocations cheap, so the pooling is bookkeeping on top: what
-    // the pool saves in allocator calls it pays back in class lookup, counters,
-    // an out-of-line call per frame, and chunks rounded up to a power of two.
-    // Re-enable only with a measurement that says otherwise.
-#if 0
+#if 1
     static void *operator new(std::size_t size)
     {
         return Foundation::Async::frame_allocate(size);
@@ -57,14 +39,14 @@ struct Promise
     {
         ::operator delete(pointer);
     }
-    static void operator delete(void *pointer, std::size_t size, std::align_val_t alignment) noexcept
-    {
-        ::operator delete(pointer, size, alignment);
-    }
-    static void operator delete(void *pointer, std::align_val_t alignment) noexcept
-    {
-        ::operator delete(pointer, alignment);
-    }
+    // static void operator delete(void *pointer, std::size_t size, std::align_val_t alignment) noexcept
+    // {
+    //     ::operator delete(pointer, size, alignment);
+    // }
+    // static void operator delete(void *pointer, std::align_val_t alignment) noexcept
+    // {
+    //     ::operator delete(pointer, alignment);
+    // }
 #endif
     struct FinalAwaiter
     {

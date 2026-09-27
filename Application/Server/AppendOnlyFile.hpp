@@ -8,13 +8,18 @@
 #include <Foundation/NBIO/FileStream.hpp>
 #include <Foundation/Async/Task.hpp>
 
+#include <CRC.h>
+
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace KV
 {
@@ -30,6 +35,34 @@ class AppendOnlyFile
     bool enabled() const noexcept
     {
         return enabled_;
+    }
+
+    // Whether there is a log to read. Asked of the file rather than of enabled():
+    // whether this instance has just turned the log on says nothing about whether
+    // an earlier run left one behind, and which of the two files is the store when
+    // the server starts is a question about the files.
+    bool exists() const noexcept
+    {
+        std::error_code error;
+        return std::filesystem::exists(path_, error);
+    }
+
+    const std::filesystem::path &path() const noexcept
+    {
+        return path_;
+    }
+
+    // Whether every entry written from here on ends with a checksum of itself. The
+    // log's shape is the same either way: a checksum is an extra object after the
+    // command, so a reader tells the difference by what it finds.
+    void checksum(bool enabled) noexcept
+    {
+        checksum_ = enabled;
+    }
+
+    bool checksum() const noexcept
+    {
+        return checksum_;
     }
 
     Foundation::NBIO::Task<void> append(const Command &command);
@@ -56,6 +89,13 @@ class AppendOnlyFile
 
     while (!buffer.is_empty())
     {
+        // The bytes of the command as the log holds them, kept before the decoder
+        // takes them: the checksum that may follow is a checksum of exactly these.
+        // Re-encoding what the command decodes to would only agree if nothing had
+        // ever written an entry in another shape, and a log is read for what it
+        // says rather than for what this program would have said.
+        const std::span<const char> remaining = buffer.readable_span();
+
         auto decoder = RESP::Decode(buffer);
         while (!decoder.done())
         {
@@ -71,6 +111,13 @@ class AppendOnlyFile
         {
             return false;
         }
+
+        const std::size_t consumed = remaining.size() - buffer.readable_span().size();
+        if (!verify_checksum(buffer, remaining.first(consumed)))
+        {
+            return false;
+        }
+
         if (!apply(*validation.command))
         {
             return false;
@@ -80,9 +127,16 @@ class AppendOnlyFile
 }
 
 private:
+    // Answers whether what follows a command is a checksum of it, consuming the
+    // checksum when it is one. A log holds a command after every command and a
+    // checksum after only some of them, so this reads what is there rather than what
+    // the setting would have written: a log checksummed for part of its life, and one
+    // written before there were checksums at all, both replay.
+    static bool verify_checksum(Foundation::Core::Buffer &buffer, std::span<const char> command);
 
     std::filesystem::path path_;
     std::shared_ptr<Foundation::NBIO::FileStream> file_;
     bool enabled_{false};
+    bool checksum_{false};
 };
 } // namespace KV

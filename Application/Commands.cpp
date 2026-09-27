@@ -124,8 +124,8 @@ std::string Lowercase(std::string_view text)
 
 bool KnownConfigParameter(std::string_view name)
 {
-	return name == "appendonly" || name == "appendfsync" || name == "save" || name == "port" || name == "rdma_device" ||
-		   name == "replication_address";
+	return name == "appendonly" || name == "aof_checksum" || name == "appendfsync" || name == "save" || name == "port" ||
+		   name == "rdma_device" || name == "replication_address";
 }
 
 // A port as a parameter value. The lowest one is the caller's: `port` is a port
@@ -196,11 +196,12 @@ CommandValidation ValidateConfigWrite(const Arguments &arguments, std::size_t pa
 	{
 		return Error("ERR Unknown option or number of arguments for CONFIG SET - '" + parameters.parameter + "'");
 	}
-	if (parameters.parameter == "appendonly")
+	if (parameters.parameter == "appendonly" || parameters.parameter == "aof_checksum")
 	{
 		if (parameters.values.size() != 1 || (parameters.values.front() != "yes" && parameters.values.front() != "no"))
 		{
-			return Error("ERR CONFIG SET failed (possibly related to argument 'appendonly') - argument must be 'yes' or 'no'");
+			return Error("ERR CONFIG SET failed (possibly related to argument '" + parameters.parameter +
+						 "') - argument must be 'yes' or 'no'");
 		}
 	}
 	else if (parameters.parameter == "port")
@@ -350,11 +351,32 @@ CommandValidation ValidateSave(const Arguments &arguments)
 	return NoArguments<SaveParams>(arguments, CommandType::kSave, "SAVE");
 }
 
-constexpr std::array<ValidatorEntry, 14> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
+// `SLAVEOF <ip> <port>`: where to follow from. The address has to be one the
+// replication link can reach -- it is an RDMA address, not a wildcard -- and
+// the port has to name something, which is why 0 is refused here where a
+// listener would accept it as "anything free".
+CommandValidation ValidateSlaveOf(const Arguments &arguments)
+{
+	if (arguments.size() != 3)
+	{
+		return WrongArity("SLAVEOF");
+	}
+	if (!IsDeviceSocketAddress(arguments[1]) || !IsPort(arguments[2], 1))
+	{
+		return Error("ERR SLAVEOF wants <ip> <port>, the RDMA address of the master to follow");
+	}
+	return {.command = Command{.type = CommandType::kSlaveOf,
+							   .parameters = SlaveOfParams{.address = std::string(arguments[1]),
+													   .port = static_cast<std::uint16_t>(std::stoul(std::string(arguments[2])))}},
+			.error = {}};
+}
+
+constexpr std::array<ValidatorEntry, 15> kValidators = {{{ "PING", ValidatePing }, {"GET", ValidateGet}, {"SET", ValidateSet},
 										   {"DEL", ValidateDel}, {"EXISTS", ValidateExists}, {"MULTI", ValidateMulti},
 										   {"EXEC", ValidateExec}, {"COMMAND", ValidateCommandInfo}, {"CLIENT", ValidateClient},
 										   {"DBSIZE", ValidateDbSize}, {"INFO", ValidateInfo},
-										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}, {"SAVE", ValidateSave}}};
+										   {"CONFIG", ValidateConfig}, {"BGSAVE", ValidateBgSave}, {"SAVE", ValidateSave},
+										   {"SLAVEOF", ValidateSlaveOf}}};
 
 // The case of one ASCII letter, without the C library. `std::toupper` is a call
 // through the locale for every character, and this comparison runs for every
@@ -466,6 +488,11 @@ bool IsStartupConfigParameter(std::string_view name) noexcept
 	return name == "port" || name == "rdma_device" || name == "replication_address";
 }
 
+bool IsPreloadSetting(std::string_view name) noexcept
+{
+	return IsStartupConfigParameter(name) || name == "appendonly";
+}
+
 std::string_view CommandName(CommandType type)
 {
 	switch (type)
@@ -502,6 +529,8 @@ std::string_view CommandName(CommandType type)
 		return "BGSAVE";
 	case CommandType::kSave:
 		return "SAVE";
+	case CommandType::kSlaveOf:
+		return "SLAVEOF";
 	}
 	return "";
 }
@@ -623,6 +652,12 @@ RESP::Object CommandToRESP(const Command &command)
 		{
 			push(argument);
 		}
+		break;
+	}
+	case CommandType::kSlaveOf: {
+		const auto &slaveof = std::get<SlaveOfParams>(command.parameters);
+		push(slaveof.address);
+		push(std::to_string(slaveof.port));
 		break;
 	}
 	}

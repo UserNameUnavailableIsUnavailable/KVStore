@@ -178,16 +178,38 @@ TEST(ConfFileTesting, AFileThatIsNotThereIsRefused)
     EXPECT_THROW(KV::ReadCommandFile(path), std::runtime_error);
 }
 
-TEST(ConfFileTesting, AFileCanNameTheMasterToFollow)
+TEST(ConfFileTesting, TheMasterIsNotAFileSetting)
 {
+    // Which master this instance follows is SLAVEOF's business, and that command
+    // arrives once the server is answering. A file that names one therefore holds
+    // a command this server does not know rather than a setting taken out of the
+    // list.
     std::vector<CommandLine> lines = ReadLines("replicaof 127.0.0.1 8081\n");
     ASSERT_EQ(lines.size(), 1u);
 
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
-    ASSERT_TRUE(settings.master.has_value());
-    EXPECT_EQ(settings.master->ip(), "127.0.0.1");
-    EXPECT_EQ(settings.master->port(), 8081);
-    EXPECT_TRUE(lines.empty()) << "a setting is taken out of the file, not run as a command";
+    EXPECT_FALSE(settings.port.has_value());
+    EXPECT_FALSE(settings.replication_port.has_value());
+    EXPECT_FALSE(settings.replication_address.has_value());
+    EXPECT_FALSE(settings.rdma_device.has_value());
+    ASSERT_EQ(lines.size(), 1u) << "it is a command, and it stays where it is";
+    EXPECT_FALSE(CommandOf(lines).has_value()) << "'replicaof' is not a command this server knows";
+}
+
+TEST(ConfFileTesting, SlaveOfNamesTheMasterToFollow)
+{
+    const auto command = CommandOf(ReadLines("SLAVEOF 192.168.0.201 8081\n"));
+    ASSERT_TRUE(command.has_value());
+    ASSERT_EQ(command->type, KV::CommandType::kSlaveOf);
+    const auto &slaveof = std::get<KV::SlaveOfParams>(command->parameters);
+    EXPECT_EQ(slaveof.address, "192.168.0.201");
+    EXPECT_EQ(slaveof.port, 8081);
+
+    // An address the link could not reach, and a port that names nothing, are
+    // both refused while the reason can still be said.
+    EXPECT_FALSE(CommandOf(ReadLines("SLAVEOF 0.0.0.0 8081\n")).has_value());
+    EXPECT_FALSE(CommandOf(ReadLines("SLAVEOF 192.168.0.201 0\n")).has_value());
+    EXPECT_FALSE(CommandOf(ReadLines("SLAVEOF 192.168.0.201\n")).has_value());
 }
 
 TEST(ConfFileTesting, ThePortsCanComeFromTheFile)
@@ -204,29 +226,51 @@ TEST(ConfFileTesting, ThePortsCanComeFromTheFile)
     EXPECT_EQ(*settings.replication_port, 8081);
     ASSERT_TRUE(settings.replication_address.has_value());
     EXPECT_EQ(*settings.replication_address, "192.168.0.201");
-    EXPECT_FALSE(settings.master.has_value()) << "a file says only what it says";
     EXPECT_TRUE(lines.empty());
 }
 
 TEST(ConfFileTesting, TheRestOfTheFileIsStillCommands)
 {
-    std::vector<CommandLine> lines = ReadLines("  # this node follows another\n"
-                                               "replicaof 127.0.0.1 8081\n"
+    std::vector<CommandLine> lines = ReadLines("  # this node serves replicas\n"
+                                               "config replication_address 192.168.0.201 8081\n"
                                                "config port 8082\n"
-                                               "config appendonly yes\n");
+                                               "config aof_checksum yes\n");
     ASSERT_EQ(lines.size(), 3u);
 
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
-    ASSERT_TRUE(settings.master.has_value());
-    EXPECT_EQ(settings.master->port(), 8081);
     ASSERT_TRUE(settings.port.has_value());
     EXPECT_EQ(*settings.port, 8082);
+    ASSERT_TRUE(settings.replication_address.has_value());
     ASSERT_EQ(lines.size(), 1u) << "only the settings left the list";
-    EXPECT_EQ(lines.front().text, "config appendonly yes");
+    EXPECT_EQ(lines.front().text, "config aof_checksum yes");
 
     const auto command = CommandOf(lines);
     ASSERT_TRUE(command.has_value());
     EXPECT_EQ(command->type, KV::CommandType::kConfig);
+}
+
+TEST(ConfFileTesting, WhetherTheLogIsKeptIsSettledWithTheOtherSettings)
+{
+    // Which of the two files the store is read from depends on this, so a file has
+    // to say it before either one is opened -- which means the line is read here
+    // rather than run as a command afterwards.
+    std::vector<CommandLine> lines = ReadLines("config port 8082\n"
+                                               "config appendonly yes\n");
+    const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
+    ASSERT_TRUE(settings.appendonly.has_value());
+    EXPECT_TRUE(*settings.appendonly);
+    EXPECT_TRUE(lines.empty());
+
+    std::vector<CommandLine> written_off = ReadLines("config appendonly no\n");
+    const KV::StartupSettings disabled = KV::TakeStartupSettings(written_off);
+    ASSERT_TRUE(disabled.appendonly.has_value());
+    EXPECT_FALSE(*disabled.appendonly);
+
+    // A file that says nothing about it has said nothing: whether a log is kept is
+    // then whatever the default is, and the line stays out of the settings.
+    std::vector<CommandLine> silent = ReadLines("config port 8082\n");
+    const KV::StartupSettings unmentioned = KV::TakeStartupSettings(silent);
+    EXPECT_FALSE(unmentioned.appendonly.has_value());
 }
 
 TEST(ConfFileTesting, TheLaterSettingWins)
@@ -241,17 +285,20 @@ TEST(ConfFileTesting, TheLaterSettingWins)
     EXPECT_TRUE(lines.empty());
 }
 
-TEST(ConfFileTesting, AMasterThatIsNotAnSocketAddressIsRefused)
+TEST(ConfFileTesting, ADirectiveThatNamesNoSettingIsLeftToTheServer)
 {
-    std::vector<CommandLine> no_port = ReadLines("replicaof 127.0.0.1\n");
-    EXPECT_THROW(KV::TakeStartupSettings(no_port), std::runtime_error);
-    EXPECT_EQ(no_port.size(), 1u) << "nothing was taken from the file";
-
-    std::vector<CommandLine> wide_port = ReadLines("  replicaof 127.0.0.1 70000\n");
-    EXPECT_THROW(KV::TakeStartupSettings(wide_port), std::runtime_error);
-
-    std::vector<CommandLine> bad_ip = ReadLines("replicaof not-an-address 8081\n");
-    EXPECT_THROW(KV::TakeStartupSettings(bad_ip), std::runtime_error);
+    // Nothing that is not a setting is read here, so a line that looks like one
+    // is handed to the server as the command it is -- and a server that does not
+    // know the name refuses it with the line named, rather than a file that
+    // silently does nothing.
+    std::vector<CommandLine> lines = ReadLines("replicaof 127.0.0.1 8081\n"
+                                               "config port 8082\n");
+    const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
+    ASSERT_TRUE(settings.port.has_value());
+    EXPECT_EQ(*settings.port, 8082);
+    ASSERT_EQ(lines.size(), 1u) << "only the setting left the list";
+    EXPECT_EQ(lines.front().text, "replicaof 127.0.0.1 8081");
+    EXPECT_FALSE(KV::ValidateCommand(KV::CommandRequest(lines.front())));
 }
 
 TEST(ConfFileTesting, ASettingWithoutItsValueIsRefused)

@@ -1,9 +1,13 @@
 #include "AppendOnlyFile.hpp"
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/NBIO/NBIO.hpp>
+#include <Foundation/Core/Byte.hpp>
 
 #include <Foundation/Async/Async.hpp>
 
+#include <array>
+#include <cstring>
+#include <span>
 #include <system_error>
 #include <iostream>
 
@@ -50,6 +54,30 @@ void AppendOnlyFile::disable() noexcept
 constexpr std::size_t kInitialEntryBytes = 1024;
 constexpr std::size_t kMaximumEntryBytes = (16U * 1024U * 1024U) + (64U * 1024U);
 
+bool AppendOnlyFile::verify_checksum(Foundation::Core::Buffer &buffer, std::span<const char> command)
+{
+    // A checksum is a bulk string of four bytes and nothing else is: a command is an
+    // array, and an array is the only other thing an entry holds.
+    const std::span<const char> rest = buffer.readable_span();
+    if (rest.size() < 10 || rest[0] != '$')
+    {
+        return true; // nothing follows this command but the next one
+    }
+
+    std::uint32_t stored = 0;
+    std::memcpy(&stored, rest.data() + 4, sizeof(stored));
+    const auto expected = Foundation::Core::from_big_endian(stored);
+    const auto actual = static_cast<std::uint32_t>(CRC::Calculate(command.data(), command.size(), CRC::CRC_32()));
+    if (expected != actual)
+    {
+        std::cerr << "AOF checksum mismatch: the log is damaged\n";
+        return false;
+    }
+    // Consumed, so the next command is decoded from where it actually starts.
+    buffer.consume(10);
+    return true;
+}
+
 Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
 {
     if (!enabled_)
@@ -72,6 +100,29 @@ Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
             // The encoder wants room, not a flush: growing the buffer keeps the
             // entry in one piece and the write that follows to one call.
             if (!buffer.reserve(buffer.capacity()))
+            {
+                throw std::runtime_error("AOF entry is larger than the log can hold");
+            }
+        }
+
+        // A checksum is an entry of its own after the command: a bulk string of the
+        // four bytes of the CRC-32 over the command's own encoding. It goes into the
+        // same buffer, so the entry is still one write -- and it is written from the
+        // bytes just encoded rather than from a re-encoding of them, so what is
+        // checksummed is what the log holds.
+        if (checksum_)
+        {
+            const std::span<const char> entry = buffer.readable_span();
+            const auto crc = CRC::Calculate(entry.data(), entry.size(), CRC::CRC_32());
+
+            std::array<char, 10> trailer{'$', '4', '\r', '\n'};
+            // Network order, like every other number this program puts on the wire: a
+            // log is allowed to move between machines.
+            const auto ordered = Foundation::Core::to_big_endian(static_cast<std::uint32_t>(crc));
+            std::memcpy(trailer.data() + 4, &ordered, sizeof(ordered));
+            trailer[8] = '\r';
+            trailer[9] = '\n';
+            if (!buffer.write(trailer.data(), trailer.size()))
             {
                 throw std::runtime_error("AOF entry is larger than the log can hold");
             }

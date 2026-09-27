@@ -30,7 +30,8 @@ namespace KV
 // Nothing here means "not named": a value is resolved as the command line, then
 // the file, then the default, so a flag overrides the file only when it was
 // actually given. The defaults describe a plain stand-alone instance: no
-// replication listener, and no master to follow.
+// replication listener, and no master to follow -- which one it follows is what
+// SLAVEOF says, and it says it at runtime.
 struct ServerOptions
 {
     static constexpr std::uint16_t kDefaultPort = 8080;
@@ -42,8 +43,9 @@ struct ServerOptions
     // 0 leaves the replication listener off.
     std::optional<std::uint16_t> replication_port{};
     std::optional<std::string> replication_address{};
-    std::optional<std::string> rdma_device{};    // Set to make this instance a read-only replica of that master.
-    std::optional<Foundation::Core::SocketAddress> master{};
+    // The RDMA device replication runs on. Serving replicas needs it, and so
+    // does following a master, which SLAVEOF asks for after this is settled.
+    std::optional<std::string> rdma_device{};
     // The event multiplexer that drives this server instance.
     std::string multiplexer{"epoll"};
     // The startup command file, if one was given: each line is a command, applied
@@ -118,6 +120,7 @@ class Server
     Foundation::NBIO::Task<RESP::Object> execute_config(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> execute_slaveof(const KV::Command &command);
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.

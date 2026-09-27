@@ -11,23 +11,6 @@
 
 namespace
 {
-// `--replicaof` names the master the way an endpoint is written everywhere
-// else, so it carries the port with it: <ip>:<port>.
-std::optional<Foundation::Core::SocketAddress> ParseMaster(const std::string &text)
-{
-    const auto colon = text.rfind(':');
-    if (colon == std::string::npos || colon == 0 || colon + 1 == text.size())
-    {
-        throw std::invalid_argument("--replicaof wants <ip>:<port>, not '" + text + "'");
-    }
-
-    const auto port = std::stoul(text.substr(colon + 1));
-    if (port == 0 || port > 65535)
-    {
-        throw std::invalid_argument("--replicaof wants a port between 1 and 65535, not '" + text.substr(colon + 1) + "'");
-    }
-    return Foundation::Core::SocketAddress::from_v4(text.substr(0, colon), static_cast<std::uint16_t>(port));
-}
 } // namespace
 
 int main(int argc, char *argv[])
@@ -42,7 +25,6 @@ int main(int argc, char *argv[])
     CLI::App app{"KVStore server", "kvstore-server"};
 
     KV::ServerOptions options;
-    std::string replicaof;
 
     // Nothing is given a default here: an option that was not named stays empty,
     // which is what lets a startup file set it. The defaults are applied last.
@@ -54,7 +36,6 @@ int main(int argc, char *argv[])
                    "local address the replication listener binds (default 0.0.0.0)");
     app.add_option("--rdma-device", options.rdma_device,
                    "RDMA device the replication link runs on, by name (--rdma-device siw0)");
-    app.add_option("--replicaof", replicaof, "RDMA <ip>:<port> of the master to replicate");
     app.add_option("--multiplexer", options.multiplexer, "I/O multiplexer: epoll or io_uring")
         ->check(CLI::IsMember({"epoll", "io_uring"}));
     app.add_option("-c,--config", options.config_file, "command file to run at startup, one command per line")
@@ -67,19 +48,6 @@ int main(int argc, char *argv[])
     catch (const CLI::ParseError &error)
     {
         return app.exit(error);
-    }
-
-    try
-    {
-        if (!replicaof.empty())
-        {
-            options.master = ParseMaster(replicaof);
-        }
-    }
-    catch (const std::exception &error)
-    {
-        spdlog::error("{}", error.what());
-        return 2;
     }
 
     try

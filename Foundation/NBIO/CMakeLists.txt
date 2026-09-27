@@ -28,6 +28,7 @@ target_sources(
     RdmaReceiveChannel.cpp
     RdmaSendChannel.cpp
     RdmaSessionService.cpp
+    RdmaDeliverService.cpp
     FileReadChannel.cpp
     TcpReceiveChannel.cpp
     TcpSendChannel.cpp

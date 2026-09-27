@@ -10,10 +10,8 @@ target_sources(
     AppendOnlyFile.cpp
     Backup.cpp
     ConfFile.cpp
-    RdmaTransfer.cpp
     ReplicationService.cpp
     Server.cpp
-    WriteHistory.cpp
 )
 
 target_link_libraries(ServerImpl INTERFACE Application)
