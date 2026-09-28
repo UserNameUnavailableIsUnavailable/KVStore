@@ -3,8 +3,9 @@
 #include "Expected.hpp"
 #include <chrono>
 #include <system_error>
-#if defined(__linux__)
-#include <sys/timerfd.h>
+
+#if defined(_WIN32)
+#include <Windows.h>
 #endif
 
 namespace Foundation::Core
@@ -17,11 +18,11 @@ class SystemTimer
 #elif defined(_WIN32)
     using Handle = void*;
 #endif
-    
+
     using Clock = std::chrono::steady_clock;
     using Timepoint = Clock::time_point;
     using Duration = Clock::duration;
-    
+
     SystemTimer();
     ~SystemTimer() noexcept;
     SystemTimer(const SystemTimer &) = delete;
@@ -43,8 +44,8 @@ class SystemTimer
 };
 
 template <typename Rep, typename Period> void SystemTimer::fire_after(std::chrono::duration<Rep, Period> duration)
-#if defined(__linux__)
 {
+#if defined(__linux__)
     itimerspec spec;
     auto &sec = spec.it_value.tv_sec = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
     auto &nsec = spec.it_value.tv_nsec =
@@ -60,6 +61,16 @@ template <typename Rep, typename Period> void SystemTimer::fire_after(std::chron
     {
         throw std::runtime_error("failed to set timer");
     }
-}
+#elif defined(_WIN32)
+    auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count() % 100;
+	LARGE_INTEGER due{
+		.QuadPart = -count
+	};
+	auto callback = [](void* arg){
+		SystemTimer* self = static_cast<SystemTimer*>(arg);
+		(void)self;
+	};
+	SetWaitableTimer(handle_, &due, 0, callback, this, FALSE);
 #endif
+}
 } // namespace Foundation::Core

@@ -1,13 +1,43 @@
 #include "SystemTimer.hpp"
-
-#include <fcntl.h>
-#include <sys/timerfd.h>
+#include <cerrno>
 #include <system_error>
-#include <unistd.h>
-
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
+
+#if defined(__linux__)
+#elif defined(_WIN32)
+#include <Windows.h>
+
+namespace Foundation::Core
+{
+SystemTimer::SystemTimer()
+{
+	handle_ = ::CreateWaitableTimerW(nullptr, true, nullptr);
+	if (!handle_)
+	{
+		std::error_code e(GetLastError(), std::system_category());
+
+		throw std::runtime_error(
+			std::format("::CreateWaitableTimerW() failed: {}", e.message())
+		);
+	}
+}
+
+SystemTimer::~SystemTimer() noexcept
+{
+	CloseHandle(handle_);
+}
+}
+#endif
+
+#if defined(_WIN32)
+#endif
+
+#if defined(__linux__)
+#include <fcntl.h>
+#include <sys/timerfd.h>
+#include <unistd.h>
 
 namespace Foundation::Core
 {
@@ -89,3 +119,4 @@ expected<void, std::error_code> SystemTimer::wait()
 }
 #endif
 } // namespace Foundation::Core
+#endif
