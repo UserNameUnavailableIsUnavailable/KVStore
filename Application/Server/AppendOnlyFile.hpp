@@ -5,7 +5,7 @@
 
 #include <Foundation/Core/Buffer.hpp>
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/NBIO/FileStream.hpp>
+#include <Foundation/NBIO/FileStreamService.hpp>
 #include <Foundation/Async/Task.hpp>
 
 #include <CRC.h>
@@ -135,7 +135,10 @@ private:
     static bool verify_checksum(Foundation::Core::Buffer &buffer, std::span<const char> command);
 
     std::filesystem::path path_;
-    std::shared_ptr<Foundation::NBIO::FileStream> file_;
+    // The file and the channels that write it, made against this thread's engine. Held
+    // by the shared_ptr rather than by value because an append in flight keeps a
+    // reference of its own and has to outlive a disable() that resets this.
+    std::shared_ptr<Foundation::NBIO::FileStreamService> file_;
     bool enabled_{false};
     bool checksum_{false};
 };

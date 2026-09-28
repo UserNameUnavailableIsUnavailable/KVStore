@@ -42,16 +42,4 @@ Foundation::Async::CoroutineToken spawn(Task<T> task)
 {
     return Foundation::Async::spawn(std::move(task));
 }
-
-// Waiting is not a free function: the timer and the signal handling belong to the
-// runtime, and SystemTimeService::sleep and SystemSignalService::wait are how a task
-// reaches them.
-
-// Internal: what a file's channels are built on. A caller opens a file through
-// FileStreamService, and this is what that service is made of.
-std::shared_ptr<FileStream> open_file(const std::filesystem::path &p);
-
-// A listener is a TcpAcceptService and a connection is a TcpConnectService: neither is
-// a free function, because each is attached to the engine of the thread that made it,
-// and because what a caller is handed back is a session rather than a channel.
 } // namespace Foundation::NBIO

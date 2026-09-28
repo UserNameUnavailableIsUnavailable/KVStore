@@ -8,9 +8,9 @@
 
 namespace Foundation::NBIO
 {
-FileStream::FileStream(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions,
+FileStream::FileStream(const std::string &path, Foundation::Core::FileMode mode, std::filesystem::perms permissions,
                        Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-    : file_(path, mode), read_channel_(std::make_unique<FileReadChannel>(*this, multiplexer, scheduler)),
+    : file_(path, mode, permissions), read_channel_(std::make_unique<FileReadChannel>(*this, multiplexer, scheduler)),
       write_channel_(std::make_unique<FileWriteChannel>(*this, multiplexer, scheduler))
 {
     std::error_code error;
@@ -19,12 +19,6 @@ FileStream::FileStream(const std::string &path, Foundation::Core::FileMode mode,
     {
         write_offset_ = static_cast<std::uint64_t>(size);
     }
-    (void)permissions;
-}
-
-std::shared_ptr<FileStream> FileStream::Open(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-{
-    return std::make_shared<FileStream>(path, mode, permissions, multiplexer, scheduler);
 }
 
 Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> FileStream::read(std::span<char> buffer)

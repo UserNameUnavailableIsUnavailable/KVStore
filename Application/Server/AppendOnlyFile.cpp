@@ -1,6 +1,5 @@
 #include "AppendOnlyFile.hpp"
 #include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
 #include <Foundation/Core/Byte.hpp>
 
 #include <Foundation/Async/Async.hpp>
@@ -30,9 +29,23 @@ bool AppendOnlyFile::enable()
         }
     }
 
-    file_ = Foundation::NBIO::open_file(path_);
-    enabled_ = static_cast<bool>(file_);
-    return enabled_;
+    // The service owns the file and the two channels that read and write it, and it is
+    // made against the engine installed on this thread -- which is why the server turns
+    // the log on after the engine is there. It throws when the file cannot be opened;
+    // enable() answers a question instead, and both callers say what a `false` means in
+    // their own terms.
+    try
+    {
+        file_ = std::make_shared<Foundation::NBIO::FileStreamService>(path_);
+    }
+    catch (const std::exception &)
+    {
+        file_.reset();
+        return false;
+    }
+
+    enabled_ = true;
+    return true;
 }
 
 void AppendOnlyFile::disable() noexcept
@@ -88,7 +101,7 @@ Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
     // The append holds a reference of its own to the file: CONFIG APPENDONLY NO
     // resets the member, and an append that is already running has to finish the
     // entry it started rather than read a file that is no longer there.
-    const std::shared_ptr<Foundation::NBIO::FileStream> file = file_;
+    const std::shared_ptr<Foundation::NBIO::FileStreamService> file = file_;
 
     try
     {

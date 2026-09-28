@@ -33,6 +33,8 @@ public:
     expected<std::optional<RdmaConnector>, std::string> accept() noexcept;
 
     expected<void, std::string> non_blocking(bool enabled = true) noexcept;
+    expected<void, std::string> reuse_address(bool enabled = true) noexcept;
+    
     std::uintptr_t native_handle() const noexcept
     {
         return event_channel_ ? static_cast<std::uintptr_t>(event_channel_->fd) : static_cast<std::uintptr_t>(-1);

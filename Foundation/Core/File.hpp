@@ -38,7 +38,15 @@ constexpr FileMode &operator|=(FileMode &lhs, FileMode rhs) noexcept
 class File
 {
   public:
-    explicit File(const std::filesystem::path &path, FileMode mode);
+    // What a file this creates is created with. Named with the standard library's
+    // permission type so that no native mode appears in a header; the one place the
+    // native mode is wanted -- the open() that creates the file -- spells it out.
+    static constexpr std::filesystem::perms kDefaultPermissions = std::filesystem::perms::owner_read |
+                                                                 std::filesystem::perms::owner_write |
+                                                                 std::filesystem::perms::group_read |
+                                                                 std::filesystem::perms::others_read;
+
+    explicit File(const std::filesystem::path &path, FileMode mode, std::filesystem::perms permissions = kDefaultPermissions);
     File(const File &) = delete;
     File &operator=(const File &) = delete;
     File(File &&) = default;
@@ -66,7 +74,7 @@ class File
     static int native_flags_for(FileMode mode);
 
   private:
-    std::uintptr_t open_file(const std::filesystem::path &path, FileMode mode);
+    std::uintptr_t open_file(const std::filesystem::path &path, FileMode mode, std::filesystem::perms permissions);
     void close() noexcept;
 
     std::uintptr_t handle_;

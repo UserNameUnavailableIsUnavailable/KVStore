@@ -14,11 +14,13 @@
 #include <Foundation/Async/Coroutine.hpp>
 #include <Foundation/Core/File.hpp>
 #include <Foundation/NBIO/FileStream.hpp>
+#include <Foundation/NBIO/FileStreamService.hpp>
 
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -94,18 +96,24 @@ void many_writers_one_file()
 
     bool opened = false;
     Foundation::NBIO::run([&]() -> Foundation::NBIO::Task<void> {
-        auto file = Foundation::NBIO::open_file(path);
-        opened = static_cast<bool>(file);
-        if (!opened)
+        // The service is the one owner of the file, and it is a local of this frame:
+        // the writers hold references into it, so it has to outlive every one of them.
+        std::unique_ptr<Foundation::NBIO::FileStreamService> file;
+        try
+        {
+            file = std::make_unique<Foundation::NBIO::FileStreamService>(path);
+        }
+        catch (const std::exception &)
         {
             co_return;
         }
+        opened = true;
 
         std::vector<Foundation::Async::CoroutineToken> writers;
         writers.reserve(kWriters);
         for (std::size_t writer = 0; writer < kWriters; ++writer)
         {
-            writers.push_back(Foundation::NBIO::spawn(write_chunks(*file, chunks, writer)));
+            writers.push_back(Foundation::NBIO::spawn(write_chunks(file->stream(), chunks, writer)));
         }
         // The test is not finished until every writer is. A writer whose only
         // reference was dropped by an overlap never runs again, so its join is what

@@ -34,7 +34,7 @@ struct CommandLine
     std::vector<std::string> arguments;
 
     // How a message names this line: "master.conf:2".
-    std::string Where() const;
+    std::string where() const;
 };
 
 // Reads the file. Throws std::runtime_error when it cannot be opened: a command

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
-#include <spdlog/spdlog.h>
 
 #include <Foundation/Async/Scheduler.hpp>
 #include <Foundation/NBIO/Multiplexer.hpp>
@@ -13,7 +11,11 @@ namespace Foundation::NBIO
 {
 class Multiplexer;
 
-class Channel : public std::enable_shared_from_this<Channel>
+// Something the multiplexer watches, bound to one event source. Strictly owned by
+// whatever made it -- a stream, a session, a service -- and never moved: the
+// multiplexer holds a pointer to the channel, so it has to stay where it was
+// registered.
+class Channel
 {
   public:
     explicit Channel(ChannelType type, std::uintptr_t native_handle, Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
