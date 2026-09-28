@@ -13,11 +13,12 @@ namespace Foundation::Core
 {
 SystemTimer::SystemTimer()
 {
-    handle_ = timerfd_create(CLOCK_MONOTONIC, 0);
-    if (handle_ == -1)
+    auto handle = timerfd_create(CLOCK_MONOTONIC, 0);
+    if (handle == -1)
     {
         throw std::runtime_error("failed to create timer");
     }
+    handle_ = static_cast<std::uintptr_t>(handle);
 }
 
 void SystemTimer::non_blocking(bool enabled)

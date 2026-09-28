@@ -30,11 +30,11 @@ class TcpReceiveChannel final : public Foundation::NBIO::Channel
     Payload &submit();
     void complete();
 
-    Foundation::Core::TcpConnector &connector() noexcept
+    Core::TcpConnector &connector() noexcept
     {
         return connector_;
     }
-    const Foundation::Core::TcpConnector &connector() const noexcept
+    const Core::TcpConnector &connector() const noexcept
     {
         return connector_;
     }

@@ -382,10 +382,6 @@ void TcpSocket::shutdown(ShutdownHow how) noexcept
 #endif
     }
     ::shutdown(handle_, what);
-    // `::shutdown` only disables the requested direction(s): the descriptor is
-    // still open. Dropping the handle here without closing it would leak it, since
-    // every later `close()` would find the socket invalid and return early.
-    close();
 }
 
 void TcpSocket::close() noexcept

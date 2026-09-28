@@ -55,7 +55,11 @@ void SystemTimerChannel::complete()
 
     // Take the expirations out first: that is what makes the timerfd stop
     // reporting, and the entries below are the ones it is reporting for.
-    (void)timer_.wait();
+    auto result = timer_.wait();
+    if (!result)
+    {
+        throw std::runtime_error(std::format("failed to wait timer: {}", result.error().message()));
+    }
 
     while (!queue_.is_empty()) [[likely]]
     {
