@@ -17,26 +17,20 @@ target_sources(
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    # Prefer the shared system libraries: providers such as siw and rxe are
-    # dlopen'd from /etc/libibverbs.d, which vcpkg's static archives cannot do.
-    find_library(IBVERBS_LIBRARY NAMES ibverbs
-        PATHS /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE} /usr/lib64 /usr/lib NO_DEFAULT_PATH)
-    find_library(RDMA_CM_LIBRARY NAMES rdmacm
-        PATHS /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE} /usr/lib64 /usr/lib NO_DEFAULT_PATH)
-    find_library(IBVERBS_LIBRARY NAMES ibverbs REQUIRED)
-    find_library(RDMA_CM_LIBRARY NAMES rdmacm REQUIRED)
 
-    target_sources(
-        Foundation
+    find_package(PkgConfig REQUIRED)
+
+    pkg_check_modules(RDMACM_PC REQUIRED IMPORTED_TARGET librdmacm)
+    pkg_check_modules(IBVERBS_PC REQUIRED IMPORTED_TARGET libibverbs)
+
+    target_sources(Foundation
         INTERFACE
-        RdmaResourceManager.cpp
-        RdmaAcceptor.cpp
-        RdmaConnector.cpp
-    )
-    target_link_libraries(
-        Foundation
+            RdmaResourceManager.cpp
+            RdmaAcceptor.cpp
+            RdmaConnector.cpp)
+
+    target_link_libraries(Foundation
         INTERFACE
-        ${RDMA_CM_LIBRARY}
-        ${IBVERBS_LIBRARY}
-    )
+            PkgConfig::RDMACM_PC
+            PkgConfig::IBVERBS_PC)
 endif()

@@ -20,6 +20,16 @@ writes reach the replicas as they happen.
   needs).
 - **Ninja** (optional — any CMake generator will do; 1.13.2 here).
 
+### Linux development packages (required before configure)
+
+RDMA, io_uring and BPF libraries are resolved from the system via `pkg-config`
+(not from vcpkg). Install the development packages first:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y rdma-core libibverbs-dev librdmacm-dev liburing-dev libbpf-dev pkg-config
+```
+
 ### vcpkg and third-party libraries
 
 The project uses vcpkg in **manifest mode**: the dependencies are in `vcpkg.json`, the
@@ -37,9 +47,14 @@ everything below by itself.
 | `crcpp` | The CRC-64 that a snapshot file is validated against |
 | `nlohmann-json` | JSON |
 | `jemalloc` | An optional process allocator (`LD_PRELOAD`) |
-| `rdma-core` (Linux) | `libibverbs` / `librdmacm`: RDMA replication and the wire tests |
-| `liburing` (Linux) | The io_uring multiplexer (`URingMultiplexer`) |
-| `libbpf` (Linux) | BPF experiments |
+
+Linux system libraries resolved via `pkg-config` (must be installed before build):
+
+| System package family | Used for |
+| --- | --- |
+| `librdmacm` + `libibverbs` (`librdmacm-dev`, `libibverbs-dev`) | RDMA replication and the wire tests |
+| `liburing` (`liburing-dev`) | The io_uring multiplexer (`URingMultiplexer`) |
+| `libbpf` (`libbpf-dev`) | BPF experiments |
 
 ### RDMA hardware (only replication needs it)
 
