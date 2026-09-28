@@ -14,11 +14,12 @@ namespace Foundation::Core
 EventNotifier::EventNotifier()
 {
 #if defined(__linux__)
-    handle_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-    if (handle_ < 0)
+    auto handle = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (handle < 0)
     {
         throw std::runtime_error("failed to create eventfd for EventNotifier");
     }
+    handle_ = static_cast<std::uintptr_t>(handle);
 #else
     throw std::runtime_error("EventNotifier is only supported on Linux");
 #endif
@@ -27,10 +28,7 @@ EventNotifier::EventNotifier()
 EventNotifier::~EventNotifier() noexcept
 {
 #if defined(__linux__)
-    if (handle_ >= 0)
-    {
-        ::close(handle_);
-    }
+	::close(handle_);
 #endif
 }
 

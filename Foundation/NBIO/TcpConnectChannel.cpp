@@ -94,7 +94,7 @@ class ConnectAwaiter
         {
             return Core::unexpected<std::error_code>(settled.error());
         }
-        return channel_.take_connector();
+        return std::move(channel_.connector_);
     }
 
   private:

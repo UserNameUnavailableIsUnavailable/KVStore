@@ -32,6 +32,16 @@ class TcpSendChannel final : public Foundation::NBIO::Channel
     Payload &submit();
     void complete();
 
+	Core::TcpConnector& connector() noexcept
+	{
+		return connector_;
+	}
+
+	const Core::TcpConnector& connector() const noexcept
+	{
+		return connector_;
+	}
+
   private:
     friend class SendAwaiter;
 

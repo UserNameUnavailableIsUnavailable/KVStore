@@ -61,16 +61,16 @@ bool DecodeLayout(std::span<const char> bytes, RdmaDeliverService::Layout &layou
 
 // The header, read off the front of a chunk. The packet is the chunk: what the caller
 // is handed later is what comes after this.
-const Core::RdmaPacket &AsPacket(std::span<char> chunk) noexcept
+const Core::RdmaHeader &AsPacket(std::span<char> chunk) noexcept
 {
-    return *reinterpret_cast<const Core::RdmaPacket *>(chunk.data());
+    return *reinterpret_cast<const Core::RdmaHeader *>(chunk.data());
 }
 
 // The chunk a payload came in, which is the only way back to it: the payload was cut
 // from it and nothing else records where the header started.
 std::span<char> ChunkOf(std::span<char> payload, const RdmaDeliverService::Layout &layout) noexcept
 {
-    return std::span<char>(payload.data() - sizeof(Core::RdmaPacket),
+    return std::span<char>(payload.data() - sizeof(Core::RdmaHeader),
                            static_cast<std::size_t>(layout.chunk_size));
 }
 } // namespace
@@ -123,7 +123,7 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::ha
     {
         co_return Core::unexpected(std::string{"the peer opened with something other than what it can take"});
     }
-    if (!DecodeLayout(incoming->packet.subspan(sizeof(Core::RdmaPacket)), peer_)) [[unlikely]]
+    if (!DecodeLayout(incoming->packet.subspan(sizeof(Core::RdmaHeader)), peer_)) [[unlikely]]
     {
         co_return Core::unexpected(std::string{"the peer said it can take nothing"});
     }
@@ -209,7 +209,7 @@ Foundation::NBIO::Task<Core::expected<RdmaDeliverService::Incoming, std::string>
     }
 
     const std::span<char> packet = **incoming;
-    if (packet.size() < sizeof(Core::RdmaPacket)) [[unlikely]]
+    if (packet.size() < sizeof(Core::RdmaHeader)) [[unlikely]]
     {
         // A completion shorter than a header is not a packet this protocol sent, and
         // guessing what it was is worse than stopping.
@@ -252,7 +252,7 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::ab
     // A payload's chunk stays out of the pool until its payload is released, which is
     // what makes the acknowledgement mean "the buffer is back" rather than "the bytes
     // went past".
-    ready_.push_back(Held{.payload = packet.packet.subspan(sizeof(Core::RdmaPacket)), .sequence = packet.sequence});
+    ready_.push_back(Held{.payload = packet.packet.subspan(sizeof(Core::RdmaHeader)), .sequence = packet.sequence});
     ready_available_.notify_one();
     co_return Core::expected<void, std::string>{};
 }
@@ -317,14 +317,14 @@ RdmaDeliverService::send_packet(std::span<const char> payload, Core::RdmaPacketT
         }
     }
 
-    if (payload.size() + sizeof(Core::RdmaPacket) > chunk.size()) [[unlikely]]
+    if (payload.size() + sizeof(Core::RdmaHeader) > chunk.size()) [[unlikely]]
     {
         co_return Core::unexpected(std::string{"a packet does not fit a chunk"});
     }
 
     // The header goes on here rather than at the caller's hands: what a caller writes is
     // a payload, and what the device carries is a packet.
-    Core::RdmaPacket header{};
+    Core::RdmaHeader header{};
     header.sequence = ++sent_;
     header.acknowledge = released_;
     header.type = type;

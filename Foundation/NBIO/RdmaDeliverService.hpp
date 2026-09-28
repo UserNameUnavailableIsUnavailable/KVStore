@@ -55,8 +55,8 @@ class RdmaDeliverService final : public std::enable_shared_from_this<RdmaDeliver
         // at on the way out.
         std::uint64_t payload_size() const noexcept
         {
-            return chunk_size > sizeof(Foundation::Core::RdmaPacket)
-                       ? chunk_size - sizeof(Foundation::Core::RdmaPacket)
+            return chunk_size > sizeof(Foundation::Core::RdmaHeader)
+                       ? chunk_size - sizeof(Foundation::Core::RdmaHeader)
                        : 0;
         }
     };

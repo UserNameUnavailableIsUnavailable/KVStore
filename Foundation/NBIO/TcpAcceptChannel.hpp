@@ -38,11 +38,11 @@ class TcpAcceptChannel final : public Foundation::NBIO::Channel
     Payload &submit();
     void complete();
 
-    Foundation::Core::TcpAcceptor &acceptor() noexcept
+    Core::TcpAcceptor &acceptor() noexcept
     {
         return acceptor_;
     }
-    const Foundation::Core::TcpAcceptor &acceptor() const noexcept
+    const Core::TcpAcceptor &acceptor() const noexcept
     {
         return acceptor_;
     }
