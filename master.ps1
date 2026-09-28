@@ -1,1 +1,1 @@
-./build/Application/Server/Release/Server --config ./configs/master.conf --multiplexer epoll
+./build/Application/Server/Release/Server --config ./configs/master.conf --multiplexer io_uring

@@ -7,18 +7,6 @@
     "crcpp",
     "nlohmann-json",
     "jemalloc",
-    "tl-expected",
-    {
-      "name": "rdma-core",
-      "platform": "linux"
-    },
-    {
-      "name": "liburing",
-      "platform": "linux"
-    },
-    {
-      "name": "libbpf",
-      "platform": "linux"
-    }
+    "tl-expected"
   ]
 }

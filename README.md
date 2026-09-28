@@ -46,6 +46,16 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
   GCC 11+ / Clang 14+ 具备所需特性）。
 - **Ninja**（可选，任意 CMake 生成器均可；实测 1.13.2）。
 
+### Linux 开发包（配置前必须安装）
+
+RDMA、io_uring 与 BPF 相关库通过系统 `pkg-config` 解析（不走 vcpkg），
+请先安装开发包：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y rdma-core libibverbs-dev librdmacm-dev liburing-dev libbpf-dev pkg-config
+```
+
 ### vcpkg 与第三方库
 
 项目使用 vcpkg 的**清单模式**：依赖写在 `vcpkg.json`，安装目录固定在仓库内的
@@ -61,9 +71,14 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
 | `crcpp` | 快照文件 CRC-64 校验 |
 | `nlohmann-json` | JSON |
 | `jemalloc` | 可选的进程级分配器（`LD_PRELOAD`） |
-| `rdma-core`（Linux） | `libibverbs` / `librdmacm`：RDMA 复制与 wire 测试 |
-| `liburing`（Linux） | io_uring 多路复用器（`URingMultiplexer`） |
-| `libbpf`（Linux） | BPF 相关实验 |
+
+以下为通过系统 `pkg-config` 解析的 Linux 依赖（构建前需安装）：
+
+| 系统包 | 用途 |
+| --- | --- |
+| `librdmacm` + `libibverbs`（`librdmacm-dev`、`libibverbs-dev`） | RDMA 复制与 wire 测试 |
+| `liburing`（`liburing-dev`） | io_uring 多路复用器（`URingMultiplexer`） |
+| `libbpf`（`libbpf-dev`） | BPF 相关实验 |
 
 ### RDMA 硬件
 
