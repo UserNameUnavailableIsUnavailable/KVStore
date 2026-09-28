@@ -8,7 +8,6 @@
 
 #include <cstddef>
 #include <filesystem>
-#include <memory>
 #include <span>
 #include <system_error>
 
@@ -19,7 +18,8 @@ namespace Foundation::NBIO
 // Unlike the runtime's timer and signal, a file is a resource: opening one is what
 // makes these channels exist, so this service owns them and is made rather than
 // borrowed. It is attached to the engine installed on this thread, because that is
-// where the file's readiness is watched.
+// where the file's readiness is watched -- and it owns the file by value, because one
+// owner is the whole point: there is nothing to hand back.
 class FileStreamService final
 {
   public:
@@ -29,12 +29,14 @@ class FileStreamService final
     explicit FileStreamService(const std::filesystem::path &path,
                                Foundation::Core::FileMode mode = Foundation::Core::FileMode::kReadWrite |
                                                                 Foundation::Core::FileMode::kCreate,
-                               ::mode_t permissions = 0644);
+                               std::filesystem::perms permissions = Foundation::Core::File::kDefaultPermissions);
 
     FileStreamService(const FileStreamService &) = delete;
     FileStreamService &operator=(const FileStreamService &) = delete;
-    FileStreamService(FileStreamService &&) noexcept = default;
-    FileStreamService &operator=(FileStreamService &&) noexcept = default;
+    // Not movable either: the file it owns is not, since the multiplexer holds a
+    // pointer to each channel built on it.
+    FileStreamService(FileStreamService &&) = delete;
+    FileStreamService &operator=(FileStreamService &&) = delete;
 
     ~FileStreamService() noexcept = default;
 
@@ -44,10 +46,10 @@ class FileStreamService final
 
     Foundation::NBIO::FileStream &stream() noexcept
     {
-        return *stream_;
+        return stream_;
     }
 
   private:
-    std::shared_ptr<FileStream> stream_;
+    FileStream stream_;
 };
 } // namespace Foundation::NBIO

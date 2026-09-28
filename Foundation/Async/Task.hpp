@@ -3,7 +3,6 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
-#include <cstdint>
 #include <exception>
 #include <new>
 #include <utility>
@@ -25,7 +24,7 @@ struct Promise
 #if 1
     static void *operator new(std::size_t size)
     {
-        return Foundation::Async::frame_allocate(size);
+        return frame_allocate(size);
     }
     static void *operator new(std::size_t size, std::align_val_t alignment)
     {
@@ -33,20 +32,12 @@ struct Promise
     }
     static void operator delete(void *pointer, std::size_t size) noexcept
     {
-        Foundation::Async::frame_deallocate(pointer, size);
+        frame_deallocate(pointer, size);
     }
     static void operator delete(void *pointer) noexcept
     {
-        ::operator delete(pointer);
+        ::operator delete(pointer); // fallback, ignored
     }
-    // static void operator delete(void *pointer, std::size_t size, std::align_val_t alignment) noexcept
-    // {
-    //     ::operator delete(pointer, size, alignment);
-    // }
-    // static void operator delete(void *pointer, std::align_val_t alignment) noexcept
-    // {
-    //     ::operator delete(pointer, alignment);
-    // }
 #endif
     struct FinalAwaiter
     {
@@ -55,9 +46,7 @@ struct Promise
             return false;
         }
         // Returns the continuation instead of calling .resume() on it, so the
-        // compiler emits a tail call: the finishing coroutine's frame is popped
-        // before jumping into the awaiter. Without this, a long await-chain (or
-        // a loop that keeps awaiting a ready value) grows the native stack.
+        // compiler emits a tail call.
         template <typename PromiseType>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<PromiseType> me) noexcept
         {
@@ -70,7 +59,11 @@ struct Promise
             auto *control_block = promise.control_block;
             if (!continuation && control_block != nullptr && control_block->root.address() == me.address())
             {
-                control_block->scheduler->finish(control_block->shared_from_this());
+                // The tree is over. This is the notification the scheduler waits for; it
+                // only takes the block out of the registry (see Scheduler::reclaim), it
+                // does not destroy the frame -- this very frame is still running, and
+                // `this` still lives inside it.
+                control_block->finish();
             }
             return continuation ? continuation : std::noop_coroutine();
         }
@@ -92,7 +85,8 @@ struct Promise
         return {};
     }
 
-    std::coroutine_handle<> continuation;
+    std::coroutine_handle<> continuation{};
+    CoroutineControlBlock *control_block = nullptr;
 };
 
 template <typename RuntimeTag, typename T> class Task
@@ -105,18 +99,6 @@ template <typename RuntimeTag, typename T> class Task
         // than the callee running on the wrong thread.
         using Runtime = RuntimeTag;
 
-        // The compiler lays a member coroutine's object parameter (this) over the
-        // promise's own storage right after Promise::continuation, so the first
-        // slot here is deliberate padding: nothing of ours may sit where that
-        // parameter lands, or inheriting the block would clobber this. It is
-        // deliberately left uninitialized and is never read.
-        std::uint64_t object_parameter_reserved_;
-
-        // Non-owning. Names the control block of the tree this frame belongs to:
-        // set on a root by spawn(), and inherited from the caller by every
-        // awaited child. Non-null on every schedulable frame, which is what lets
-        // a parked descendant read its tree's cancellation state.
-        CoroutineControlBlock *control_block = nullptr;
 
         std::variant<std::monostate, T, std::exception_ptr> result_;
 
@@ -245,13 +227,6 @@ template <typename RuntimeTag> class Task<RuntimeTag, void>
     struct promise_type : Promise
     {
         using Runtime = RuntimeTag;
-
-        // See the note in the primary template: this reserves the slot a member
-        // coroutine's object parameter is laid out in.
-        std::uint64_t object_parameter_reserved_;
-
-        // Non-owning. Names the control block of the tree this frame belongs to.
-        CoroutineControlBlock *control_block = nullptr;
 
         std::exception_ptr error_;
 

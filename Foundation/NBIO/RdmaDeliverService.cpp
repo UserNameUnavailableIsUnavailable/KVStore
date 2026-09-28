@@ -181,11 +181,14 @@ void RdmaDeliverService::stop() noexcept
 {
     // Cancelling is what ends the reader, and cancelling is what it takes: the reader is
     // parked on the session's receive channel, and a packet to wake it with is exactly
-    // what is not coming. The scheduler never resumes a cancelled coroutine and destroys
-    // its frame at the next iteration, so the reference that frame holds to this service
-    // goes with it -- which is why a service nobody stops is one nobody destroys, and
-    // why its reader keeps the thread's run() from returning. Called on this service's
-    // own thread, like everything else here.
+    // what is not coming. The scheduler never resumes a cancelled coroutine, and
+    // destroys its frame at the next iteration -- which is what lets go of the
+    // shared_ptr that frame holds to this service. That is why a service nobody stops is
+    // one nobody destroys, and why its reader keeps the thread's run() from returning.
+    //
+    // It is the destroy-at-reclaim that makes this work, and not the token: the reader
+    // is parked in a channel this service owns, so a frame that outlived reclamation
+    // would hold the service that holds the channel that holds the frame.
     ended_ = true;
     reader_.cancel();
     room_.notify_all();

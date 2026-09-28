@@ -8,4 +8,5 @@ target_sources(
     INTERFACE
     FramePool.cpp
     Scheduler.cpp
+    Coroutine.cpp
 )

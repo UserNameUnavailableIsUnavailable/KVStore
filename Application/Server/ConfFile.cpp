@@ -91,7 +91,7 @@ bool EqualWord(std::string_view left, std::string_view right)
 std::uint16_t ParsePort(const CommandLine &line, std::string_view text)
 {
     const auto refuse = [&line]() -> std::runtime_error {
-        return std::runtime_error(line.Where() + ": '" + line.arguments.front() + "' wants a port between 1 and 65535");
+        return std::runtime_error(line.where() + ": '" + line.arguments.front() + "' wants a port between 1 and 65535");
     };
 
     std::size_t consumed = 0;
@@ -119,7 +119,7 @@ std::uint16_t ToPort(std::string_view text)
 }
 } // namespace
 
-std::string CommandLine::Where() const
+std::string CommandLine::where() const
 {
     return file.string() + ":" + std::to_string(number);
 }

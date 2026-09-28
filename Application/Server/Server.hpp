@@ -91,7 +91,7 @@ class Server
     // Runs the commands a startup file holds, and then serves. Applying them
     // belongs inside the runtime: they are this server's own commands, and
     // executing one can await.
-    Foundation::NBIO::Task<void> start(std::uint16_t port, std::vector<CommandLine> commands);
+    Foundation::NBIO::Task<void> serve(std::uint16_t port, std::vector<CommandLine> commands);
     Foundation::NBIO::Task<void> apply_commands(std::vector<CommandLine> commands);
 
     Foundation::NBIO::Task<void> serve(const Foundation::Core::SocketAddress &address);

@@ -189,6 +189,16 @@ expected<void, std::string> RdmaAcceptor::non_blocking(bool toggle) noexcept
     }
     return {};
 }
+expected<void, std::string> RdmaAcceptor::reuse_address(bool enabled) noexcept
+{
+    int reuse = enabled ? 1 : 0;
+    auto ret = ::rdma_set_option(communication_id_, RDMA_OPTION_ID, RDMA_OPTION_ID_REUSEADDR, &reuse, sizeof(reuse));
+    if (ret != 0)
+    {
+        return unexpected(Failing("Failed to enable address reuse"));
+    }
+    return {};
+}
 
 RdmaAcceptor::~RdmaAcceptor() noexcept
 {

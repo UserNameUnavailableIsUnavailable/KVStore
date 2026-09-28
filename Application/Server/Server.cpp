@@ -81,56 +81,22 @@ void Server::run(const ServerOptions &options)
     replication_port_ = replication_port;
     replication_address_ = replication_address;
 
-    // Which of the two files the store comes from. They are not read together: the
-    // AOF is the log of what happened and the RDB is an image of where it had got
-    // to, so replaying one on top of the other applies commands the image already
-    // holds -- or, when the image is the newer of the two, puts the log's older
-    // values back over it. Exactly one of them is the store.
-    //
-    // The log is the store when this instance was told to keep one and there is one
-    // to read. The image is what is left for every other case, the first run
-    // included, when there is neither.
-    const bool keeping_a_log = declared.appendonly.value_or(false);
-    const bool has_a_log = aof_.exists();
-    if (keeping_a_log && has_a_log)
+    const bool keep_log = declared.appendonly.value_or(false);
+    const bool has_log = aof_.exists();
+    if (keep_log && has_log)
     {
-        // Reading it needs no runtime: replay decodes from the file and applies to
-        // the store, which is why the choice can be made and acted on here, before
-        // the engine this server will run on exists.
         if (!aof_.replay([this](const KV::Command &command) {
                 return replay_aof_command(command);
             }))
         {
             throw std::runtime_error("failed to load the append-only file");
         }
-        spdlog::info("loaded the append-only file '{}'; the RDB is not read while there is a log",
-                     aof_.path().string());
     }
-    else
+    else if (!backup_.load(store_))
     {
-        if (has_a_log)
-        {
-            // Worth saying: the log is right there and is not being read, and what
-            // this server answers with will look older than the operator expects for
-            // as long as that stays true.
-            spdlog::warn("the append-only file '{}' is not being read: this instance was not told to keep one",
-                         aof_.path().string());
-        }
-        else if (keeping_a_log)
-        {
-            spdlog::info("no append-only log at '{}' yet; loading the RDB", aof_.path().string());
-        }
-        if (!backup_.load(store_))
-        {
-            throw std::runtime_error("failed to load RDB snapshot");
-        }
+        throw std::runtime_error("failed to load RDB snapshot");
     }
 
-    // Replication is a service this server plugs in: the service owns the
-    // replication port and everything on the wire, the server owns the store it
-    // snapshots and restores. Whether this instance is a replica is not settled
-    // here: SLAVEOF is what says so, and it arrives once the server is answering
-    // -- which is also when this becomes read-only rather than any earlier.
     ReplicationService::Options replication_options{
         .listen_port = replication_port,
         .listen_address = replication_address,
@@ -141,16 +107,9 @@ void Server::run(const ServerOptions &options)
             return backup_.path();
         },
         .snapshot = [this] {
-            // capture() copies the store here, in this step, so the write log
-            // starts from exactly what the snapshot holds and nothing can fall
-            // between the two. The task it hands back does the fork and the
-            // write.
             return backup_.save(Backup::capture(store_));
         },
         .restore = [this](const std::filesystem::path &file) {
-            // Loading the received RDB is also what verifies it: the file ends
-            // with a CRC-64 over its own bytes and a load refuses one that does
-            // not match.
             return backup_.load_from(file, store_);
         },
         .apply = [this](const KV::Command &command) {
@@ -160,11 +119,6 @@ void Server::run(const ServerOptions &options)
             spdlog::info("replication: {}", up ? "the master is up" : "the master went away");
         },
     };
-    // The runtime comes up before the service that borrows it: the service holds a
-    // condition variable, which is a channel on the runtime, and asking the engine
-    // for one is what brings it up -- with a fallback multiplexer, since nobody
-    // has said which one to use yet. Initialize it here, deliberately, and the
-    // service is built on the one this server chose.
     const std::string_view multiplexer = options.multiplexer;
 
     std::unique_ptr<Foundation::NBIO::Multiplexer> mux;
@@ -191,11 +145,7 @@ void Server::run(const ServerOptions &options)
     }
     Foundation::NBIO::initialize(std::move(mux));
 
-    // The log is opened once there is a runtime to open it on -- a file is a
-    // channel here, and a channel belongs to an engine -- which is after the
-    // choice of what to read from, and after reading it. Reading needed no engine;
-    // appending does.
-    if (keeping_a_log && !aof_.enable())
+    if (keep_log && !aof_.enable())
     {
         throw std::runtime_error("failed to open the append-only file");
     }
@@ -207,10 +157,10 @@ void Server::run(const ServerOptions &options)
         Foundation::NBIO::spawn(replication_->serve());
     }
 
-    Foundation::NBIO::run(start(port, std::move(commands)));
+    Foundation::NBIO::run(serve(port, std::move(commands)));
 }
 
-Foundation::NBIO::Task<void> Server::start(std::uint16_t port, std::vector<CommandLine> commands)
+Foundation::NBIO::Task<void> Server::serve(std::uint16_t port, std::vector<CommandLine> commands)
 {
     // The commands go first: a server that is answering clients is a server that
     // has decided how it is configured.
@@ -222,11 +172,6 @@ Foundation::NBIO::Task<void> Server::start(std::uint16_t port, std::vector<Comma
     }
     catch (const std::exception &error)
     {
-        // This is fatal, and nothing above this frame can report it: the
-        // replication listener, when there is one, parks the runtime waiting for
-        // a replica, so the loop never drains and the failure would otherwise
-        // leave a process that is alive with no port for clients to reach. Say
-        // what happened and end, the way a server that cannot listen should.
         spdlog::error("server stopped: {}", error.what());
         std::exit(EXIT_FAILURE);
     }
@@ -234,23 +179,18 @@ Foundation::NBIO::Task<void> Server::start(std::uint16_t port, std::vector<Comma
 
 Foundation::NBIO::Task<void> Server::apply_commands(std::vector<CommandLine> commands)
 {
-    // Every line is a command, and it is validated and executed by the same code
-    // that serves a client: the file configures this server by running it, not
-    // through a second set of rules that would drift from the first. A line that
-    // cannot be carried out stops the startup, so a mistake is reported now
-    // rather than by an instance that is already answering clients.
     for (const CommandLine &line : commands)
     {
         const KV::CommandValidation validation = KV::ValidateCommand(CommandRequest(line));
         if (!validation)
         {
-            throw std::runtime_error(line.Where() + ": " + validation.error);
+            throw std::runtime_error(line.where() + ": " + validation.error);
         }
 
         const RESP::Object response = co_await execute(*validation.command);
         if (const auto *error = std::get_if<RESP::SimpleError>(&response.value))
         {
-            throw std::runtime_error(line.Where() + ": " + error->value);
+            throw std::runtime_error(line.where() + ": " + error->value);
         }
         spdlog::info("config: applied '{}'", line.text);
     }

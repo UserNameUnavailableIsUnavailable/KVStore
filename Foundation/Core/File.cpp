@@ -8,12 +8,13 @@
 #include <Windows.h>
 #else
 #include <fcntl.h>
+#include <sys/types.h>
 #include <unistd.h>
 #endif
 
 namespace Foundation::Core
 {
-File::File(const std::filesystem::path &path, FileMode mode) : handle_(open_file(path, mode)), mode_(mode)
+File::File(const std::filesystem::path &path, FileMode mode, std::filesystem::perms permissions) : handle_(open_file(path, mode, permissions)), mode_(mode)
 {
 }
 
@@ -115,14 +116,19 @@ int File::native_flags_for(FileMode mode)
 #endif
 }
 
-std::uintptr_t File::open_file(const std::filesystem::path &path, FileMode mode)
+std::uintptr_t File::open_file(const std::filesystem::path &path, FileMode mode, std::filesystem::perms permissions)
 {
 #if defined(_WIN32)
     (void)path;
     (void)mode;
+    (void)permissions;
     static_assert(false, "Windows file open is not implemented yet");
 #else
-    const auto fd = ::open(path.c_str(), native_flags_for(mode), 0644);
+    // The only place the native mode is spelled out: everywhere above this line the
+    // permissions are std::filesystem::perms, which is what the standard library has
+    // and what a caller can name without knowing the platform.
+    const auto native = static_cast<::mode_t>(permissions & std::filesystem::perms::mask);
+    const auto fd = ::open(path.c_str(), native_flags_for(mode), native);
     if (fd < 0)
     {
         throw std::system_error(errno, std::system_category(), "open failed");

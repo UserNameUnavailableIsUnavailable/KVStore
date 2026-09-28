@@ -147,8 +147,7 @@ class RdmaDeliverService final : public std::enable_shared_from_this<RdmaDeliver
     // acknowledgement is owed, and the type the caller says it is. A meta packet is the
     // one thing sent through here that is not a payload, and its numbers mean the same
     // thing they mean on every other packet.
-    Foundation::NBIO::Task<Core::expected<void, std::string>> send_packet(std::span<const char> payload,
-                                                                        Foundation::Core::RdmaPacketType type);
+    Foundation::NBIO::Task<Core::expected<void, std::string>> send_packet(std::span<const char> payload, Foundation::Core::RdmaPacketType type);
 
     // Waits until the packets already in flight leave room for `packets` more.
     Foundation::NBIO::Task<Core::expected<void, std::string>> wait_for_room(std::uint64_t packets);
@@ -162,8 +161,8 @@ class RdmaDeliverService final : public std::enable_shared_from_this<RdmaDeliver
     static Foundation::NBIO::Task<void> Read(std::shared_ptr<RdmaDeliverService> self);
 
     // What start() spawned the reader as, so that stop() can cancel it. Cancelling is
-    // what the scheduler needs to destroy the frame, and destroying the frame is what
-    // releases the reference the reader holds to this service.
+    // what lets the scheduler destroy the frame, and destroying the frame is what
+    // releases the reference that frame holds to this service.
     Foundation::Async::CoroutineToken reader_{};
 
     std::shared_ptr<RdmaSessionService> session_;

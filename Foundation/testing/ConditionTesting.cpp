@@ -63,7 +63,7 @@ TEST_F(ConditionTesting, WaitsUntilPredicateTurnsTrue)
     notifier.join();
 
     EXPECT_EQ(resumed.load(std::memory_order_acquire), 1);
-    EXPECT_TRUE(token.is_finished());
+    EXPECT_TRUE(token.is_dead());
 }
 
 TEST_F(ConditionTesting, NotifyOneWakesOneWaiterAtATime)
@@ -92,8 +92,8 @@ TEST_F(ConditionTesting, NotifyOneWakesOneWaiterAtATime)
     notifier.join();
 
     EXPECT_EQ(resumed.load(std::memory_order_acquire), 2);
-    EXPECT_TRUE(first_token.is_finished());
-    EXPECT_TRUE(second_token.is_finished());
+    EXPECT_TRUE(first_token.is_dead());
+    EXPECT_TRUE(second_token.is_dead());
 }
 
 TEST_F(ConditionTesting, NotifyAllWakesEveryWaiter)
@@ -116,7 +116,7 @@ TEST_F(ConditionTesting, NotifyAllWakesEveryWaiter)
     notifier.join();
 
     EXPECT_EQ(resumed.load(std::memory_order_acquire), 3);
-    EXPECT_TRUE(first_token.is_finished());
-    EXPECT_TRUE(second_token.is_finished());
-    EXPECT_TRUE(third_token.is_finished());
+    EXPECT_TRUE(first_token.is_dead());
+    EXPECT_TRUE(second_token.is_dead());
+    EXPECT_TRUE(third_token.is_dead());
 }

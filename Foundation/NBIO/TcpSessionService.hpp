@@ -11,7 +11,6 @@
 
 #include <atomic>
 #include <cstddef>
-#include <memory>
 #include <span>
 #include <system_error>
 #include <utility>
@@ -30,8 +29,10 @@ namespace Foundation::NBIO
 //
 // A session cannot be copied or moved -- it owns two channels, and a channel is never
 // moved because the multiplexer holds a pointer to it -- so it is handed around as a
-// `shared_ptr`, which is what both services answer with.
-class TcpSessionService final : public std::enable_shared_from_this<TcpSessionService>
+// `shared_ptr`, which is what both services answer with. It does not register itself
+// with that shared_ptr's control block: whoever holds the pointer is the owner, and
+// nothing here needs a way back to itself.
+class TcpSessionService final
 {
   public:
     // Attached to the engine installed on this thread, which is where the connection
@@ -80,8 +81,6 @@ class TcpSessionService final : public std::enable_shared_from_this<TcpSessionSe
     }
 
   private:
-    // Declared first: the channels are built on this connection, so it has to outlive
-    // them, and the member order is what says so.
     Foundation::Core::TcpConnector connector_;
     TcpReceiveChannel receive_channel_;
     TcpSendChannel send_channel_;

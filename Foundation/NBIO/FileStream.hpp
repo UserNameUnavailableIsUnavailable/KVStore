@@ -10,14 +10,13 @@
 #include <Foundation/Core/File.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 
 #if not defined(__linux__)
 #error "Async::FileStream is only supported on Linux"
 #endif
-
-#include <sys/types.h>
 
 #include "FileReadChannel.hpp"
 #include "FileWriteChannel.hpp"
@@ -27,11 +26,17 @@ namespace Foundation::NBIO
 class FileReadChannel;
 class FileWriteChannel;
 
-class FileStream : public std::enable_shared_from_this<FileStream>
+// One file, and the two channels that read and write it.
+//
+// Strictly owned: made in place where it lives, never moved and never shared. It has
+// to stay put because the multiplexer holds a pointer to each channel, and because
+// each channel holds a reference to this -- and it is shared with nobody, because
+// the channels are its only referrers and it is the one thing they refer to.
+class FileStream
 {
   public:
-    FileStream(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions, Foundation::NBIO::Multiplexer &multiplexer,
-               Foundation::Async::Scheduler &scheduler);
+    FileStream(const std::string &path, Foundation::Core::FileMode mode, std::filesystem::perms permissions,
+               Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
     FileStream(const FileStream &) = delete;
     FileStream &operator=(const FileStream &) = delete;
     FileStream(FileStream &&) = delete;
@@ -41,9 +46,6 @@ class FileStream : public std::enable_shared_from_this<FileStream>
     // descriptor while a channel still names it -- and the number could be handed
     // to another open before that channel unregisters itself.
     ~FileStream() noexcept = default;
-
-    static std::shared_ptr<FileStream> Open(const std::string &path, Foundation::Core::FileMode mode, ::mode_t permissions,
-                                            Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
 
     Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> read(std::span<char> buffer);
     Foundation::NBIO::Task<Core::expected<std::size_t, std::error_code>> write(std::span<const char> buffer);
