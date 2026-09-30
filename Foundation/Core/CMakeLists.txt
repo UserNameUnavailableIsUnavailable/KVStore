@@ -14,6 +14,7 @@ target_sources(
     EventNotifier.cpp
     Buffer.cpp
     BitmapMemory.cpp
+    ThreadMemoryPool.cpp
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

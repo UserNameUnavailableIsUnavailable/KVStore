@@ -36,6 +36,25 @@ RESP::Object Error(std::string message)
 {
     return RESP::Object(RESP::SimpleError{.value = std::move(message)});
 }
+
+bool ParseUnsigned(std::string_view text, std::size_t &value) noexcept
+{
+    try
+    {
+        std::size_t consumed = 0;
+        const auto parsed = std::stoull(std::string(text), &consumed);
+        if (consumed != text.size())
+        {
+            return false;
+        }
+        value = static_cast<std::size_t>(parsed);
+        return true;
+    }
+    catch (const std::exception &)
+    {
+        return false;
+    }
+}
 // The command line is heard first, then the startup file, then the default this
 // server would have used on its own. A file that looks as if it was ignored is
 // otherwise hard to explain, so the command line says when it overrode one.
@@ -55,11 +74,6 @@ T Resolve(std::string_view name, const std::optional<T> &given, const std::optio
 
 void Server::run(const ServerOptions &options)
 {
-    // The file is read before anything is built, because some of its lines do not
-    // wait for the server to exist: the ports it listens on and the master it
-    // follows are settled here, before a socket or the replication service is
-    // created. What is left of the file is commands, and they are run once the
-    // server is up.
     std::vector<CommandLine> commands;
     if (options.config_file)
     {
@@ -119,31 +133,7 @@ void Server::run(const ServerOptions &options)
             spdlog::info("replication: {}", up ? "the master is up" : "the master went away");
         },
     };
-    const std::string_view multiplexer = options.multiplexer;
-
-    std::unique_ptr<Foundation::NBIO::Multiplexer> mux;
-    if (multiplexer == "epoll")
-    {
-        mux = std::make_unique<Foundation::NBIO::EpollMultiplexer>();
-    }
-    else if (multiplexer == "io_uring")
-    {
-        mux = std::make_unique<Foundation::NBIO::URingMultiplexer>();
-    }
-    else
-    {
-        throw std::invalid_argument("--multiplexer must be 'epoll' or 'io_uring'");
-    }
-    switch (mux->type())
-    {
-    case Foundation::NBIO::MultiplexerType::kEpoll:
-        spdlog::info("Multiplexer: epoll");
-        break;
-    case Foundation::NBIO::MultiplexerType::kURing:
-        spdlog::info("Multiplexer: io_uring");
-        break;
-    }
-    Foundation::NBIO::initialize(std::move(mux));
+    staged_save_ready_ = std::make_unique<Foundation::NBIO::ConditionVariable>();
 
     if (keep_log && !aof_.enable())
     {
@@ -489,6 +479,7 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_set(const KV::Command &comm
 {
     const auto &set = std::get<KV::SetParams>(command.parameters);
     store_.set(set.key, set.value);
+    note_write();
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
@@ -497,6 +488,7 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_del(const KV::Command &comm
     const auto &del = std::get<KV::DelParams>(command.parameters);
     const bool exists = store_.contains(del.key);
     store_.set(del.key, std::nullopt);
+    note_write();
     co_return RESP::Object(RESP::Integer{.value = exists ? 1 : 0});
 }
 
@@ -581,11 +573,13 @@ bool Server::apply_replicated_command(const KV::Command &command)
     case KV::CommandType::kSet: {
         const auto &set = std::get<KV::SetParams>(command.parameters);
         store_.set(set.key, set.value);
+        note_write();
         break;
     }
     case KV::CommandType::kDel: {
         const auto &del = std::get<KV::DelParams>(command.parameters);
         store_.set(del.key, std::nullopt);
+        note_write();
         break;
     }
     default:
@@ -617,8 +611,11 @@ std::optional<std::string> Server::config_value(const std::string &parameter) co
     }
     if (parameter == "save")
     {
-        // Only the SAVE command writes a snapshot; nothing runs on a schedule.
-        return "";
+        if (!staged_save_rule_)
+        {
+            return "";
+        }
+        return std::to_string(staged_save_rule_->seconds.count()) + " " + std::to_string(staged_save_rule_->changed);
     }
     if (parameter == "port")
     {
@@ -724,6 +721,22 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command &c
         // unreadable.
         aof_.checksum(config.values.front() == "yes");
     }
+    else if (config.parameter == "save")
+    {
+        if (config.values.size() != 2)
+        {
+            co_return detail::Error("ERR CONFIG SET failed - 'save' wants <seconds> <changed>");
+        }
+
+        std::size_t seconds = 0;
+        std::size_t changed = 0;
+        if (!detail::ParseUnsigned(config.values.front(), seconds) || !detail::ParseUnsigned(config.values.back(), changed) ||
+            changed == 0)
+        {
+            co_return detail::Error("ERR CONFIG SET failed - 'save' wants <seconds> <changed>, with changed > 0");
+        }
+        configure_staged_save(std::chrono::seconds{seconds}, changed);
+    }
     else if (KV::IsStartupConfigParameter(config.parameter))
     {
         // The ports are bound and the replication listener is built while the
@@ -742,6 +755,7 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_bgsave(const KV::Command &c
     {
         co_return detail::Error("ERR failed to save RDB snapshot");
     }
+    staged_save_dirty_ = 0;
     co_return RESP::Object(RESP::SimpleString{.value = "Background saving started"});
 }
 
@@ -756,6 +770,81 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_save(const KV::Command &com
     {
         co_return detail::Error("ERR failed to save RDB snapshot");
     }
+    staged_save_dirty_ = 0;
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
+}
+
+void Server::note_write()
+{
+    if (!staged_save_rule_)
+    {
+        return;
+    }
+
+    ++staged_save_dirty_;
+    if (staged_save_dirty_ == staged_save_rule_->changed)
+    {
+        staged_save_ready_->notify_one();
+    }
+}
+
+void Server::configure_staged_save(std::chrono::seconds seconds, std::size_t changed)
+{
+    staged_save_rule_ = StagedSaveRule{.seconds = seconds, .changed = changed};
+    staged_save_dirty_ = 0;
+    maybe_start_staged_save();
+}
+
+void Server::maybe_start_staged_save()
+{
+    if (!staged_save_rule_ || staged_save_loop_running_)
+    {
+        return;
+    }
+
+    staged_save_loop_running_ = true;
+    Foundation::NBIO::spawn(staged_save_periodic());
+}
+
+Foundation::NBIO::Task<void> Server::staged_save_periodic()
+{
+    while (staged_save_rule_)
+    {
+        const auto rule = *staged_save_rule_;
+        auto timeout = Foundation::NBIO::SystemTimeService{}.sleep(rule.seconds);
+        auto ready = staged_save_ready_->wait([this, expected = rule.changed] {
+            return !staged_save_rule_ || staged_save_dirty_ >= expected;
+        });
+        co_await Foundation::Async::when_all(std::move(timeout), std::move(ready));
+
+        if (!staged_save_rule_)
+        {
+            break;
+        }
+
+        if (staged_save_dirty_ < rule.changed)
+        {
+            // The rule changed or the save was disabled while we were waiting.
+            continue;
+        }
+
+        const bool ok = co_await backup_.save(store_);
+        if (!ok)
+        {
+            spdlog::warn("staged save failed");
+            continue;
+        }
+
+        if (staged_save_dirty_ > rule.changed)
+        {
+            staged_save_dirty_ -= rule.changed;
+        }
+        else
+        {
+            staged_save_dirty_ = 0;
+        }
+    }
+
+    staged_save_loop_running_ = false;
 }
 } // namespace KV

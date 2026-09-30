@@ -10,7 +10,7 @@
 #include <Foundation/NBIO/Payload.hpp>
 #include <chrono>
 #include <coroutine>
-#include <cstddef>
+#include <queue>
 #include <Foundation/Async/Coroutine.hpp>
 
 namespace Foundation::NBIO
@@ -98,6 +98,7 @@ class SystemTimerChannel final : public Foundation::NBIO::Channel
     bool remove(Async::Coroutine coroutine_view);
 
     Foundation::Core::SystemTimer &timer_;
+    std::queue<Async::Coroutine> immediate_queue_; // already-timeout coroutines
     Foundation::Core::PriorityQueue<detail::SystemTimerEntry, detail::SystemTimerEntryComparator> queue_;
     Payload payload_{SystemTimerPayload{}};
 };

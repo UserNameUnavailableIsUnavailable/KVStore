@@ -16,11 +16,11 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if (MSVC)
-    add_compile_options(/W4)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+# if (MSVC)
+#     add_compile_options(/W4)
+# else()
+#     add_compile_options(-Wall -Wextra -Wpedantic)
+# endif()
 
 find_package(CLI11 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -31,14 +31,19 @@ find_package(spdlog CONFIG REQUIRED)
 # archive would contribute nothing. The flags are threaded through Foundation,
 # which every executable links.
 #
-option(KVSTORE_USE_JEMALLOC "Link jemalloc as the process allocator" ON)
-if(KVSTORE_USE_JEMALLOC)
+option(USE_JEMALLOC "Link jemalloc as the process allocator" OFF)
+if(USE_JEMALLOC)
     find_library(JEMALLOC_LIBRARY NAMES jemalloc REQUIRED)
+endif()
+
+option(CUSTOM_MEMORY_POOLING "Use custom per-thread global new/delete pool" OFF)
+if(CUSTOM_MEMORY_POOLING AND USE_JEMALLOC)
+	message(FATAL_ERROR "CUSTOM_MEMORY_POOLING and USE_JEMALLOC are mutually exclusive")
 endif()
 
 # The C++ benchmarks measure throughput against real hardware, so they are built
 # only when asked for: nothing in the default build or in ctest needs them.
-option(KVSTORE_BUILD_BENCHMARKS "Build the throughput benchmarks" OFF)
+option(KVSTORE_BUILD_BENCHMARKS "Build the throughput benchmarks" ON)
 
 include_directories(
 	SYSTEM

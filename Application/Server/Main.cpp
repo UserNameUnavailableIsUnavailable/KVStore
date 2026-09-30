@@ -2,15 +2,30 @@
 
 #include <CLI/CLI.hpp>
 
-#include <cstdint>
 #include <cstdlib>
-#include <optional>
+#include <memory>
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 
+#include <Foundation/NBIO/EpollMultiplexer.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
+#include <Foundation/NBIO/URingMultiplexer.hpp>
+
 namespace
 {
+std::unique_ptr<Foundation::NBIO::Multiplexer> make_multiplexer(const std::string &name)
+{
+    if (name == "epoll")
+    {
+        return std::make_unique<Foundation::NBIO::EpollMultiplexer>();
+    }
+    if (name == "io_uring")
+    {
+        return std::make_unique<Foundation::NBIO::URingMultiplexer>();
+    }
+    throw std::invalid_argument("--multiplexer must be 'epoll' or 'io_uring'");
+}
 } // namespace
 
 int main(int argc, char *argv[])
@@ -52,6 +67,18 @@ int main(int argc, char *argv[])
 
     try
     {
+        auto mux = make_multiplexer(options.multiplexer);
+        switch (mux->type())
+        {
+        case Foundation::NBIO::MultiplexerType::kEpoll:
+            spdlog::info("Multiplexer: epoll");
+            break;
+        case Foundation::NBIO::MultiplexerType::kURing:
+            spdlog::info("Multiplexer: io_uring");
+            break;
+        }
+        Foundation::NBIO::initialize(std::move(mux));
+
         KV::Server server;
         server.run(options);
     }

@@ -39,7 +39,7 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
 
 ### 系统与工具链
 
-- **操作系统**：Linux（x86-64）。服务器、复制与 io_uring 后端都在 `#if defined(__linux__)`
+- **操作系统**：Linux（内核版本 >= 5.2，建议使用 6.0 及以上的版本以获得完整的 io_uring 特性支持）。服务器、复制与 io_uring 后端都在 `#if defined(__linux__)`
   保护之下，其它平台上只有 Foundation 的一部分能编译。
 - **CMake ≥ 3.20**（顶层 `CMakeLists.txt` 声明；开发机实测 4.2.3）。
 - **支持 C++20 的编译器**：代码用到协程、ranges、指定初始化与 concepts（实测 Clang 21.1.8；
@@ -161,28 +161,12 @@ config rdma_device siw0
 
 ## 基准测试
 
-C++ 基准默认不参与构建，配置时打开开关即可：
+`benchmark/` 下包含基准测试脚本和结果。
 
-```bash
-export KVSTORE_RDMA_ADDRESS=192.168.0.201
-export KVSTORE_RDMA_DEVICE=siw2
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKVSTORE_BUILD_BENCHMARKS=ON
-cmake --build build --target RdmaFileBenchmark
-./build/Foundation/NBIO/benchmark/Release/RdmaFileBenchmark
-```
-
-`RdmaFileBenchmark` 量的是 RDMA 链路本身，走的就是复制链路所用的那套 NBIO channel，两端
-都在同一个进程里、各占一个引擎一个线程：一条连接，一个 connector 一个 acceptor，默认
-1 GiB 随机载荷，两端各自报吞吐。`--size` 是载荷字节数，`--file` 改为从磁盘读，
-`--multiplexer` 选 epoll 或 io_uring，`--port` 指定端口（0 表示自动挑一个空闲的）。
-消息大小不是选项：它就是 resource manager 的 chunk 大小——发送拿到的是它，接收落进去的
-也是它。
-
-发送端会把自己的“未被确认”消息数压在接收端已投递的 receive 之内，和复制链路用的是同一个
-窗口——因为一条消息到达时若接收端没有已投递的 receive，它既不会被排队也不会被拒绝，而是
-直接把 queue pair 以 `RNR_RETRY_EXC_ERR` 拆掉。跑挂的运行会带着两端各自走到哪一步退出，
-而不是一直挂着。`benchmark/` 下的 Python 脚本测的是整个服务器，结果记在
-`benchmark/result.md`。
+| 基准 | 脚本 | 结果 |
+| --- | --- | --- |
+| 吞吐：`redis-benchmark`，含多路复用器对比、流水线深度（对照 Redis）、AOF、周期备份 | `benchmark/pipeline.sh` 等 | [`benchmark/RSP.md`](benchmark/RSP.md) |
+| 内存：多轮插入/删除下的 RSS 与复用情况，对比无池化、自定义池化与 jemalloc | `benchmark/memory.py` | [`benchmark/memory.md`](benchmark/memory.md) |
 
 ## 文档
 

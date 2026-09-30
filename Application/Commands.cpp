@@ -145,6 +145,20 @@ bool IsPort(std::string_view text, unsigned long lowest)
 	}
 }
 
+bool IsUnsigned(std::string_view text, unsigned long lowest)
+{
+	try
+	{
+		std::size_t consumed = 0;
+		const unsigned long value = std::stoul(std::string{ text }, &consumed);
+		return consumed == text.size() && value >= lowest;
+	}
+	catch (const std::exception &)
+	{
+		return false;
+	}
+}
+
 // An address to serve replicas from: one the listener can bind, and one that
 // names a device. A wildcard is accepted by rdma_bind_addr and names no device
 // at all, so it is refused while the message can still say why.
@@ -227,6 +241,13 @@ CommandValidation ValidateConfigWrite(const Arguments &arguments, std::size_t pa
 		{
 			return Error("ERR CONFIG SET failed - 'replication_address' wants <ip> <port>, the address of the RDMA device to "
 						  "serve replicas from");
+		}
+	}
+	else if (parameters.parameter == "save")
+	{
+		if (parameters.values.size() != 2 || !IsUnsigned(parameters.values.front(), 0) || !IsUnsigned(parameters.values.back(), 1))
+		{
+			return Error("ERR CONFIG SET failed - 'save' wants <seconds> <changed>, with changed > 0");
 		}
 	}
 	else

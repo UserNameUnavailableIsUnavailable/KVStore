@@ -5,7 +5,6 @@
 #include <coroutine>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <string>
 #include <utility>
 #include <variant>

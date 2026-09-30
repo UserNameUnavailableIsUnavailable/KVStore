@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -16,6 +17,7 @@
 #include "ReplicationService.hpp"
 
 #include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/ConditionVariable.hpp>
 #include <Foundation/Core/SocketAddress.hpp>
 #include <Foundation/NBIO/TcpAcceptService.hpp>
 #include <Foundation/NBIO/TcpSessionService.hpp>
@@ -101,6 +103,12 @@ class Server
     Foundation::NBIO::Task<void> serve_client(std::shared_ptr<TcpSessionService> session);
 
   private:
+    struct StagedSaveRule
+    {
+        std::chrono::seconds seconds{0};
+        std::size_t changed{0};
+    };
+
     // The answer to a command that reads one key, or nothing when the request is
     // not one: see the definition for why it is worth answering before a command
     // is built for it.
@@ -121,6 +129,10 @@ class Server
     Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command &command);
     Foundation::NBIO::Task<RESP::Object> execute_slaveof(const KV::Command &command);
+    void note_write();
+    void configure_staged_save(std::chrono::seconds seconds, std::size_t changed);
+    void maybe_start_staged_save();
+    Foundation::NBIO::Task<void> staged_save_periodic();
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.
@@ -146,5 +158,10 @@ class Server
     std::uint16_t replication_port_{0};
     std::string replication_address_{};
     std::string rdma_device_{};
+
+    std::optional<StagedSaveRule> staged_save_rule_{};
+    std::size_t staged_save_dirty_{0};
+    std::unique_ptr<Foundation::NBIO::ConditionVariable> staged_save_ready_{};
+    bool staged_save_loop_running_{false};
 };
 } // namespace KV

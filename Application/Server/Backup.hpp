@@ -79,7 +79,7 @@ class Backup
         }
 
         // Writes a snapshot of `entries` to the RDB path in this process, on the
-        // calling thread: the store is serialised where the server runs, so
+        // calling thread: the store is serialized where the server runs, so
         // nothing else happens there until the image is written. That is the
         // difference between this and the save that forks, and the reason to ask
         // for one rather than the other.

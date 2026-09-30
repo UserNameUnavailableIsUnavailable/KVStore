@@ -14,9 +14,21 @@ SystemTimerChannel::~SystemTimerChannel() noexcept
     multiplexer_.delete_channel(this);
 }
 
-void SystemTimerChannel::park(Async::Coroutine coroutine_view, std::chrono::steady_clock::time_point due)
+void SystemTimerChannel::park(Async::Coroutine coroutine, std::chrono::steady_clock::time_point due)
 {
-    queue_.emplace(coroutine_view, due);
+    if (due <= std::chrono::steady_clock::now())
+    {
+        const bool was_empty = immediate_queue_.empty();
+        immediate_queue_.push(std::move(coroutine));
+        if (was_empty)
+        {
+            timer_.fire_after(std::chrono::nanoseconds{1});
+            arm();
+        }
+        return;
+    }
+
+    queue_.emplace(coroutine, due);
     timer_.fire_at(queue_.top().timepoint);
 }
 
@@ -27,12 +39,36 @@ Payload &SystemTimerChannel::submit()
 
 bool SystemTimerChannel::remove(Async::Coroutine coroutine_view)
 {
-    const bool removed = queue_.remove_if([&](const detail::SystemTimerEntry &entry) {
+    bool removed_immediate = false;
+    std::queue<Async::Coroutine> filtered_immediate;
+    while (!immediate_queue_.empty())
+    {
+        auto current = std::move(immediate_queue_.front());
+        immediate_queue_.pop();
+        if (current.handle == coroutine_view.handle)
+        {
+            removed_immediate = true;
+            continue;
+        }
+        filtered_immediate.push(std::move(current));
+    }
+    immediate_queue_ = std::move(filtered_immediate);
+
+    const bool removed_delayed = queue_.remove_if([&](const detail::SystemTimerEntry &entry) {
         return entry.coroutine_view.handle == coroutine_view.handle;
     });
+    const bool removed = removed_immediate || removed_delayed;
     if (removed)
     {
-        if (queue_.is_empty())
+        if (!immediate_queue_.empty())
+        {
+            if (!armed())
+            {
+                arm();
+            }
+            timer_.fire_after(std::chrono::nanoseconds{1});
+        }
+        else if (queue_.is_empty())
         {
             timer_.cancel();
             if (armed())
@@ -71,6 +107,12 @@ void SystemTimerChannel::complete()
         auto& cv = top.coroutine_view;
         scheduler_.submit(std::move(cv));
         queue_.pop();
+    }
+
+    while (!immediate_queue_.empty())
+    {
+        scheduler_.submit(std::move(immediate_queue_.front()));
+        immediate_queue_.pop();
     }
 
     if (!queue_.is_empty())

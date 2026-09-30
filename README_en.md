@@ -10,7 +10,7 @@ writes reach the replicas as they happen.
 
 ### System and toolchain
 
-- **Operating system**: Linux (x86-64). The server, replication and the io_uring backend
+- **Operating system**: Linux (kernel version >= 5.2. 6.0 and higher are recommended for full io_uring features). The server, replication and the io_uring backend
   all sit behind `#if defined(__linux__)`; on other platforms only part of `Foundation`
   compiles.
 - **CMake ≥ 3.20** (declared at the top of `CMakeLists.txt`; 4.2.3 on the development
@@ -141,42 +141,12 @@ config rdma_device siw0
 
 ## Benchmarking
 
-The C++ benchmarks stay out of the default build; turn them on when configuring:
+`benchmark/` contains benchmark scripts and results.
 
-```bash
-export KVSTORE_RDMA_ADDRESS=192.168.0.201
-export KVSTORE_RDMA_DEVICE=siw2
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKVSTORE_BUILD_BENCHMARKS=ON
-cmake --build build --target RdmaFileBenchmark
-./build/Foundation/NBIO/benchmark/Release/RdmaFileBenchmark
-```
-
-`RdmaFileBenchmark` measures the RDMA link itself, on the NBIO channels the replication link
-is built from, with both ends in one process on two engines in two threads: one connector,
-one accepted connection, 1 GiB of random bytes by default, and a throughput reported by each
-end. `--size` is the payload in bytes, `--file` reads it from disk instead, `--multiplexer`
-chooses epoll or io_uring, and `--port` names the port (0 asks for a free one). The message
-size is not an option: it is the resource manager's chunk size, which is what a send is handed
-and what a receive lands in.
-
-The sender keeps its uncredited messages inside the receiver's posted receives -- the same
-window the replication link runs on -- because a message that arrives with no receive posted
-is not queued and not refused: the queue pair is torn down with `RNR_RETRY_EXC_ERR`. A run
-that stalls exits with a report of how far each end got rather than hanging. The Python
-scripts under `benchmark/` benchmark the whole server, and their numbers live in
-`benchmark/result.md`.
-
-Things that catch people out:
-
-- The address in `--replication-ip` / `config replication_address` has to be the **RDMA
-  device's own address**. A wildcard such as `0.0.0.0` binds no device, and the server
-  refuses to start rather than come up unable to serve replicas.
-- Two instances on one machine cannot share a client port (both default to 8080).
-- A replica is read-only to its clients — writes get `-READONLY` — while the writes its
-  master sends are applied as they arrive. Which master it follows is named at runtime by
-  `SLAVEOF <ip> <port>`, not by the command line or the file.
-- Snapshots and the AOF are written to the process's working directory: `dump.rdb`,
-  `appendonly.aof`. Two instances that share a directory share those files.
+| Benchmark | Script | Results |
+| --- | --- | --- |
+| Throughput under `redis-benchmark`: multiplexer comparison, pipeline depth (against Redis), AOF, periodic backup | `benchmark/pipeline.sh` and friends | [`benchmark/RSP.md`](benchmark/RSP.md) |
+| Memory: RSS and reuse across repeated insert/remove cycles, against no pooling, custom pooling and jemalloc | `benchmark/memory.py` | [`benchmark/memory.md`](benchmark/memory.md) |
 
 ## Documentation
 

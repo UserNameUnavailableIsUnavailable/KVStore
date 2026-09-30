@@ -5,7 +5,6 @@
 #include <charconv>
 #include <concepts>
 #include <cstring>
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -572,7 +571,7 @@ void ExpandObject(std::vector<EncodeFrame> &frames, const Object &object)
             }
             else if constexpr (std::same_as<Type, VerbatimString>)
             {
-                PushOwnedBulk(frames, '=', value.format + ":" + value.value);
+                PushOwnedBulk(frames, '=', std::string(value.format).append(":").append(value.value));
             }
             else if constexpr (std::same_as<Type, Array>)
             {
