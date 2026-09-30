@@ -16,36 +16,9 @@
 
 namespace Foundation::NBIO
 {
-// Bytes over an RDMA session, which on its own is a bag of fixed-size chunks.
-//
-// The session stays what it is -- take a chunk, hand it to the device, take one back
-// -- and this is the layer that gives those chunks a shape and a flow: it frames what
-// it sends as RdmaPackets, numbers them, tells the peer what it has finished with, and
-// holds its own sends inside what the peer said it could take. Above it, a payload is
-// just bytes, so the replication link can put RESP in it and stop worrying about
-// packets.
-//
-// It owns the session, because a link with acknowledgements on it cannot be driven
-// from both ends at once: an ack arrives while a sender is waiting for room, and only
-// one coroutine may own the receive channel. So the reader is this service's own --
-// it takes packets off the session, files the acks into the window and puts the
-// payloads on a queue -- and everything a caller does goes through send(), receive()
-// and release().
-//
-// The one rule worth knowing before reading the code: an acknowledgement means the
-// buffers are *back*, not that the bytes were seen. A receiver that acked on arrival
-// would let a sender refill a queue whose chunks its consumer has not released, and
-// the receive pool would run dry under the peer's sends -- which is the queue pair
-// being torn down with RNR_RETRY_EXC_ERR, the failure this whole arrangement exists to
-// avoid. So an ack is sent when a payload is released, and what it acknowledges is the
-// highest packet whose payload has been released.
 class RdmaDeliverService final : public std::enable_shared_from_this<RdmaDeliverService>
 {
   public:
-    // What this end can take. The chunk size is the manager's, header included, so the
-    // payload a packet carries is that less the header; the count is how many chunks
-    // the receive pool holds, which is therefore also how many packets the peer may
-    // have in flight at once.
     struct Layout
     {
         std::uint64_t chunk_size{0};
@@ -115,6 +88,8 @@ class RdmaDeliverService final : public std::enable_shared_from_this<RdmaDeliver
     {
         return taken_;
     }
+
+
 
   private:
     // Everything one packet's worth: the header it arrived with, and the payload

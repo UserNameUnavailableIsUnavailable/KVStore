@@ -1,4 +1,3 @@
-#include <stdexcept>
 #include <Foundation/NBIO/Runtime.hpp>
 
 #include "Receiver.hpp"

@@ -74,6 +74,13 @@ they are:
   on. A file has to name it because the choice is made before the server accepts
   anything, not because the choice cannot be changed.
 
+  `save` is also writable at runtime, and it is **not** the `SAVE` command.
+  `CONFIG SET save <seconds> <changed>` enables staged background snapshots: once
+  the server has seen at least `<changed>` mutating commands, it runs `BGSAVE` as
+  soon as `<seconds>` have elapsed since the last snapshot. When `<seconds>` is
+  `0`, the snapshot starts immediately after the change threshold is reached.
+  `CONFIG GET save` returns the current pair.
+
   Everywhere else the rule is one setting, one line. A second line for the same
   setting overrides the first, a flag given on the command line overrides both and
   says so when it does, and a value nobody named falls back to the default (`port`
@@ -89,7 +96,8 @@ they are:
   `CONFIG GET` still answers with what the server decided, so the settings are
   readable even though they are not writable: `CONFIG GET port`,
   `CONFIG GET replication_address` and `CONFIG GET rdma_device` return the values
-  this instance was built with.
+  this instance was built with, and `CONFIG GET save` returns the staged-save
+  rule if one has been set.
 - Which master an instance follows is **not** a setting, and there is no
   `replicaof` line: a master is named by `SLAVEOF <ip> <port>`, which a client
   sends once the server is answering, and which can therefore be sent to a server

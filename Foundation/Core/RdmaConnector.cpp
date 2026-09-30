@@ -26,6 +26,16 @@ std::string Failing(std::string_view what)
     return std::string{ what } + ": " + ::strerror(errno);
 }
 
+std::string DescribeCmEvent(const ::rdma_cm_event &event)
+{
+    std::string description = ::rdma_event_str(event.event);
+    if (event.status != 0)
+    {
+        description += " (status=" + std::to_string(event.status) + ")";
+    }
+    return description;
+}
+
 // Waits for one event on a connection's own channel. The channels a connection
 // owns are non-blocking, because an event loop may be watching them, so this polls
 // the fd and then takes the event rather than blocking inside rdma_get_cm_event.
@@ -759,11 +769,12 @@ expected<void, std::string> RdmaConnector::await_established() noexcept
     {
         return unexpected(event.error());
     }
+    const auto description = DescribeCmEvent(*(*event));
     const bool established = (*event)->event == RDMA_CM_EVENT_ESTABLISHED;
     ::rdma_ack_cm_event(*event);
     if (!established) [[unlikely]]
     {
-        return unexpected(std::string{ "The RDMA connection was not established" });
+        return unexpected(std::string{ "The RDMA connection was not established: " } + description);
     }
     return {};
 }
@@ -778,10 +789,11 @@ expected<void, std::string> RdmaConnector::connect(SocketAddress peer) noexcept
             return unexpected(event.error());
         }
         const auto received = (*event)->event;
+        const auto description = DescribeCmEvent(*(*event));
         ::rdma_ack_cm_event(*event);
         if (received != wanted)
         {
-            return unexpected(std::string{ "Unexpected RDMA CM event: " } + ::rdma_event_str(received));
+            return unexpected(std::string{ "Unexpected RDMA CM event: " } + description);
         }
         return {};
     };

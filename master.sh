@@ -1,2 +1,3 @@
 #!/bin/sh
-./build/Application/Server/Release/Server --config ./configs/master.conf --multiplexer epoll
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+${SCRIPT_ROOT}/../build/Application/Server/Release/Server --config ./configs/master.conf --multiplexer epoll

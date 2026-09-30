@@ -28,3 +28,15 @@ target_link_libraries(
     Foundation
     CLI11::CLI11
 )
+
+add_executable(
+    RdmaDeliverBenchmark
+    RdmaDeliverBenchmark.cpp
+)
+
+target_link_libraries(
+    RdmaDeliverBenchmark
+    PRIVATE
+    Foundation
+    CLI11::CLI11
+)

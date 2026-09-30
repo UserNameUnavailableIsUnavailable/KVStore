@@ -8,6 +8,10 @@
 #include <Windows.h>
 #endif
 
+#if defined(__linux__)
+#include <sys/timerfd.h>
+#endif
+
 namespace Foundation::Core
 {
 class SystemTimer
