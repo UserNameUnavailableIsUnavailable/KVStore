@@ -19,54 +19,77 @@ class Scheduler;
 // object itself still lives inside that very frame.
 struct Promise
 {
+    // Idiomatic symmetric transfer.
+    // Coroutines can be chained like: root -> children.
+    // A descendant has to return control back to its ancestor so the ancestor can continue from where it suspends. This is called symmetric transfer.
+    struct FinalAwaiter;
+
+    // The timing of initial_suspend():
+    // 1. create a frame;
+    // 2. copies the parameters into the frame;
+    // 3. construct the promise object;
+    // 4. calls `initial_suspend()`;
+    // 5. if `initial_suspend()` returns `suspend_never`, the coroutine body is run immediately even if it is not awaited; if it returns `suspend_always`, the Task object will be returned to the caller.
+    // CAVEAT: The caller must explicitly run a coroutine.
+
+    // Error-prone code:
+    // Something* something_ptr{ nullptr };
+    // auto task = CreateTask(something_ptr); // runs immediately if we return `suspend_never`
+    // auto something = GetSomething();
+    // something_ptr = &something;
+
+    // LAZY: the coroutine body does not run until the Task is explicitly `co_await`ed.
+    // This guarantees the Task object fully constructed before any body
+    // code runs, so exceptions and lifetime have a well-defined home.
+    std::suspend_always initial_suspend() noexcept
+    {
+        return {};
+    }
+    
+    // `final_suspend` controls the behavior when the current coroutine exits.
+    // By returning a FinalAwaiter, we transfer the control back to the descendant's ancestor.
+    FinalAwaiter final_suspend() noexcept
+    {
+        return {};
+    }
+
+    std::coroutine_handle<> continuation{}; // The descendant
+    
+    // The root coroutine holds a non-empty control block and is responsible for `finish()` the coroutine before it exits.
+    // `control_block->finish();` schedules a reclaimation of the coroutine chain.
+    // ALL descendants have empty control block pointer.
+    CoroutineControlBlock *control_block = nullptr; // The control block of the entire coroutine chain.
+
     struct FinalAwaiter
     {
         bool await_ready() noexcept
         {
             return false;
         }
-        // Returns the continuation instead of calling .resume() on it, so the
-        // compiler emits a tail call.
+
         template <typename PromiseType>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<PromiseType> me) noexcept
         {
             auto &promise = me.promise();
             auto continuation = promise.continuation;
-            // No continuation means this frame is the root of its tree. Children
-            // always have one, and since the block is propagated down the await
-            // chain they carry a non-null block too -- so identity, not the
-            // presence of a block, is what distinguishes a root here.
             auto *control_block = promise.control_block;
+            
+            // identify whether I AM the root coroutine
             if (!continuation && control_block != nullptr && control_block->root.address() == me.address())
             {
-                // The tree is over. This is the notification the scheduler waits for; it
-                // only takes the block out of the registry (see Scheduler::reclaim), it
-                // does not destroy the frame -- this very frame is still running, and
-                // `this` still lives inside it.
+                // The chain is over. This is the notification the scheduler waits for; it
+                // only takes the block out of the registry (see `Scheduler::reclaim()`), it
+                // does not destroy the frame at once -- this very frame is kept alive until the last one holding the control block releases it.
+                // This avoids UAF.
                 control_block->finish();
             }
+            // If there is no continuation, transfer to noop_coroutine, which releases everything properly for us.
             return continuation ? continuation : std::noop_coroutine();
         }
         void await_resume() noexcept
         {
         }
     };
-
-    // Lazy: the coroutine body does not run until the Task is co_awaited (or
-    // run()ed). This keeps the Task object fully constructed before any body
-    // code runs, so exceptions and lifetime have a well-defined home.
-    std::suspend_always initial_suspend() noexcept
-    {
-        return {};
-    }
-
-    FinalAwaiter final_suspend() noexcept
-    {
-        return {};
-    }
-
-    std::coroutine_handle<> continuation{};
-    CoroutineControlBlock *control_block = nullptr;
 };
 
 template <typename RuntimeTag, typename T> class Task
@@ -78,7 +101,6 @@ template <typename RuntimeTag, typename T> class Task
         // the caller's, so a cross-runtime co_await is a compile error rather
         // than the callee running on the wrong thread.
         using Runtime = RuntimeTag;
-
 
         std::variant<std::monostate, T, std::exception_ptr> result_;
 
@@ -192,6 +214,11 @@ template <typename RuntimeTag, typename T> class Task
         }
     };
 
+    // Task is non-reentrant, meaning it is designed for single-use, so it needs to be `&&`.
+    // Imagine if a lvalue is allowed, then the user is allowed to do something like this:
+    // auto task = CreateTask();
+    // co_await task; // the coroutine frame will be destroyed
+    // co_await task; // use after free!
     Awaiter operator co_await() && noexcept
     {
         return Awaiter{get_typed_handle()};
