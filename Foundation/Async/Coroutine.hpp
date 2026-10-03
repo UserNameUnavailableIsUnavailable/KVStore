@@ -19,14 +19,6 @@ enum class JoinStatus
     kCancelled, // the tree was cancelled first
 };
 
-// A handle on a coroutine that someone put aside: a channel holding its parked
-// waiter, a combinator holding the frame it means to resume.
-//
-// The block is held weakly, and that is the point. The scheduler's registry owns the
-// block, the block owns the frames, so `lock()` stops succeeding exactly when the
-// coroutine is over *and* its frames are gone: no holder can keep a finished
-// coroutine -- or the service those frames were holding -- alive by holding a
-// Coroutine.
 struct Coroutine
 {
     std::coroutine_handle<> handle{};
