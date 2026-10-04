@@ -7,14 +7,14 @@
 #include <Application/RESP/RESP.hpp>
 #include <Application/RESP/Receiver.hpp>
 #include <Application/RESP/Sender.hpp>
-#include <NBIO/Async/Async.hpp>
-#include <NBIO/Utility/Buffer.hpp>
-#include <NBIO/Core/EpollMultiplexer.hpp>
-#include <NBIO/Core/Multiplexer.hpp>
-#include <NBIO/NBIO.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
-#include <NBIO/Core/Types.hpp>
-#include <NBIO/Core/URingMultiplexer.hpp>
+#include <nbio/async/Async.hpp>
+#include <nbio/utility/Buffer.hpp>
+#include <nbio/core/EpollMultiplexer.hpp>
+#include <nbio/core/Multiplexer.hpp>
+#include <nbio/nbio.hpp>
+#include <nbio/runtime/Runtime.hpp>
+#include <nbio/core/Types.hpp>
+#include <nbio/core/URingMultiplexer.hpp>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -72,7 +72,7 @@ void Server::run(const ServerOptions& options) {
                         ServerOptions::kDefaultReplicationPort);
     const std::string replication_address =
         detail::Resolve("replication-ip", options.replication_address, declared.replication_address,
-                        std::string{ServerOptions::kDefaultReplicationSocketAddress});
+                        std::string{ServerOptions::kDefaultReplicationAddress});
     const std::string rdma_device =
         detail::Resolve("rdma-device", options.rdma_device, declared.rdma_device, std::string{});
 
@@ -104,7 +104,7 @@ void Server::run(const ServerOptions& options) {
         .link_changed =
             [](bool up) { spdlog::info("replication: {}", up ? "the master is up" : "the master went away"); },
     };
-    staged_save_ready_ = std::make_unique<NBIO::Notification::ConditionVariable>();
+    staged_save_ready_ = std::make_unique<nbio::notification::ConditionVariable>();
 
     if (keep_log && !aof_.enable()) {
         throw std::runtime_error("failed to open the append-only file");
@@ -113,26 +113,26 @@ void Server::run(const ServerOptions& options) {
     replication_ = std::make_unique<ReplicationService>(std::move(replication_options), std::move(host));
 
     if (replication_->is_master()) {
-        NBIO::spawn(replication_->serve());
+        nbio::Spawn(replication_->serve());
     }
 
-    NBIO::run(serve(port, std::move(commands)));
+    nbio::run(serve(port, std::move(commands)));
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> Server::serve(std::uint16_t port, std::vector<CommandLine> commands) {
+nbio::async::Task<nbio::runtime, void> Server::serve(std::uint16_t port, std::vector<CommandLine> commands) {
     // The commands go first: a server that is answering clients is a server that
     // has decided how it is configured.
     co_await apply_commands(std::move(commands));
 
     try {
-        co_await serve(NBIO::Net::SocketAddress::from_v4("0.0.0.0", port));
+        co_await serve(nbio::net::Address::FromV4("0.0.0.0", port));
     } catch (const std::exception& error) {
         spdlog::error("server stopped: {}", error.what());
         std::exit(EXIT_FAILURE);
     }
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> Server::apply_commands(std::vector<CommandLine> commands) {
+nbio::async::Task<nbio::runtime, void> Server::apply_commands(std::vector<CommandLine> commands) {
     for (const CommandLine& line : commands) {
         const KV::CommandValidation validation = KV::ValidateCommand(CommandRequest(line));
         if (!validation) {
@@ -151,16 +151,16 @@ NBIO::Async::Task<NBIO::Runtime, void> Server::apply_commands(std::vector<Comman
     }
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> Server::serve(const NBIO::Net::SocketAddress& address) {
+nbio::async::Task<nbio::runtime, void> Server::serve(const nbio::net::Address& address) {
     // The listener lives here, in the frame of the loop that uses it, because the
     // accept channel keeps a reference to the acceptor it waits on.
-    NBIO::Net::TcpAcceptService listener{address};
+    nbio::net::TcpAcceptService listener{address};
     co_await accept_clients(listener);
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> Server::accept_clients(NBIO::Net::TcpAcceptService& listener) {
+nbio::async::Task<nbio::runtime, void> Server::accept_clients(nbio::net::TcpAcceptService& listener) {
     while (true) {
-        auto accepted = co_await listener.accept();
+        auto accepted = co_await listener.Accept();
         if (!accepted) {
             continue;
         }
@@ -168,7 +168,7 @@ NBIO::Async::Task<NBIO::Runtime, void> Server::accept_clients(NBIO::Net::TcpAcce
         // from here, and the address it came from -- which nothing on this side can
         // know, because the other end chose it.
         auto connection = std::move(*accepted);
-        NBIO::spawn(serve_client(std::make_shared<TcpSessionService>(std::move(connection.first))));
+        nbio::Spawn(serve_client(std::make_shared<TcpSessionService>(std::move(connection.first))));
     }
 }
 
@@ -180,21 +180,21 @@ namespace {
 constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
 }  // namespace
 
-NBIO::Async::Task<NBIO::Runtime, void> Server::serve_client(std::shared_ptr<TcpSessionService> session) {
+nbio::async::Task<nbio::runtime, void> Server::serve_client(std::shared_ptr<TcpSessionService> session) {
     // A pipeline can hold more than one command, and a single command can be
     // larger than a socket read, so the receive buffer starts roomy and is
     // allowed to grow: the decoder needs the whole command before it can hand
     // one over. The send buffer holds the replies of one batch, which is what a
     // pipeline is answered with, so it grows to the size of that batch.
-    auto recv_buffer = std::make_unique<::NBIO::Utility::Buffer>(64U * 1024U, 16U * 1024U * 1024U);
-    auto send_buffer = std::make_unique<::NBIO::Utility::Buffer>(16U * 1024U, 16U * 1024U * 1024U);
+    auto recv_buffer = std::make_unique<::nbio::utility::Buffer>(64U * 1024U, 16U * 1024U * 1024U);
+    auto send_buffer = std::make_unique<::nbio::utility::Buffer>(16U * 1024U, 16U * 1024U * 1024U);
 
     RESP::Receiver receiver(session->transport(), *recv_buffer);
     while (true) {
         // Waiting for input is the only place this coroutine blocks, and it never
         // does so with replies still in hand: what the client has already sent is
         // answered first.
-        auto command = co_await receiver.receive_command();
+        auto command = co_await receiver.ReceiveCommand();
         if (receiver.no_command()) {
             // A line with no command on it: nothing is owed to the client for
             // it, and the connection stays up for the command that follows.
@@ -206,10 +206,10 @@ NBIO::Async::Task<NBIO::Runtime, void> Server::serve_client(std::shared_ptr<TcpS
                 // The bytes that did not parse are already dropped, so the
                 // commands behind them are still decodable: the client is told
                 // and the connection goes on.
-                (void)co_await sender.send(RESP::Object(RESP::SimpleError{.value = receiver.decode_error()}));
+                (void)co_await sender.Send(RESP::Object(RESP::SimpleError{.value = receiver.decode_error()}));
                 continue;
             }
-            (void)co_await sender.send(RESP::Object(RESP::SimpleError{.value = "internal error"}));
+            (void)co_await sender.Send(RESP::Object(RESP::SimpleError{.value = "internal error"}));
             co_return;
         }
 
@@ -235,25 +235,25 @@ NBIO::Async::Task<NBIO::Runtime, void> Server::serve_client(std::shared_ptr<TcpS
                     answered = detail::Error(validation.error);
                 }
             }
-            sender.append(*answered);
-            if (sender.pending() >= kReplyBatchBytes) {
-                if (!co_await sender.flush()) {
+            sender.Append(*answered);
+            if (sender.Pending() >= kReplyBatchBytes) {
+                if (!co_await sender.Flush()) {
                     co_return;
                 }
             }
 
-            auto next = receiver.try_receive_command();
+            auto next = receiver.TryReceiveCommand();
             if (next) {
                 command = std::move(next);
                 continue;
             }
             if (!receiver.decode_error().empty()) {
-                sender.append(RESP::Object(RESP::SimpleError{.value = receiver.decode_error()}));
+                sender.Append(RESP::Object(RESP::SimpleError{.value = receiver.decode_error()}));
             }
             break;
         }
 
-        if (!co_await sender.flush()) {
+        if (!co_await sender.Flush()) {
             co_return;
         }
     }
@@ -282,7 +282,7 @@ std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view
     return RESP::Object(RESP::BulkString{.value = store_.get(session.lookup_key)});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::dispatch(TcpSessionService& session, KV::Command command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::dispatch(TcpSessionService& session, KV::Command command) {
     if (command.type == KV::CommandType::kMulti) {
         if (session.is_multi) {
             co_return detail::Error("ERR MULTI calls can not be nested");
@@ -310,7 +310,7 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::dispatch(TcpSessionServic
     co_return co_await execute(command);
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute(const KV::Command& command) {
     if (replica_read_only_ && KV::IsWriteCommand(command.type)) {
         co_return detail::Error("READONLY You can't write against a read only replica.");
     }
@@ -381,24 +381,24 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute(const KV::Command
     co_return response;
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_ping(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_ping(const KV::Command& command) {
     (void)command;
     co_return RESP::Object(RESP::SimpleString{.value = "PONG"});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_get(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_get(const KV::Command& command) {
     const auto& get = std::get<KV::GetParams>(command.parameters);
     co_return RESP::Object(RESP::BulkString{.value = store_.get(get.key)});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_set(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_set(const KV::Command& command) {
     const auto& set = std::get<KV::SetParams>(command.parameters);
     store_.set(set.key, set.value);
     note_write();
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_del(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_del(const KV::Command& command) {
     const auto& del = std::get<KV::DelParams>(command.parameters);
     const bool exists = store_.contains(del.key);
     store_.set(del.key, std::nullopt);
@@ -406,12 +406,12 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_del(const KV::Com
     co_return RESP::Object(RESP::Integer{.value = exists ? 1 : 0});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_exists(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_exists(const KV::Command& command) {
     const auto& exists = std::get<KV::ExistsParams>(command.parameters);
     co_return RESP::Object(RESP::Boolean{.value = store_.contains(exists.key)});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_dbsize(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_dbsize(const KV::Command& command) {
     (void)command;
     // The count in the index, like Redis, and not a walk that would also drop the
     // keys whose TTL has passed on the way -- a size query does not get to cost
@@ -422,8 +422,8 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_dbsize(const KV::
 
 // `SLAVEOF <ip> <port>`, the one command that changes what this instance is:
 // from here it is a replica, and a replica refuses its own clients' writes. The
-// address is the master's RDMA address, not the TCP one it answers clients on.
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_slaveof(const KV::Command& command) {
+// address is the master's rdma address, not the TCP one it answers clients on.
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_slaveof(const KV::Command& command) {
     const auto& slaveof = std::get<KV::SlaveOfParams>(command.parameters);
 
     if (replication_ == nullptr) [[unlikely]] {
@@ -433,13 +433,13 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_slaveof(const KV:
         co_return RESP::Object(RESP::SimpleError{.value = "ERR this instance already follows a master"});
     }
 
-    const NBIO::Net::SocketAddress master =
-        NBIO::Net::SocketAddress::from_v4(slaveof.address, slaveof.port);
+    const nbio::net::Address master =
+        nbio::net::Address::FromV4(slaveof.address, slaveof.port);
     if (!replication_->slave_of(master)) [[unlikely]] {
         // The one thing that can stop it here is the device, and the service has
         // already said which option names it.
         co_return RESP::Object(
-            RESP::SimpleError{.value = "ERR replication needs an RDMA device; start the server with one"});
+            RESP::SimpleError{.value = "ERR replication needs an rdma device; start the server with one"});
     }
 
     // Read-only from here, whether or not the link is up yet: what this
@@ -528,19 +528,19 @@ std::optional<std::string> Server::config_value(const std::string& parameter) co
     return std::nullopt;
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_command_info(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_command_info(const KV::Command& command) {
     (void)command;
     // No command metadata to publish. An empty array is a well-formed answer,
     // which is all redis-cli needs to stop reporting the probe as an error.
     co_return RESP::Object(RESP::Array{});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_info(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_info(const KV::Command& command) {
     (void)command;
     co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_client(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_client(const KV::Command& command) {
     const auto& client = std::get<KV::ClientParams>(command.parameters);
 
     // The handshake subcommands have to succeed. A client announces itself with
@@ -563,7 +563,7 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_client(const KV::
     co_return RESP::Object(RESP::BulkString{.value = std::string{}});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_config(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_config(const KV::Command& command) {
     const auto& config = std::get<KV::ConfigParams>(command.parameters);
 
     if (config.values.empty()) {
@@ -618,7 +618,7 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_config(const KV::
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_bgsave(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_bgsave(const KV::Command& command) {
     (void)command;
     if (!co_await backup_.save(store_)) {
         co_return detail::Error("ERR failed to save RDB snapshot");
@@ -627,7 +627,7 @@ NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_bgsave(const KV::
     co_return RESP::Object(RESP::SimpleString{.value = "Background saving started"});
 }
 
-NBIO::Async::Task<NBIO::Runtime, RESP::Object> Server::execute_save(const KV::Command& command) {
+nbio::async::Task<nbio::runtime, RESP::Object> Server::execute_save(const KV::Command& command) {
     (void)command;
     // The image is written in this process, so this frame's thread -- the one the
     // event loop runs on -- is busy until the file is in place. That is what SAVE
@@ -647,7 +647,7 @@ void Server::note_write() {
 
     ++staged_save_dirty_;
     if (staged_save_dirty_ == staged_save_rule_->changed) {
-        staged_save_ready_->notify_one();
+        staged_save_ready_->NotifyOne();
     }
 }
 
@@ -663,16 +663,16 @@ void Server::maybe_start_staged_save() {
     }
 
     staged_save_loop_running_ = true;
-    NBIO::spawn(staged_save_periodic());
+    nbio::Spawn(staged_save_periodic());
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> Server::staged_save_periodic() {
+nbio::async::Task<nbio::runtime, void> Server::staged_save_periodic() {
     while (staged_save_rule_) {
         const auto rule = *staged_save_rule_;
-        auto timeout = NBIO::Time::SystemTimeService{}.sleep(rule.seconds);
+        auto timeout = nbio::time::SystemTimeService{}.sleep(rule.seconds);
         auto ready = staged_save_ready_->wait(
             [this, expected = rule.changed] { return !staged_save_rule_ || staged_save_dirty_ >= expected; });
-        co_await NBIO::Async::when_all(std::move(timeout), std::move(ready));
+        co_await nbio::async::WhenAll(std::move(timeout), std::move(ready));
 
         if (!staged_save_rule_) {
             break;

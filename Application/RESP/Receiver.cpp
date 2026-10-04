@@ -1,10 +1,10 @@
 #include "Receiver.hpp"
 
 #include <Application/RESP/RESP.hpp>
-#include <NBIO/Utility/Buffer.hpp>
-#include <NBIO/Net/TcpSocket.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
-#include <NBIO/Net/TcpSessionService.hpp>
+#include <nbio/utility/Buffer.hpp>
+#include <nbio/net/TcpSocket.hpp>
+#include <nbio/runtime/Runtime.hpp>
+#include <nbio/net/TcpSessionService.hpp>
 
 namespace RESP {
 namespace {
@@ -15,7 +15,7 @@ namespace {
 constexpr std::size_t kReadHeadroom = 16U * 1024U;
 }  // namespace
 
-Receiver::Receiver(NBIO::Net::TcpSessionService& session, ::NBIO::Utility::Buffer& buffer)
+Receiver::Receiver(nbio::net::TcpSessionService& session, ::nbio::utility::Buffer& buffer)
     : session_(session), buffer_(buffer) {}
 
 Receiver::~Receiver() noexcept = default;
@@ -27,14 +27,14 @@ Decoder& Receiver::decoder() {
     return *pending_;
 }
 
-NBIO::Async::Task<NBIO::Runtime, std::optional<Object>> Receiver::receive() {
+nbio::async::Task<nbio::runtime, std::optional<Object>> Receiver::Receive() {
     // The buffer belongs to the connection, not to this call. Whatever a
     // previous command left behind -- the rest of a pipeline, usually -- is
     // decoded before another read happens, so a client that sends its commands
     // back to back gets an answer to every one of them instead of having all but
     // the first dropped.
     no_command_ = false;
-    release();
+    Release();
     // A client may speak either dialect: a benchmark's PING_INLINE test writes a
     // line where a RESP client would write a multi-bulk.
     while (decoder().poll() == DecodeStatus::kNeedInput) {
@@ -46,7 +46,7 @@ NBIO::Async::Task<NBIO::Runtime, std::optional<Object>> Receiver::receive() {
             co_return {};
         }
 
-        auto result = co_await session_.receive(buffer_.writable_span());
+        auto result = co_await session_.Receive(buffer_.writable_span());
         if (!result) {
             interal_error_ = result.error().message();
             co_return {};
@@ -61,32 +61,32 @@ NBIO::Async::Task<NBIO::Runtime, std::optional<Object>> Receiver::receive() {
         buffer_.commit(*result);
     }
 
-    auto object = finish(decoder().result());
+    auto object = Finish(decoder().result());
     pending_.reset();
     co_return object;
 }
 
-std::optional<Object> Receiver::try_receive() {
+std::optional<Object> Receiver::TryReceive() {
     // Only what is already here: no read, no wait. The caller that answers a
     // pipeline in one write asks this until it says there is nothing complete
-    // left, and so never parks with replies still in hand. A command that is only
+    // left, and so never Parks with replies still in hand. A command that is only
     // half here stays half-decoded until the rest arrives.
     no_command_ = false;
-    release();
+    Release();
     if (decoder().poll() == DecodeStatus::kNeedInput) {
         return std::nullopt;
     }
-    auto object = finish(decoder().result());
+    auto object = Finish(decoder().result());
     pending_.reset();
     return object;
 }
 
-void Receiver::release() {
+void Receiver::Release() {
     buffer_.consume(borrowed_);
     borrowed_ = 0;
 }
 
-std::optional<Receiver::Command> Receiver::take() {
+std::optional<Receiver::Command> Receiver::Take() {
     // The decoder reads the buffer as it goes: once it has started on a command,
     // the bytes of that command are not at the front of the buffer any more, so a
     // scan started now would begin in the middle of one and read its arguments as
@@ -115,7 +115,7 @@ std::optional<Receiver::Command> Receiver::take() {
     if (decoder().poll() == DecodeStatus::kNeedInput) {
         return std::nullopt;
     }
-    auto object = finish(decoder().result());
+    auto object = Finish(decoder().result());
     pending_.reset();
     if (!object) {
         return std::nullopt;
@@ -123,16 +123,16 @@ std::optional<Receiver::Command> Receiver::take() {
     return Command{.words = {}, .object = std::move(object)};
 }
 
-NBIO::Async::Task<NBIO::Runtime, std::optional<Receiver::Command>> Receiver::receive_command() {
+nbio::async::Task<nbio::runtime, std::optional<Receiver::Command>> Receiver::ReceiveCommand() {
     no_command_ = false;
     // A protocol error is reported once: the caller was told what was wrong with
     // the bytes and the connection goes on, so the answer belongs to those bytes
     // and not to the command that comes after them.
     decode_error_.clear();
-    release();
+    Release();
 
     while (true) {
-        if (auto command = take()) {
+        if (auto command = Take()) {
             co_return command;
         }
         if (!decode_error_.empty() || no_command_ || !interal_error_.empty()) {
@@ -147,7 +147,7 @@ NBIO::Async::Task<NBIO::Runtime, std::optional<Receiver::Command>> Receiver::rec
             co_return std::nullopt;
         }
 
-        auto result = co_await session_.receive(buffer_.writable_span());
+        auto result = co_await session_.Receive(buffer_.writable_span());
         if (!result) {
             interal_error_ = result.error().message();
             co_return std::nullopt;
@@ -163,14 +163,14 @@ NBIO::Async::Task<NBIO::Runtime, std::optional<Receiver::Command>> Receiver::rec
     }
 }
 
-std::optional<Receiver::Command> Receiver::try_receive_command() {
+std::optional<Receiver::Command> Receiver::TryReceiveCommand() {
     no_command_ = false;
     decode_error_.clear();
-    release();
-    return take();
+    Release();
+    return Take();
 }
 
-std::optional<Object> Receiver::finish(DecodeResult& decoded) {
+std::optional<Object> Receiver::Finish(DecodeResult& decoded) {
     if (decoded.status == DecodeStatus::kProtocolError) {
         // The bytes that did not parse are dropped: they cannot be retried, and
         // keeping them would make every later command fail on them too.

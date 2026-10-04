@@ -4,7 +4,7 @@
 template <typename C>
 class Channel {
    public:
-    auto submit() { return static_cast<C*>(this)->submit(); }
+    auto submit() { return static_cast<C*>(this)->Submit(); }
 };
 
 class DerivedChannel : public Channel<DerivedChannel> {
@@ -13,7 +13,7 @@ class DerivedChannel : public Channel<DerivedChannel> {
         int value;
     };
 
-    Payload& submit() { return payload_; }
+    Payload& Submit() { return payload_; }
 
    private:
     Payload payload_;

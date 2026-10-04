@@ -3,7 +3,7 @@
 Environment: 13900HX + 32GiB RAM
 
 ```bash
-redis-benchmark -t set,get -n 10000000 -h 127.0.0.1 -p 6666 -q
+redis-benchmark -t "set,get" -n 10000000 -h 127.0.0.1 -p 6666 -q
 ```
 
 ## Multiplexer
@@ -16,7 +16,7 @@ redis-benchmark -t set,get -n 10000000 -h 127.0.0.1 -p 6666 -q
 ## Pipeline
 
 KVStore (epoll and io_uring) against Redis, per pipeline depth `P`
-(`redis-benchmark -t set,get -n 10000000 -P <P> -q`, see `pipeline.sh`).
+(`redis-benchmark -t "set,get" -n 10000000 -P <P> -q`, see `pipeline.sh`).
 
 ### SET
 

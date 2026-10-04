@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Application/RESP/RESP.hpp>
-#include <NBIO/Net/SocketAddress.hpp>
+#include <nbio/net/Address.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>

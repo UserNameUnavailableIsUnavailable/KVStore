@@ -2,10 +2,10 @@
 
 #include <Application/Server/AppendOnlyFile.hpp>
 #include <Application/Server/Store.hpp>
-#include <NBIO/Async/Async.hpp>
-#include <NBIO/NBIO.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
-#include <NBIO/Core/URingMultiplexer.hpp>
+#include <nbio/async/Async.hpp>
+#include <nbio/nbio.hpp>
+#include <nbio/runtime/Runtime.hpp>
+#include <nbio/core/URingMultiplexer.hpp>
 #include <algorithm>
 #include <filesystem>
 #include <map>
@@ -51,7 +51,7 @@ KV::Command make_del(std::string key) {
 
 // One writer's share of the load: entries of its own, appended one after the
 // other, into a file the other writers are appending to as well.
-NBIO::Async::Task<NBIO::Runtime, void> append_entries(std::shared_ptr<KV::AppendOnlyFile> aof, std::size_t writer,
+nbio::async::Task<nbio::runtime, void> append_entries(std::shared_ptr<KV::AppendOnlyFile> aof, std::size_t writer,
                                             std::size_t count) {
     for (std::size_t index = 0; index < count; ++index) {
         const std::string suffix = std::to_string(writer) + ":" + std::to_string(index);
@@ -64,7 +64,7 @@ char value_byte(std::size_t writer, std::size_t index) { return static_cast<char
 // The same, with values large enough that the entry cannot be encoded into one
 // small buffer: an entry is the unit the log is made of, so it still has to reach
 // the file in one piece.
-NBIO::Async::Task<NBIO::Runtime, void> append_large_entries(std::shared_ptr<KV::AppendOnlyFile> aof, std::size_t writer,
+nbio::async::Task<nbio::runtime, void> append_large_entries(std::shared_ptr<KV::AppendOnlyFile> aof, std::size_t writer,
                                                   std::size_t count, std::size_t value_bytes) {
     for (std::size_t index = 0; index < count; ++index) {
         const std::string suffix = std::to_string(writer) + ":" + std::to_string(index);
@@ -81,23 +81,23 @@ void many_appends_one_log(const char* prefix) {
     constexpr std::size_t kEntriesPerWriter = 64;
 
     bool enabled = false;
-    NBIO::run([&]() -> NBIO::Async::Task<NBIO::Runtime, void> {
+    nbio::run([&]() -> nbio::async::Task<nbio::runtime, void> {
         auto aof = std::make_shared<KV::AppendOnlyFile>(temp_path);
         enabled = aof->enable();
         if (!enabled) {
             co_return;
         }
 
-        std::vector<NBIO::Async::CoroutineToken> writers;
+        std::vector<nbio::async::CoroutineToken> writers;
         writers.reserve(kWriters);
         for (std::size_t writer = 0; writer < kWriters; ++writer) {
-            writers.push_back(NBIO::spawn(append_entries(aof, writer, kEntriesPerWriter)));
+            writers.push_back(nbio::Spawn(append_entries(aof, writer, kEntriesPerWriter)));
         }
         // The test is not finished until every writer is. A writer whose only
         // reference was dropped by an overlap never runs again, so its join is
         // what turns that into a failing (hanging) test instead of a log that
         // simply has fewer entries in it.
-        for (const NBIO::Async::CoroutineToken& writer : writers) {
+        for (const nbio::async::CoroutineToken& writer : writers) {
             co_await writer;
         }
         co_return;
@@ -146,7 +146,7 @@ TEST(AppendOnlyFileTesting, SaveToggleAndReplay) {
     std::map<std::string, std::string> expected;
 
     bool ok = false;
-    NBIO::run([&]() -> NBIO::Async::Task<NBIO::Runtime, void> {
+    nbio::run([&]() -> nbio::async::Task<nbio::runtime, void> {
         KV::AppendOnlyFile aof(temp_path);
         ok = aof.enable();
         if (!ok) {
@@ -214,7 +214,7 @@ TEST(AppendOnlyFileTesting, SaveToggleAndReplay) {
 // Every client session appends to the same file, so on a busy server a dozen
 // appends are in flight at once. The file drives one write job on one channel,
 // and the offset a write lands at is read when that job is armed: an append that
-// parks while another is parked writes over its job and drops its coroutine -- a
+// Parks while another is Parked writes over its job and drops its coroutine -- a
 // session that never answers again, a control block the scheduler never
 // reclaims (the 'control block leaked' assertion), and a log left holding half
 // of one command followed by another.
@@ -224,7 +224,7 @@ TEST(AppendOnlyFileTesting, ConcurrentAppendsKeepTheLogWhole) { many_appends_one
 // load: several entries are submitted together, and one completion can finish
 // more than one of them.
 TEST(AppendOnlyFileTesting, ConcurrentAppendsKeepTheLogWholeOnURing) {
-    NBIO::initialize(std::make_unique<NBIO::Core::URingMultiplexer>());
+    nbio::initialize(std::make_unique<nbio::core::URingMultiplexer>());
     many_appends_one_log("kvstore-aof-concurrent-uring-");
 }
 
@@ -241,20 +241,20 @@ TEST(AppendOnlyFileTesting, ConcurrentLargeEntriesKeepTheLogWhole) {
     constexpr std::size_t kValueBytes = 256U * 1024U;
 
     bool enabled = false;
-    NBIO::run([&]() -> NBIO::Async::Task<NBIO::Runtime, void> {
+    nbio::run([&]() -> nbio::async::Task<nbio::runtime, void> {
         auto aof = std::make_shared<KV::AppendOnlyFile>(temp_path);
         enabled = aof->enable();
         if (!enabled) {
             co_return;
         }
 
-        std::vector<NBIO::Async::CoroutineToken> writers;
+        std::vector<nbio::async::CoroutineToken> writers;
         writers.reserve(kWriters);
         for (std::size_t writer = 0; writer < kWriters; ++writer) {
             writers.push_back(
-                NBIO::spawn(append_large_entries(aof, writer, kEntriesPerWriter, kValueBytes)));
+                nbio::Spawn(append_large_entries(aof, writer, kEntriesPerWriter, kValueBytes)));
         }
-        for (const NBIO::Async::CoroutineToken& writer : writers) {
+        for (const nbio::async::CoroutineToken& writer : writers) {
             co_await writer;
         }
         co_return;

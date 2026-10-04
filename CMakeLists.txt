@@ -29,7 +29,7 @@ find_package(spdlog CONFIG REQUIRED)
 # jemalloc can replace the process allocator: its archive defines malloc/free/
 # realloc and the C++ operator new/delete, so it is force-linked -- whole
 # archive -- because otherwise the linker would satisfy those from libc and the
-# archive would contribute nothing. The flags are threaded through NBIO,
+# archive would contribute nothing. The flags are threaded through nbio,
 # which every executable links.
 #
 option(USE_JEMALLOC "Link jemalloc as the process allocator" OFF)
@@ -53,7 +53,7 @@ include_directories(
 )
 
 add_subdirectory(Tutorial)
-add_subdirectory(NBIO)
+add_subdirectory(nbio)
 add_subdirectory(Application)
 
 set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")

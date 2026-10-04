@@ -1,6 +1,6 @@
 #include "Commands.hpp"
 
-#include <NBIO/Net/SocketAddress.hpp>
+#include <nbio/net/Address.hpp>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -134,12 +134,12 @@ bool IsUnsigned(std::string_view text, unsigned long lowest) {
 // An address to serve replicas from: one the listener can bind, and one that
 // names a device. A wildcard is accepted by rdma_bind_addr and names no device
 // at all, so it is refused while the message can still say why.
-bool IsDeviceSocketAddress(std::string_view text) {
+bool IsDeviceAddress(std::string_view text) {
     if (text == "0.0.0.0" || text == "::") {
         return false;
     }
     try {
-        (void)NBIO::Net::SocketAddress::from_v4(text, 1);
+        (void)nbio::net::Address::FromV4(text, 1);
     } catch (const std::exception&) {
         return false;
     }
@@ -186,13 +186,13 @@ CommandValidation ValidateConfigWrite(const Arguments& arguments, std::size_t pa
         // A device name, not an address: `siw0`, `mlx5_0`. What it names is what the
         // server opens for replication, and it too is decided before it exists.
         if (parameters.values.size() != 1 || parameters.values.front().empty()) {
-            return Error("ERR CONFIG SET failed - 'rdma_device' wants the name of the RDMA device replication runs on");
+            return Error("ERR CONFIG SET failed - 'rdma_device' wants the name of the rdma device replication runs on");
         }
     } else if (parameters.parameter == "replication_address") {
-        if (parameters.values.size() != 2 || !IsDeviceSocketAddress(parameters.values.front()) ||
+        if (parameters.values.size() != 2 || !IsDeviceAddress(parameters.values.front()) ||
             !IsPort(parameters.values.back(), 0)) {
             return Error(
-                "ERR CONFIG SET failed - 'replication_address' wants <ip> <port>, the address of the RDMA device to "
+                "ERR CONFIG SET failed - 'replication_address' wants <ip> <port>, the address of the rdma device to "
                 "serve replicas from");
         }
     } else if (parameters.parameter == "save") {
@@ -299,15 +299,15 @@ CommandValidation ValidateSave(const Arguments& arguments) {
 }
 
 // `SLAVEOF <ip> <port>`: where to follow from. The address has to be one the
-// replication link can reach -- it is an RDMA address, not a wildcard -- and
+// replication link can reach -- it is an rdma address, not a wildcard -- and
 // the port has to name something, which is why 0 is refused here where a
 // listener would accept it as "anything free".
 CommandValidation ValidateSlaveOf(const Arguments& arguments) {
     if (arguments.size() != 3) {
         return WrongArity("SLAVEOF");
     }
-    if (!IsDeviceSocketAddress(arguments[1]) || !IsPort(arguments[2], 1)) {
-        return Error("ERR SLAVEOF wants <ip> <port>, the RDMA address of the master to follow");
+    if (!IsDeviceAddress(arguments[1]) || !IsPort(arguments[2], 1)) {
+        return Error("ERR SLAVEOF wants <ip> <port>, the rdma address of the master to follow");
     }
     return {.command = Command{.type = CommandType::kSlaveOf,
                                .parameters = SlaveOfParams{.address = std::string(arguments[1]),

@@ -211,7 +211,7 @@ TEST(ConfFileTesting, SlaveOfNamesTheMasterToFollow) {
 
 TEST(ConfFileTesting, ThePortsCanComeFromTheFile) {
     // The spelling the file wants: the same `CONFIG` command a client could send,
-    // with the port and the address of the RDMA device to serve replicas from.
+    // with the port and the address of the rdma device to serve replicas from.
     std::vector<CommandLine> lines = ReadLines(
         "config port 8082\n"
         "config replication_address 192.168.0.201 8081\n");
@@ -324,6 +324,6 @@ TEST(ConfFileTesting, ASettingTheServerCannotHonourIsRefused) {
     EXPECT_TRUE(refused("config port 0\n"));
     EXPECT_TRUE(refused("config replication_address 192.168.0.201 70000\n"));
     EXPECT_TRUE(refused("config replication_address not-an-address 8081\n"));
-    EXPECT_TRUE(refused("config replication_address 0.0.0.0 8081\n")) << "a wildcard names no RDMA device";
+    EXPECT_TRUE(refused("config replication_address 0.0.0.0 8081\n")) << "a wildcard names no rdma device";
     EXPECT_TRUE(refused("config replication_address 192.168.0.201:8081 1\n"));
 }
