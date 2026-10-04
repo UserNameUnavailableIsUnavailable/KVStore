@@ -97,7 +97,7 @@ class Store {
         return handle;
     }
 
-    // Unindex a record and park its node on the free list. Every removal -
+    // Unindex a record and Park its node on the free list. Every removal -
     // delete, expiry, eviction - funnels through here, and it is always the
     // derived store that calls it.
     void remove(RecordHandle handle) {

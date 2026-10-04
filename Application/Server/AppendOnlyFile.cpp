@@ -1,8 +1,8 @@
 #include "AppendOnlyFile.hpp"
 
-#include <NBIO/Async/Async.hpp>
-#include <NBIO/Utility/Byte.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
+#include <nbio/async/Async.hpp>
+#include <nbio/utility/Byte.hpp>
+#include <nbio/runtime/Runtime.hpp>
 #include <array>
 #include <cstring>
 #include <iostream>
@@ -29,7 +29,7 @@ bool AppendOnlyFile::enable() {
     // enable() answers a question instead, and both callers say what a `false` means in
     // their own terms.
     try {
-        file_ = std::make_shared<NBIO::FS::FileStreamService>(path_);
+        file_ = std::make_shared<nbio::fs::FileStreamService>(path_);
     } catch (const std::exception&) {
         file_.reset();
         return false;
@@ -57,7 +57,7 @@ void AppendOnlyFile::disable() noexcept {
 constexpr std::size_t kInitialEntryBytes = 1024;
 constexpr std::size_t kMaximumEntryBytes = (16U * 1024U * 1024U) + (64U * 1024U);
 
-bool AppendOnlyFile::verify_checksum(NBIO::Utility::Buffer& buffer, std::span<const char> command) {
+bool AppendOnlyFile::verify_checksum(nbio::utility::Buffer& buffer, std::span<const char> command) {
     // A checksum is a bulk string of four bytes and nothing else is: a command is an
     // array, and an array is the only other thing an entry holds.
     const std::span<const char> rest = buffer.readable_span();
@@ -67,7 +67,7 @@ bool AppendOnlyFile::verify_checksum(NBIO::Utility::Buffer& buffer, std::span<co
 
     std::uint32_t stored = 0;
     std::memcpy(&stored, rest.data() + 4, sizeof(stored));
-    const auto expected = NBIO::Utility::FromBigEndian(stored);
+    const auto expected = nbio::utility::FromBigEndian(stored);
     const auto actual = static_cast<std::uint32_t>(CRC::Calculate(command.data(), command.size(), CRC::CRC_32()));
     if (expected != actual) {
         std::cerr << "AOF checksum mismatch: the log is damaged\n";
@@ -78,7 +78,7 @@ bool AppendOnlyFile::verify_checksum(NBIO::Utility::Buffer& buffer, std::span<co
     return true;
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> AppendOnlyFile::append(const Command& command) {
+nbio::async::Task<nbio::runtime, void> AppendOnlyFile::append(const Command& command) {
     if (!enabled_) {
         co_return;
     }
@@ -86,10 +86,10 @@ NBIO::Async::Task<NBIO::Runtime, void> AppendOnlyFile::append(const Command& com
     // The append holds a reference of its own to the file: CONFIG APPENDONLY NO
     // resets the member, and an append that is already running has to finish the
     // entry it started rather than read a file that is no longer there.
-    const std::shared_ptr<NBIO::FS::FileStreamService> file = file_;
+    const std::shared_ptr<nbio::fs::FileStreamService> file = file_;
 
     try {
-        NBIO::Utility::Buffer buffer{kInitialEntryBytes, kMaximumEntryBytes};
+        nbio::utility::Buffer buffer{kInitialEntryBytes, kMaximumEntryBytes};
         const auto object = CommandToRESP(command);
         auto encoder = RESP::Encode(object, buffer);
         while (encoder.poll() == RESP::EncodeStatus::kNeedFlush) {
@@ -110,9 +110,9 @@ NBIO::Async::Task<NBIO::Runtime, void> AppendOnlyFile::append(const Command& com
             const auto crc = CRC::Calculate(entry.data(), entry.size(), CRC::CRC_32());
 
             std::array<char, 10> trailer{'$', '4', '\r', '\n'};
-            // Network order, like every other number this program puts on the wire: a
+            // network order, like every other number this program puts on the wire: a
             // log is allowed to move between machines.
-            const auto ordered = NBIO::Utility::ToBigEndian(static_cast<std::uint32_t>(crc));
+            const auto ordered = nbio::utility::ToBigEndian(static_cast<std::uint32_t>(crc));
             std::memcpy(trailer.data() + 4, &ordered, sizeof(ordered));
             trailer[8] = '\r';
             trailer[9] = '\n';
@@ -122,7 +122,7 @@ NBIO::Async::Task<NBIO::Runtime, void> AppendOnlyFile::append(const Command& com
         }
 
         const std::size_t size = buffer.readable_size();
-        const auto result = co_await file->write(buffer.readable_span());
+        const auto result = co_await file->Write(buffer.readable_span());
         if (!result || *result != size) {
             throw std::runtime_error("failed to append AOF entry");
         }

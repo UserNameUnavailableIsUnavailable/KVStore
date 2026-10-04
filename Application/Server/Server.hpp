@@ -2,12 +2,12 @@
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
-#include <NBIO/Async/Task.hpp>
-#include <NBIO/Net/SocketAddress.hpp>
-#include <NBIO/Notification/ConditionVariable.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
-#include <NBIO/Net/TcpAcceptService.hpp>
-#include <NBIO/Net/TcpSessionService.hpp>
+#include <nbio/async/Task.hpp>
+#include <nbio/net/Address.hpp>
+#include <nbio/notification/ConditionVariable.hpp>
+#include <nbio/runtime/Runtime.hpp>
+#include <nbio/net/TcpAcceptService.hpp>
+#include <nbio/net/TcpSessionService.hpp>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -34,14 +34,14 @@ namespace KV {
 struct ServerOptions {
     static constexpr std::uint16_t kDefaultPort = 8080;
     static constexpr std::uint16_t kDefaultReplicationPort = 0;
-    static constexpr std::string_view kDefaultReplicationSocketAddress = "0.0.0.0";
+    static constexpr std::string_view kDefaultReplicationAddress = "0.0.0.0";
 
     // The TCP port clients connect to.
     std::optional<std::uint16_t> port{};
     // 0 leaves the replication listener off.
     std::optional<std::uint16_t> replication_port{};
     std::optional<std::string> replication_address{};
-    // The RDMA device replication runs on. Serving replicas needs it, and so
+    // The rdma device replication runs on. Serving replicas needs it, and so
     // does following a master, which SLAVEOF asks for after this is settled.
     std::optional<std::string> rdma_device{};
     // The event multiplexer that drives this server instance.
@@ -53,10 +53,10 @@ struct ServerOptions {
 
 class TcpSessionService {
    public:
-    explicit TcpSessionService(std::shared_ptr<NBIO::Net::TcpSessionService> transport)
+    explicit TcpSessionService(std::shared_ptr<nbio::net::TcpSessionService> transport)
         : transport_(std::move(transport)) {}
 
-    NBIO::Net::TcpSessionService& transport() const noexcept { return *transport_; }
+    nbio::net::TcpSessionService& transport() const noexcept { return *transport_; }
 
     bool is_multi{false};
     std::vector<KV::Command> queued_commands;
@@ -66,7 +66,7 @@ class TcpSessionService {
     std::string lookup_key;
 
    private:
-    std::shared_ptr<NBIO::Net::TcpSessionService> transport_;
+    std::shared_ptr<nbio::net::TcpSessionService> transport_;
 };
 
 class Server {
@@ -83,14 +83,14 @@ class Server {
     // Runs the commands a startup file holds, and then serves. Applying them
     // belongs inside the runtime: they are this server's own commands, and
     // executing one can await.
-    NBIO::Async::Task<NBIO::Runtime, void> serve(std::uint16_t port, std::vector<CommandLine> commands);
-    NBIO::Async::Task<NBIO::Runtime, void> apply_commands(std::vector<CommandLine> commands);
+    nbio::async::Task<nbio::runtime, void> serve(std::uint16_t port, std::vector<CommandLine> commands);
+    nbio::async::Task<nbio::runtime, void> apply_commands(std::vector<CommandLine> commands);
 
-    NBIO::Async::Task<NBIO::Runtime, void> serve(const NBIO::Net::SocketAddress& address);
+    nbio::async::Task<nbio::runtime, void> serve(const nbio::net::Address& address);
     // The listener is the caller's: it owns the acceptor the channel waits on, so it
     // has to outlive the loop that accepts through it.
-    NBIO::Async::Task<NBIO::Runtime, void> accept_clients(NBIO::Net::TcpAcceptService& listener);
-    NBIO::Async::Task<NBIO::Runtime, void> serve_client(std::shared_ptr<TcpSessionService> session);
+    nbio::async::Task<nbio::runtime, void> accept_clients(nbio::net::TcpAcceptService& listener);
+    nbio::async::Task<nbio::runtime, void> serve_client(std::shared_ptr<TcpSessionService> session);
 
    private:
     struct StagedSaveRule {
@@ -104,25 +104,25 @@ class Server {
     [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words,
                                                           TcpSessionService& session);
 
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_ping(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_get(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_set(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_info(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_del(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_exists(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_dbsize(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_command_info(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_client(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_config(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_bgsave(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_save(const KV::Command& command);
-    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_slaveof(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_ping(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_get(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_set(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_info(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_del(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_exists(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_dbsize(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_command_info(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_client(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_config(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_bgsave(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_save(const KV::Command& command);
+    nbio::async::Task<nbio::runtime, RESP::Object> execute_slaveof(const KV::Command& command);
     void note_write();
     void configure_staged_save(std::chrono::seconds seconds, std::size_t changed);
     void maybe_start_staged_save();
-    NBIO::Async::Task<NBIO::Runtime, void> staged_save_periodic();
+    nbio::async::Task<nbio::runtime, void> staged_save_periodic();
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.
@@ -137,7 +137,7 @@ class Server {
     LRUStore<std::string, std::string, HashMap> store_;
     AppendOnlyFile aof_;
     Backup backup_;
-    // The replication service this server plugs in. It is built in run(), once
+    // The replication service this server plugs in. It is built in Run(), once
     // the store exists and the command line is known.
     std::unique_ptr<ReplicationService> replication_;
     // A replica refuses writes: it is not the source of truth, its master is.
@@ -151,7 +151,7 @@ class Server {
 
     std::optional<StagedSaveRule> staged_save_rule_{};
     std::size_t staged_save_dirty_{0};
-    std::unique_ptr<NBIO::Notification::ConditionVariable> staged_save_ready_{};
+    std::unique_ptr<nbio::notification::ConditionVariable> staged_save_ready_{};
     bool staged_save_loop_running_{false};
 };
 }  // namespace KV

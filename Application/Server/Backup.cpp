@@ -2,8 +2,8 @@
 
 #include <CRC.h>
 
-#include <NBIO/Utility/Byte.hpp>
-#include <NBIO/FS/FileView.hpp>
+#include <nbio/utility/Byte.hpp>
+#include <nbio/fs/FileView.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -45,11 +45,11 @@ void WriteLength(std::ofstream& file, std::uint64_t value) {
         WriteByte(file, static_cast<std::uint8_t>(value));
     } else if (value <= std::numeric_limits<std::uint32_t>::max()) {
         WriteByte(file, 0x80U);
-        const std::uint32_t big_endian = NBIO::Utility::ToBigEndian(static_cast<std::uint32_t>(value));
+        const std::uint32_t big_endian = nbio::utility::ToBigEndian(static_cast<std::uint32_t>(value));
         Write(file, &big_endian, sizeof(big_endian));
     } else {
         WriteByte(file, 0x81U);
-        const std::uint64_t big_endian = NBIO::Utility::ToBigEndian(value);
+        const std::uint64_t big_endian = nbio::utility::ToBigEndian(value);
         Write(file, &big_endian, sizeof(big_endian));
     }
 }
@@ -109,7 +109,7 @@ bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t& offset, std::u
         if (!ReadExact(bytes, offset, &big_endian, sizeof(big_endian))) {
             return false;
         }
-        value = NBIO::Utility::FromBigEndian(big_endian);
+        value = nbio::utility::FromBigEndian(big_endian);
         return true;
     }
     if (header == 0x81U) {
@@ -117,7 +117,7 @@ bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t& offset, std::u
         if (!ReadExact(bytes, offset, &big_endian, sizeof(big_endian))) {
             return false;
         }
-        value = NBIO::Utility::FromBigEndian(big_endian);
+        value = nbio::utility::FromBigEndian(big_endian);
         return true;
     }
     return false;
@@ -286,8 +286,8 @@ bool ReadSnapshot(const std::filesystem::path& path, std::vector<LoadedEntry>& e
         entries.clear();
         return true;
     }
-    NBIO::FS::File file(path, NBIO::FS::FileMode::kRead);
-    NBIO::FS::FileView view(file);
+    nbio::fs::File file(path, nbio::fs::FileMode::kRead);
+    nbio::fs::FileView view(file);
     if (view.size() == 0) {
         entries.clear();
         return true;
@@ -319,7 +319,7 @@ bool WriteSnapshotInChild(const std::filesystem::path& path, const std::vector<d
 }
 }  // namespace
 
-NBIO::Async::Task<NBIO::Runtime, bool> Backup::save(std::vector<detail::SnapshotEntry> entries) const {
+nbio::async::Task<nbio::runtime, bool> Backup::save(std::vector<detail::SnapshotEntry> entries) const {
     co_return co_await offload([this, entries = std::move(entries)] { return WriteSnapshotInChild(path_, entries); });
 }
 

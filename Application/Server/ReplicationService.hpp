@@ -2,16 +2,16 @@
 #if defined(__linux__)
 
 #include <Application/Commands.hpp>
-#include <NBIO/RDMA/RdmaAcceptor.hpp>
-#include <NBIO/RDMA/RdmaConnector.hpp>
-#include <NBIO/RDMA/RdmaResourceManager.hpp>
-#include <NBIO/Net/SocketAddress.hpp>
-#include <NBIO/Notification/ConditionVariable.hpp>
-#include <NBIO/RDMA/RdmaAcceptChannel.hpp>
-#include <NBIO/RDMA/RdmaConnectChannel.hpp>
-#include <NBIO/RDMA/RdmaDeliverService.hpp>
-#include <NBIO/RDMA/RdmaSessionService.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
+#include <nbio/net/RdmaAcceptor.hpp>
+#include <nbio/net/RdmaConnector.hpp>
+#include <nbio/net/RdmaResourceManager.hpp>
+#include <nbio/net/Address.hpp>
+#include <nbio/notification/ConditionVariable.hpp>
+#include <nbio/net/RdmaAcceptChannel.hpp>
+#include <nbio/net/RdmaConnectChannel.hpp>
+#include <nbio/net/RdmaDeliverService.hpp>
+#include <nbio/net/RdmaSessionService.hpp>
+#include <nbio/runtime/Runtime.hpp>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -25,7 +25,7 @@ namespace KV {
 // Replication, as a service the server plugs in: the service owns the wire and
 // the replication port, the server owns the store and the clients.
 //
-// A replica and a master talk RESP over an RDMA delivery link -- the protocol a
+// A replica and a master talk RESP over an rdma delivery link -- the protocol a
 // client speaks, with two commands of its own on top:
 //
 //   replica -> master   PSYNC ? -1
@@ -58,7 +58,7 @@ class ReplicationService {
         // Starts a background save. It must copy the store before it returns --
         // the buffer that follows the snapshot is attached as soon as it does --
         // and the task it hands back does the forking and the writing.
-        std::function<NBIO::Async::Task<NBIO::Runtime, bool>()> snapshot;
+        std::function<nbio::async::Task<nbio::runtime, bool>()> snapshot;
         // Replaces the store with the RDB file it is given. False when the file
         // does not exist or does not validate against its own CRC-64.
         std::function<bool(const std::filesystem::path&)> restore;
@@ -75,7 +75,7 @@ class ReplicationService {
         // 0 leaves the master side of the service off.
         std::uint16_t listen_port{0};
         std::string listen_address{"0.0.0.0"};
-        // The RDMA device, by name, that the link runs on. One name, one device,
+        // The rdma device, by name, that the link runs on. One name, one device,
         // one resource manager: replication does not fall back to TCP, so a
         // service that serves or follows needs it.
         std::string rdma_device{};
@@ -104,12 +104,12 @@ class ReplicationService {
 
     // Master side: accepts replicas, gives each one a snapshot, and then sends
     // it the writes this master applies.
-    NBIO::Async::Task<NBIO::Runtime, void> serve();
+    nbio::async::Task<nbio::runtime, void> serve();
 
     // Makes this instance a replica of `master`, and keeps it one: the link is
     // re-established for as long as the service lives. False when this instance
     // already follows a master, which is the one thing SLAVEOF cannot do twice.
-    bool slave_of(const NBIO::Net::SocketAddress& master);
+    bool slave_of(const nbio::net::Address& master);
 
     // Records a write for the replicas being served. The server calls this for
     // every write it applies, and it never waits: the bytes are appended to each
@@ -119,12 +119,12 @@ class ReplicationService {
    private:
     // One replica being served: its link, and what is waiting to go out on it.
     struct Replica {
-        Replica(std::shared_ptr<NBIO::RDMA::RdmaSessionService> session,
-                std::shared_ptr<NBIO::RDMA::RdmaDeliverService> link)
+        Replica(std::shared_ptr<nbio::net::RdmaSessionService> session,
+                std::shared_ptr<nbio::net::RdmaDeliverService> link)
             : session(std::move(session)), link(std::move(link)) {}
 
-        std::shared_ptr<NBIO::RDMA::RdmaSessionService> session;
-        std::shared_ptr<NBIO::RDMA::RdmaDeliverService> link;
+        std::shared_ptr<nbio::net::RdmaSessionService> session;
+        std::shared_ptr<nbio::net::RdmaDeliverService> link;
         // Encoded writes this replica has not been sent. A write is appended
         // whether or not the replica may be sent one yet, so what was applied
         // between the snapshot and the second PSYNC is held here rather than
@@ -135,7 +135,7 @@ class ReplicationService {
         // Until then this buffer only fills.
         bool streaming{false};
         bool ended{false};
-        NBIO::Notification::ConditionVariable writable;
+        nbio::notification::ConditionVariable writable;
     };
 
     // Holds one replica in the record() path for as long as it is being served,
@@ -163,21 +163,21 @@ class ReplicationService {
         }
     };
 
-    NBIO::Async::Task<NBIO::Runtime, void> serve_replica(std::shared_ptr<NBIO::RDMA::RdmaSessionService> session);
+    nbio::async::Task<nbio::runtime, void> serve_replica(std::shared_ptr<nbio::net::RdmaSessionService> session);
     // Hands one replica's buffer to the link, waiting for the write that is
     // going to fill it. Runs for as long as the replica does.
-    NBIO::Async::Task<NBIO::Runtime, void> pump(std::shared_ptr<Replica> replica);
+    nbio::async::Task<nbio::runtime, void> pump(std::shared_ptr<Replica> replica);
     // Answers the opening PSYNC with a snapshot, then waits for the replica to
     // say it has loaded it. False when the link did not survive that. The
     // attachment is begun here, at the snapshot, and is left holding the replica
     // for the caller.
-    NBIO::Async::Task<NBIO::Runtime, bool> send_snapshot(std::shared_ptr<Replica> replica, Attachment& attachment);
+    nbio::async::Task<nbio::runtime, bool> send_snapshot(std::shared_ptr<Replica> replica, Attachment& attachment);
 
     // Replica side, for as long as this instance is one.
-    NBIO::Async::Task<NBIO::Runtime, void> follow_forever(NBIO::Net::SocketAddress master);
+    nbio::async::Task<nbio::runtime, void> follow_forever(nbio::net::Address master);
     // One connection's worth: connect, synchronise, and keep up until the link
     // ends. False when that ended before the stream did.
-    NBIO::Async::Task<NBIO::Runtime, bool> sync_once(NBIO::Net::SocketAddress master);
+    nbio::async::Task<nbio::runtime, bool> sync_once(nbio::net::Address master);
 
     void detach(const std::shared_ptr<Replica>& replica) noexcept;
     // Drops the replicas whose coroutine has finished, so their chunks go back
@@ -187,7 +187,7 @@ class ReplicationService {
     // A layout for a delivery link: the receive chunks of the manager this
     // service borrows, and as many packets in flight as the connection posts
     // receives for -- which is the only number the peer may fill.
-    NBIO::RDMA::RdmaDeliverService::Layout link_layout() const;
+    nbio::net::RdmaDeliverService::Layout link_layout() const;
 
     Options options_;
     Host host_;
@@ -200,8 +200,8 @@ class ReplicationService {
     // Declared before the sessions: every connection borrows the device, its
     // regions and its chunks, so they all have to be gone before it is. Shared,
     // because a connection keeps it alive for as long as it runs.
-    std::shared_ptr<NBIO::RDMA::RdmaResourceManager> resources_;
-    std::optional<NBIO::RDMA::RdmaAcceptor> acceptor_;
+    std::shared_ptr<nbio::net::RdmaResourceManager> resources_;
+    std::optional<nbio::net::RdmaAcceptor> acceptor_;
 
     // The replicas being served. This vector is the record() path's list, so a
     // replica is held here for as long as its buffer has to be filled.
@@ -214,15 +214,15 @@ class ReplicationService {
     std::atomic_bool following_{false};
 
     struct ReplicaLink {
-        explicit ReplicaLink(std::shared_ptr<NBIO::RDMA::RdmaResourceManager> manager)
+        explicit ReplicaLink(std::shared_ptr<nbio::net::RdmaResourceManager> manager)
             : resources(std::move(manager)), connector(*resources) {}
 
         // Held first, and held at all: the connection borrows this device. The
         // link is declared last so that it -- and the session inside it, which
         // borrows the connector -- is destroyed before what it borrows.
-        std::shared_ptr<NBIO::RDMA::RdmaResourceManager> resources;
-        NBIO::RDMA::RdmaConnector connector;
-        std::shared_ptr<NBIO::RDMA::RdmaDeliverService> link;
+        std::shared_ptr<nbio::net::RdmaResourceManager> resources;
+        nbio::net::RdmaConnector connector;
+        std::shared_ptr<nbio::net::RdmaDeliverService> link;
     };
     std::unique_ptr<ReplicaLink> link_;
 };

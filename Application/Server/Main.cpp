@@ -1,9 +1,9 @@
 #include <spdlog/spdlog.h>
 
 #include <CLI/CLI.hpp>
-#include <NBIO/Core/EpollMultiplexer.hpp>
-#include <NBIO/NBIO.hpp>
-#include <NBIO/Core/URingMultiplexer.hpp>
+#include <nbio/core/EpollMultiplexer.hpp>
+#include <nbio/nbio.hpp>
+#include <nbio/core/URingMultiplexer.hpp>
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
@@ -12,12 +12,12 @@
 #include "Server.hpp"
 
 namespace {
-std::unique_ptr<NBIO::Core::Multiplexer> make_multiplexer(const std::string& name) {
+std::unique_ptr<nbio::core::Multiplexer> make_multiplexer(const std::string& name) {
     if (name == "epoll") {
-        return std::make_unique<NBIO::Core::EpollMultiplexer>();
+        return std::make_unique<nbio::core::EpollMultiplexer>();
     }
     if (name == "io_uring") {
-        return std::make_unique<NBIO::Core::URingMultiplexer>();
+        return std::make_unique<nbio::core::URingMultiplexer>();
     }
     throw std::invalid_argument("--multiplexer must be 'epoll' or 'io_uring'");
 }
@@ -39,12 +39,12 @@ int main(int argc, char* argv[]) {
     app.add_option("-p,--port", options.port, "TCP port clients connect to (default 8080)")
         ->check(CLI::Range(1, 65535));
     app.add_option("--replication-port", options.replication_port,
-                   "RDMA port this server serves snapshots on (default 0, which serves none)")
+                   "rdma port this server serves snapshots on (default 0, which serves none)")
         ->check(CLI::Range(0, 65535));
     app.add_option("--replication-ip", options.replication_address,
                    "local address the replication listener binds (default 0.0.0.0)");
     app.add_option("--rdma-device", options.rdma_device,
-                   "RDMA device the replication link runs on, by name (--rdma-device siw0)");
+                   "rdma device the replication link runs on, by name (--rdma-device siw0)");
     app.add_option("--multiplexer", options.multiplexer, "I/O multiplexer: epoll or io_uring")
         ->check(CLI::IsMember({"epoll", "io_uring"}));
     app.add_option("-c,--config", options.config_file, "command file to run at startup, one command per line")
@@ -59,14 +59,14 @@ int main(int argc, char* argv[]) {
     try {
         auto mux = make_multiplexer(options.multiplexer);
         switch (mux->type()) {
-            case NBIO::Core::MultiplexerType::kEpoll:
+            case nbio::core::MultiplexerType::kEpoll:
                 spdlog::info("Multiplexer: epoll");
                 break;
-            case NBIO::Core::MultiplexerType::kURing:
+            case nbio::core::MultiplexerType::kURing:
                 spdlog::info("Multiplexer: io_uring");
                 break;
         }
-        NBIO::initialize(std::move(mux));
+        nbio::initialize(std::move(mux));
 
         KV::Server server;
         server.run(options);

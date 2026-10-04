@@ -30,7 +30,7 @@ as decisions land.
 ## Goals
 
 - A runtime that a `NBIO::Async` task can run on, reached through
-  `NBIO::RDMA::run()` and `NBIO::RDMA::spawn()`.
+  `NBIO::RDMA::Run()` and `NBIO::RDMA::Spawn()`.
 - Reliable, connection-oriented, ordered data transfer — "TCP-like" semantics —
   for the first version.
 - A server path (`listen_on` → `accept` → `TcpSessionService`) that mirrors the `NBIO`
@@ -44,7 +44,7 @@ as decisions land.
 - One-sided operations (`RDMA READ` / `RDMA WRITE`) and atomic verbs.
 - Zero-copy receive into application-owned memory.
 - Native InfiniBand addressing (LID/GID routing); the first version targets
-  RoCEv2 so that the existing `NBIO::Core::SocketAddress` (IPv4) can be reused.
+  RoCEv2 so that the existing `NBIO::Core::Address` (IPv4) can be reused.
 - Automatic reconnection / failover.
 - Multi-threaded engines. Like `NBIO`, one engine per thread, installed as a
   `thread_local`.
@@ -89,7 +89,7 @@ boundaries are an implementation detail the `TcpSessionService` hides.
 used at all — there is no `socket()`/`bind()`/`accept()` anywhere under
 `NBIO/RDMA`. Two things take its place:
 
-- `Core::SocketAddress` is still reused, because `rdma_cm` still speaks in `sockaddr`
+- `Core::Address` is still reused, because `rdma_cm` still speaks in `sockaddr`
   terms: `rdma_bind_addr(id, addr)` and `rdma_resolve_addr(id, ...)` both take a
   `struct sockaddr *`. An endpoint is still named by IP and port; the kernel
   owns the transport beneath it.
@@ -142,7 +142,7 @@ flowchart TD
     end
 
     subgraph RDMA["NBIO::RDMA"]
-        RUN["RDMA::run() / spawn() / sleep_for()"]
+        RUN["RDMA::Run() / Spawn() / sleep_for()"]
         ENG["Engine (thread_local, runtime tag)"]
         MUX["Multiplexer (CQ poll + fd poll)"]
         CH["Channel (Send / Receive / Listen)"]
@@ -153,7 +153,7 @@ flowchart TD
     end
 
     subgraph Core["NBIO::Core"]
-        ADDR["SocketAddress / Buffer / SystemTimer / EventNotifier / SystemSignal"]
+        ADDR["Address / Buffer / SystemTimer / EventNotifier / SystemSignal"]
     end
 
     App --> RUN
@@ -206,7 +206,7 @@ class Engine
 Member order matters for the same reason it does in `NBIO::Engine`: the
 multiplexer is declared first so the scheduler's idle hook can capture it, and
 the channels come last so they are destroyed first (a channel unregisters itself
-through `multiplexer_.delete_channel()` in its destructor, which needs a live
+through `multiplexer_.DeleteChannel()` in its destructor, which needs a live
 multiplexer).
 
 `Configuration` selects the device and tunes the buffers:
@@ -241,22 +241,22 @@ entry points, driven the same way by `Engine`'s idle hook — not a skeleton.
 class Multiplexer   // concrete; no virtual functions
 {
   public:
-    void add_channel(Channel *channel);     // registers and assigns the channel's handle
+    void AddChannel(Channel *channel);     // registers and assigns the channel's handle
     void update_channel(Channel *channel);  // armed -> post, disarmed -> withdraw
-    void delete_channel(Channel *channel) noexcept;
-    void run();
-    void run_for(std::chrono::milliseconds timeout);
+    void DeleteChannel(Channel *channel) noexcept;
+    void Run();
+    void RunFor(std::chrono::milliseconds timeout);
 
     ibv_cq *completion_queue() noexcept;
 
   private:
-    void run_impl(int timeout_ms);
+    void RunImpl(int timeout_ms);
     void drain_completions();               // ibv_poll_cq, then route by wr_id
     void post_pending();
 
     // 1:1, unlike NBIO's fd-keyed multimap. See "Handles" under Channel.
     std::unordered_map<Channel::Handle, Channel *> channels_;
-    Channel::Handle next_handle_{1};        // handed out by add_channel()
+    Channel::Handle next_handle_{1};        // handed out by AddChannel()
     std::vector<Channel *> pending_submissions_;
     ibv_cq *completion_queue_{nullptr};
     int epoll_handle_{-1};                  // CM events, timerfd, signalfd
@@ -283,7 +283,7 @@ never come from it.
 
 ```mermaid
 flowchart LR
-    subgraph run["Multiplexer::run_impl(timeout)"]
+    subgraph run["Multiplexer::RunImpl(timeout)"]
         A["1. drain CQ -> channels_ by wr_id"] --> B["2. drain CM fd -> connections by cm_id"]
         B --> C["3. post pending WQEs"]
         C --> D["4. if idle and timeout allows: epoll_wait on fd set"]
@@ -314,7 +314,7 @@ warrants a queue pair per connection.
 
 The fast path never blocks: drain the CQ, dispatch, re-post, done. Only when
 there is nothing ready and the caller permits blocking does it arm CQ
-notifications (`ibv_req_notify_cq`) and park on `epoll_wait`. With
+notifications (`ibv_req_notify_cq`) and Park on `epoll_wait`. With
 `busy_poll = true` the engine skips the notification and spins on the CQ, which
 trades CPU for latency.
 
@@ -380,7 +380,7 @@ channels that object is a `Connection` (a queue pair) — and it can never migra
 off it. That part matches `NBIO`, where a channel is pinned to a `TcpSocket`.
 
 What differs is the handle. A channel mirrors the `NBIO` protocol (`arm` /
-`disarm` / `park` / `handle_event`), but it carries **its own identity**, not the
+`disarm` / `Park` / `handle_event`), but it carries **its own identity**, not the
 underlying object's, because that identity is what gets embedded in the work
 request as the verbs `wr_id` and echoed back by the completion.
 
@@ -426,7 +426,7 @@ class Channel
     bool armed() const noexcept;
 
   private:
-    friend class Multiplexer;                // writes handle_ in add_channel()
+    friend class Multiplexer;                // writes handle_ in AddChannel()
     Handle handle_{kInvalidHandle};
     // ... type_, connection_, multiplexer_, scheduler_, handler_, armed_
 };
@@ -487,7 +487,7 @@ So the channel hierarchy carries **two roles**, on one base class:
 | Role | Owns an fd? | `handle_event()` does | Examples |
 |---|---|---|---|
 | **Poller** (one per engine) | yes | drain the source, then dispatch to its targets | completion poller, CM poller |
-| **Target** (per connection/operation) | no | resume its parked coroutine from a filled job | `TcpReceiveChannel`, `TcpSendChannel` |
+| **Target** (per connection/operation) | no | resume its Parked coroutine from a filled job | `TcpReceiveChannel`, `TcpSendChannel` |
 
 ```cpp
 class Channel;                     // shared protocol: on_event / arm / disarm / handle_event
@@ -533,17 +533,17 @@ And the completion fd carries a single-owner protocol (`ibv_get_cq_event` →
 
 "Make more channel types" is therefore the right instinct — but it comes with a
 caveat: a single `Handle` field cannot simultaneously mean a `wr_id`, an fd, and
-a `cm_id *`. The `Channel` base stays thin (identity, arming, parking,
+a `cm_id *`. The `Channel` base stays thin (identity, arming, Parking,
 `handle_event()`), and each flavour keeps its mode-specific state in its derived
 class:
 
 ```cpp
-class Channel;                        // shared protocol: arm / disarm / park / handle_event
+class Channel;                        // shared protocol: arm / disarm / Park / handle_event
 class CompletionChannel : Channel;    // + Handle handle_ (wr_id), prepare(), complete(wc)
 class FdChannel : Channel;            // + int fd_
 ```
 
-`add_channel()` keeps one signature but switches on `type()` to decide where the
+`AddChannel()` keeps one signature but switches on `type()` to decide where the
 channel goes: `epoll_ctl(ADD)` for the fd flavour, a post or an enqueue for the
 completion flavour, a `cm_id` registration for the CM flavour.
 
@@ -579,13 +579,13 @@ The dispatch contract is the same as `URingMultiplexer`:
 
 ```
 completion arrives  → look up channels_[wc.wr_id]
-                    → multiplexer::complete(channel, wc)
+                    → multiplexer::Complete(channel, wc)
                     → channel.disarm()
                     → channel.handle_event()
 ```
 
 `complete()` writes the outcome into the channel's job; `handle_event()`
-resumes the parked coroutine only if the job reached a conclusive status,
+resumes the Parked coroutine only if the job reached a conclusive status,
 otherwise re-arms.
 
 > Implementation note: because the work request must carry the local memory
@@ -718,18 +718,18 @@ bool is_initialized();
 void run(Task<void> main);
 
 template <typename T>
-NBIO::Async::CoroutineToken spawn(Task<T> task);
+NBIO::Async::CoroutineToken Spawn(Task<T> task);
 
 Task<void> sleep_until(std::chrono::steady_clock::time_point time_point);
 Task<void> sleep_for(std::chrono::steady_clock::duration duration);
 Task<void> wait_for_signal();
 
 // ---- server ----
-std::unique_ptr<Listener> listen_on(const NBIO::Core::SocketAddress &address,
+std::unique_ptr<Listener> listen_on(const NBIO::Core::Address &address,
                                     int backlog = 128);
 
 // ---- connection ----
-Task<std::shared_ptr<TcpSessionService>> connect_to(const NBIO::Core::SocketAddress &address);
+Task<std::shared_ptr<TcpSessionService>> connect_to(const NBIO::Core::Address &address);
 std::shared_ptr<TcpSessionService> establish_with(Connection connection);
 } // namespace NBIO::RDMA
 ```
@@ -742,7 +742,7 @@ while (true)
     auto connection = co_await listener->accept();
     if (connection)
     {
-        NBIO::RDMA::spawn(serve_client(establish_with(std::move(*connection))));
+        NBIO::RDMA::Spawn(serve_client(establish_with(std::move(*connection))));
     }
 }
 ```
@@ -808,7 +808,7 @@ from the channel before its frame is reclaimed.
 NBIO/RDMA/
   CMakeLists.txt
   Runtime.hpp              // using Runtime = Engine; Task<T> alias
-  RDMA.hpp / RDMA.cpp      // umbrella + public API (run, spawn, listen_on, ...)
+  RDMA.hpp / RDMA.cpp      // umbrella + public API (run, Spawn, listen_on, ...)
   Engine.hpp / Engine.cpp  // runtime tag, idle hook, standing resources
   Multiplexer.hpp / .cpp    // concrete composite CQ/fd poller
   Channel.hpp / .cpp        // channel base (owns its handle)
@@ -838,7 +838,7 @@ The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`
 2. **Reach.** Core holds primitives that are dependency-free *and* useful to more
    than one backend (`TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal`). No other
    backend can use an `ibv_qp`. What RDMA genuinely shares with Core is the value
-   types it does not own — `SocketAddress` (`rdma_cm` takes a `sockaddr`) and `Buffer`.
+   types it does not own — `Address` (`rdma_cm` takes a `sockaddr`) and `Buffer`.
 
 One correction to the "each provides a pollable fd" model, because it changes the
 shape of the layer: **the two pollable fds are engine-wide, not per-connection.**
@@ -879,7 +879,7 @@ so that non-Linux configuration is unaffected.
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| M0 | Skeleton: `CMakeLists.txt`, `Runtime.hpp`, `Engine`, `RDMA::run()`, idle hook, standing timer/notify/signal channels, `sleep_for`. | A no-op coroutine plus a timer runs on the RDMA engine, with no verbs linked yet. |
+| M0 | Skeleton: `CMakeLists.txt`, `Runtime.hpp`, `Engine`, `RDMA::Run()`, idle hook, standing timer/notify/signal channels, `sleep_for`. | A no-op coroutine plus a timer runs on the RDMA engine, with no verbs linked yet. |
 | M1 | `Device`, `Connection`, `MemoryRegion`, `Channel`, `Multiplexer` with CQ polling; two-sided `SEND`/`RECV` over a loopback QP pair. | A handshake-free loopback exchange delivers bytes reliably. |
 | M2 | `rdma_cm` listener + connector; `TcpSessionService` byte stream; `Listener::accept()`; `establish_with`. | A client can `connect_to` a server, exchange an ordered byte stream, and disconnect cleanly. |
 | M3 | Reliability: flush/disconnect handling, receive-slot backpressure, cancellation safety, RESP integration. | The RESP server runs on the RDMA backend under the existing test suite. |
@@ -890,7 +890,7 @@ so that non-Linux configuration is unaffected.
 1. **Standing channels: duplicate or extract? — settled in favour of extraction.**
    An earlier draft had `RDMA` duplicate `SystemTimerChannel`, `EventNotifyChannel`,
    `SystemSignalChannel` and `ConditionVariable`. That is not small: those four are a
-   few hundred lines of subtle park/wake coroutine code whose *only* backend
+   few hundred lines of subtle Park/wake coroutine code whose *only* backend
    requirement is "poll this fd". They are backend-neutral, so the right boundary
    is not "NBIO versus RDMA" but **fd-based channels versus data-path channels**.
    Extract the former into a neutral layer both backends depend on:
@@ -898,7 +898,7 @@ so that non-Linux configuration is unaffected.
    | Layer | Contents |
    |---|---|
    | `NBIO::Async` | `Task`, `Coroutine`, `Scheduler` |
-   | `NBIO::Core` | `SocketAddress`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
+   | `NBIO::Core` | `Address`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
    | `NBIO::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
    | `NBIO::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
    | `NBIO::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |

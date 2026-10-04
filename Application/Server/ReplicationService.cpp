@@ -5,10 +5,10 @@
 #include <spdlog/spdlog.h>
 
 #include <Application/RESP/RESP.hpp>
-#include <NBIO/Utility/Buffer.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
-#include <NBIO/NBIO.hpp>
-#include <NBIO/Time/SystemTimeService.hpp>
+#include <nbio/utility/Buffer.hpp>
+#include <nbio/runtime/Runtime.hpp>
+#include <nbio/nbio.hpp>
+#include <nbio/time/SystemTimeService.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -26,7 +26,7 @@
 
 namespace KV {
 namespace {
-namespace Core = NBIO::Core;
+namespace core = nbio::core;
 
 // How much of a snapshot is read off the disk at a time on its way out.
 constexpr std::size_t kSnapshotBlockBytes = 64U << 10U;
@@ -79,7 +79,7 @@ std::uint64_t FileBytes(const std::filesystem::path& file) noexcept {
     return error ? 0 : static_cast<std::uint64_t>(size);
 }
 
-std::string Endpoint(const NBIO::Net::SocketAddress& address) { return address.ip() + ":" + std::to_string(address.port()); }
+std::string Endpoint(const nbio::net::Address& address) { return address.ip() + ":" + std::to_string(address.port()); }
 
 // A RESP byte stream over a delivery link.
 //
@@ -90,11 +90,11 @@ std::string Endpoint(const NBIO::Net::SocketAddress& address) { return address.i
 // commands, which are arrays of bulk strings.
 class LinkStream {
    public:
-    LinkStream(NBIO::RDMA::RdmaDeliverService& link, NBIO::Utility::Buffer& buffer) : link_(link), buffer_(buffer) {}
+    LinkStream(nbio::net::RdmaDeliverService& link, nbio::utility::Buffer& buffer) : link_(link), buffer_(buffer) {}
 
     // One CRLF-terminated line, without the terminator. Nothing when the link
     // ended before one arrived.
-    NBIO::Async::Task<NBIO::Runtime, std::optional<std::string>> line() {
+    nbio::async::Task<nbio::runtime, std::optional<std::string>> line() {
         while (true) {
             const std::span<const char> readable = buffer_.readable_span();
             const std::string_view view(readable.data(), readable.size());
@@ -112,7 +112,7 @@ class LinkStream {
     // One command, as its words. Nothing when the link ended, and nothing when
     // what arrived was not a command -- which for either end is the same thing
     // as the peer having stopped speaking the protocol.
-    NBIO::Async::Task<NBIO::Runtime, std::optional<std::vector<std::string>>> command() {
+    nbio::async::Task<nbio::runtime, std::optional<std::vector<std::string>>> command() {
         auto header = co_await line();
         if (!header || header->empty() || header->front() != '*') [[unlikely]] {
             co_return std::nullopt;
@@ -150,7 +150,7 @@ class LinkStream {
 
     // Exactly `bytes`, in whatever pieces they arrive in. False when the link
     // ended first.
-    NBIO::Async::Task<NBIO::Runtime, bool> take(std::uint64_t bytes, std::function<bool(std::span<const char>)> sink) {
+    nbio::async::Task<nbio::runtime, bool> take(std::uint64_t bytes, std::function<bool(std::span<const char>)> sink) {
         while (bytes > 0) {
             const std::span<const char> readable = buffer_.readable_span();
             if (!readable.empty()) {
@@ -172,8 +172,8 @@ class LinkStream {
     // One more payload into the buffer, and its chunk straight back. False when
     // the link is over. Public because a decoder driven by this stream is fed by
     // the same call, out of the same buffer.
-    NBIO::Async::Task<NBIO::Runtime, bool> more() {
-        auto incoming = co_await link_.receive();
+    nbio::async::Task<nbio::runtime, bool> more() {
+        auto incoming = co_await link_.Receive();
         if (!incoming || !*incoming) [[unlikely]] {
             co_return false;
         }
@@ -189,8 +189,8 @@ class LinkStream {
     }
 
    private:
-    NBIO::RDMA::RdmaDeliverService& link_;
-    NBIO::Utility::Buffer& buffer_;
+    nbio::net::RdmaDeliverService& link_;
+    nbio::utility::Buffer& buffer_;
 };
 }  // namespace
 
@@ -198,14 +198,14 @@ ReplicationService::ReplicationService(Options options, Host host)
     : options_(std::move(options)),
       host_(std::move(host)),
       replid_(next_replid.fetch_add(1, std::memory_order_relaxed)) {
-    // Replication runs on RDMA, and only on RDMA: there is no TCP path, so an
+    // Replication runs on rdma, and only on rdma: there is no TCP path, so an
     // instance asked to serve replicas without a device named would come up
     // unable to serve them. Whether an instance will follow a master is not
     // known yet -- SLAVEOF is what decides that, and it arrives later -- so a
     // service with no listener is built either way.
     if (options_.listen_port != 0 && options_.rdma_device.empty()) {
         throw std::invalid_argument(
-            "replication: replication needs an RDMA device; pass --rdma-device or "
+            "replication: replication needs an rdma device; pass --rdma-device or "
             "'config rdma_device <name>'");
     }
     // A wildcard address is accepted by rdma_bind_addr and leaves the id with no
@@ -213,7 +213,7 @@ ReplicationService::ReplicationService(Options options, Host host)
     // serve them from. Refuse it while the reason is still known.
     if (options_.listen_port != 0 &&
         (options_.listen_address.empty() || options_.listen_address == "0.0.0.0" || options_.listen_address == "::")) {
-        throw std::invalid_argument("replication: serving replicas needs the address of an RDMA device, not '" +
+        throw std::invalid_argument("replication: serving replicas needs the address of an rdma device, not '" +
                                     options_.listen_address + "'");
     }
     // An address goes in one option and the port in another, and `ip:port` in the
@@ -230,21 +230,21 @@ ReplicationService::ReplicationService(Options options, Host host)
     // to start rather than a replication link that fails later. Every connection
     // the service makes borrows what is opened here.
     if (!options_.rdma_device.empty()) {
-        resources_ = std::make_shared<NBIO::RDMA::RdmaResourceManager>(options_.rdma_device);
+        resources_ = std::make_shared<nbio::net::RdmaResourceManager>(options_.rdma_device);
     }
 }
 
 ReplicationService::~ReplicationService() noexcept = default;
 
-NBIO::RDMA::RdmaDeliverService::Layout ReplicationService::link_layout() const {
+nbio::net::RdmaDeliverService::Layout ReplicationService::link_layout() const {
     // What this end can take: its receive chunks, and as many packets in flight
     // as the connection posts receives for. The pool holds thousands of chunks
     // and says nothing about how many of them the device has been handed, so the
     // count is the connector's depth rather than the pool's size -- a window
     // wider than what is posted is one the peer fills and then fails on.
-    return NBIO::RDMA::RdmaDeliverService::Layout{
+    return nbio::net::RdmaDeliverService::Layout{
         .chunk_size = resources_->receive_memory().chunk_size(),
-        .chunk_count = NBIO::RDMA::RdmaConnector::kReceiveChunks,
+        .chunk_count = nbio::net::RdmaConnector::kReceiveChunks,
     };
 }
 
@@ -276,9 +276,9 @@ void ReplicationService::record(const Command& command) {
         // A replica that has not asked for the stream yet is not waiting on
         // anything: its buffer fills, and the writer that starts after the
         // second PSYNC finds what is already there. Waking one would be a
-        // notification nobody is parked on.
+        // notification nobody is Parked on.
         if (replica->streaming) {
-            replica->writable.notify_one();
+            replica->writable.NotifyOne();
         }
     }
 }
@@ -294,7 +294,7 @@ void ReplicationService::prune() {
     std::erase_if(replicas_, [](const std::shared_ptr<Replica>& replica) { return replica.use_count() == 1; });
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve() {
+nbio::async::Task<nbio::runtime, void> ReplicationService::serve() {
     if (!is_master() || resources_ == nullptr) {
         co_return;
     }
@@ -305,7 +305,7 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve() {
         // the accept loop. They were opened when the service was constructed.
         acceptor_.emplace(*resources_);
         const auto bound =
-            acceptor_->listen(NBIO::Net::SocketAddress::from_v4(options_.listen_address, options_.listen_port));
+            acceptor_->listen(nbio::net::Address::FromV4(options_.listen_address, options_.listen_port));
         if (!bound) [[unlikely]] {
             spdlog::error("replication: the listener stopped: {}", bound.error());
             co_return;
@@ -313,7 +313,7 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve() {
         spdlog::info("replication: serving replicas on rdma://{}:{} as replid {}", options_.listen_address,
                      options_.listen_port, replid_);
 
-        NBIO::RDMA::RdmaAcceptChannel channel(*acceptor_, NBIO::Runtime::multiplexer(), NBIO::Runtime::scheduler());
+        nbio::net::RdmaAcceptChannel channel(*acceptor_, nbio::runtime::multiplexer(), nbio::runtime::scheduler());
         while (true) {
             auto session = co_await channel.accept();
             if (!session) [[unlikely]] {
@@ -321,16 +321,16 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve() {
                 co_return;
             }
             prune();
-            NBIO::spawn(serve_replica(std::move(*session)));
+            nbio::Spawn(serve_replica(std::move(*session)));
         }
     } catch (const std::exception& error) {
         spdlog::error("replication: the listener stopped: {}", error.what());
     }
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve_replica(std::shared_ptr<NBIO::RDMA::RdmaSessionService> session) {
+nbio::async::Task<nbio::runtime, void> ReplicationService::serve_replica(std::shared_ptr<nbio::net::RdmaSessionService> session) {
     auto replica =
-        std::make_shared<Replica>(session, std::make_shared<NBIO::RDMA::RdmaDeliverService>(session, link_layout()));
+        std::make_shared<Replica>(session, std::make_shared<nbio::net::RdmaDeliverService>(session, link_layout()));
     // Held for the whole connection: what record() appends to is this replica's
     // buffer, and the buffer has to be there before the snapshot is captured.
     Attachment attachment;
@@ -341,7 +341,7 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve_replica(std::sh
             spdlog::warn("replication: a replica's handshake failed: {}", ready.error());
             co_return;
         }
-        replica->link->start();
+        replica->link->Start();
 
         if (!co_await send_snapshot(replica, attachment)) {
             spdlog::warn("replication: a replica went away before it had its snapshot");
@@ -362,15 +362,15 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::serve_replica(std::sh
     }
 
     replica->ended = true;
-    replica->writable.notify_one();
+    replica->writable.NotifyOne();
 }
 
-NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::send_snapshot(std::shared_ptr<Replica> replica,
+nbio::async::Task<nbio::runtime, bool> ReplicationService::send_snapshot(std::shared_ptr<Replica> replica,
                                                                Attachment& attachment) {
     // One lazily grown buffer for the whole handshake. It is what the requests
     // are read through and what the replies are read past, and the two share it
     // so that bytes arriving behind a line are already where the next read looks.
-    NBIO::Utility::Buffer buffer(1U << 14U, 1U << 22U);
+    nbio::utility::Buffer buffer(1U << 14U, 1U << 22U);
     LinkStream stream(*replica->link, buffer);
 
     const auto request = co_await stream.command();
@@ -413,7 +413,7 @@ NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::send_snapshot(std::sh
     }
 
     std::string greeting = FullResync(replid_, taken_at) + BulkHeader(size);
-    if (auto sent = co_await replica->link->send(greeting); !sent) [[unlikely]]
+    if (auto sent = co_await replica->link->Send(greeting); !sent) [[unlikely]]
     {
         spdlog::warn("replication: sending the FULLRESYNC greeting failed: {}", sent.error());
         co_return false;
@@ -437,7 +437,7 @@ NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::send_snapshot(std::sh
             // The span points into this frame, so it is the frame -- not a copy
             // of it -- that has to stay put across the await, and it does.
             if (auto sent =
-                    co_await replica->link->send(std::span<const char>(block.data(), static_cast<std::size_t>(got)));
+                    co_await replica->link->Send(std::span<const char>(block.data(), static_cast<std::size_t>(got)));
                 !sent) [[unlikely]]
             {
                 spdlog::warn("replication: sending '{}' failed after {} bytes: {}", file.string(), sent_bytes,
@@ -465,7 +465,7 @@ NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::send_snapshot(std::sh
     }
 
     std::string acknowledgement = Continue(replid_);
-    if (auto sent = co_await replica->link->send(acknowledgement); !sent) [[unlikely]]
+    if (auto sent = co_await replica->link->Send(acknowledgement); !sent) [[unlikely]]
     {
         spdlog::warn("replication: sending the CONTINUE failed: {}", sent.error());
         co_return false;
@@ -476,7 +476,7 @@ NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::send_snapshot(std::sh
     co_return true;
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::pump(std::shared_ptr<Replica> replica) {
+nbio::async::Task<nbio::runtime, void> ReplicationService::pump(std::shared_ptr<Replica> replica) {
     while (true) {
         if (replica->pending.empty()) {
             co_await replica->writable.wait([&replica] { return !replica->pending.empty() || replica->ended; });
@@ -492,7 +492,7 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::pump(std::shared_ptr<
         // they are -- in the buffer that record() keeps filling.
         std::string handover = std::move(replica->pending);
         replica->pending.clear();
-        if (auto sent = co_await replica->link->send(handover); !sent) [[unlikely]]
+        if (auto sent = co_await replica->link->Send(handover); !sent) [[unlikely]]
         {
             spdlog::warn("replication: sending {} bytes of writes failed: {}", handover.size(), sent.error());
             co_return;
@@ -500,24 +500,24 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::pump(std::shared_ptr<
     }
 }
 
-bool ReplicationService::slave_of(const NBIO::Net::SocketAddress& master) {
+bool ReplicationService::slave_of(const nbio::net::Address& master) {
     bool expected = false;
     if (!following_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return false;
     }
     if (resources_ == nullptr) {
         following_.store(false, std::memory_order_release);
-        spdlog::error("replication: cannot follow {}: this instance was started without an RDMA device",
+        spdlog::error("replication: cannot follow {}: this instance was started without an rdma device",
                       Endpoint(master));
         return false;
     }
 
     spdlog::info("replication: following master {} as a replica", Endpoint(master));
-    NBIO::spawn(follow_forever(master));
+    nbio::Spawn(follow_forever(master));
     return true;
 }
 
-NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::follow_forever(NBIO::Net::SocketAddress master) {
+nbio::async::Task<nbio::runtime, void> ReplicationService::follow_forever(nbio::net::Address master) {
     const std::string endpoint = Endpoint(master);
 
     while (is_replica()) {
@@ -538,35 +538,35 @@ NBIO::Async::Task<NBIO::Runtime, void> ReplicationService::follow_forever(NBIO::
         // successful connect hands its communication id to the session, which is
         // why one cannot be reused.
         link_.reset();
-        co_await NBIO::Time::SystemTimeService{}.sleep(std::chrono::seconds(1));
+        co_await nbio::time::SystemTimeService{}.sleep(std::chrono::seconds(1));
     }
     co_return;
 }
 
-NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::sync_once(NBIO::Net::SocketAddress master) {
+nbio::async::Task<nbio::runtime, bool> ReplicationService::sync_once(nbio::net::Address master) {
     link_ = std::make_unique<ReplicaLink>(resources_);
-    NBIO::RDMA::RdmaConnectChannel channel(link_->connector, NBIO::Runtime::multiplexer(), NBIO::Runtime::scheduler());
-    auto session = co_await channel.connect(master);
+    nbio::net::RdmaConnectChannel channel(link_->connector, nbio::runtime::multiplexer(), nbio::runtime::scheduler());
+    auto session = co_await channel.Connect(master);
     if (!session) [[unlikely]] {
         spdlog::warn("replication: connecting to {} failed: {}", Endpoint(master), session.error());
         co_return false;
     }
 
-    link_->link = std::make_shared<NBIO::RDMA::RdmaDeliverService>(*session, link_layout());
+    link_->link = std::make_shared<nbio::net::RdmaDeliverService>(*session, link_layout());
     if (auto ready = co_await link_->link->handshake(); !ready) [[unlikely]]
     {
         spdlog::warn("replication: the handshake with {} failed: {}", Endpoint(master), ready.error());
         co_return false;
     }
-    link_->link->start();
+    link_->link->Start();
 
-    NBIO::Utility::Buffer buffer(1U << 14U, 1U << 22U);
+    nbio::utility::Buffer buffer(1U << 14U, 1U << 22U);
     LinkStream stream(*link_->link, buffer);
 
     // The opening request: no id and no offset, which is the only thing this end
     // can honestly say before it has seen the master's stream. It is answered
     // with a snapshot and the position that snapshot belongs to.
-    if (auto posted = co_await link_->link->send(EncodePSYNC("?", "-1")); !posted) [[unlikely]]
+    if (auto posted = co_await link_->link->Send(EncodePSYNC("?", "-1")); !posted) [[unlikely]]
     {
         spdlog::warn("replication: asking {} to synchronise failed: {}", Endpoint(master), posted.error());
         co_return false;
@@ -652,7 +652,7 @@ NBIO::Async::Task<NBIO::Runtime, bool> ReplicationService::sync_once(NBIO::Net::
     // Loaded, so the stream may start: the master holds everything applied since
     // the snapshot, and this is what asks for it. The offset is where this end
     // is, which is where the snapshot left it.
-    if (auto posted = co_await link_->link->send(EncodePSYNC(std::to_string(replid), "0")); !posted) [[unlikely]]
+    if (auto posted = co_await link_->link->Send(EncodePSYNC(std::to_string(replid), "0")); !posted) [[unlikely]]
     {
         spdlog::warn("replication: asking {} for the stream failed: {}", Endpoint(master), posted.error());
         co_return false;

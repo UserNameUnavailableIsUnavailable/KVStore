@@ -4,10 +4,10 @@
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
-#include <NBIO/Async/Task.hpp>
-#include <NBIO/Utility/Buffer.hpp>
-#include <NBIO/FS/FileStreamService.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
+#include <nbio/async/Task.hpp>
+#include <nbio/utility/Buffer.hpp>
+#include <nbio/fs/FileStreamService.hpp>
+#include <nbio/runtime/Runtime.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -46,7 +46,7 @@ class AppendOnlyFile {
 
     bool checksum() const noexcept { return checksum_; }
 
-    NBIO::Async::Task<NBIO::Runtime, void> append(const Command& command);
+    nbio::async::Task<nbio::runtime, void> append(const Command& command);
 
     template <typename Apply>
     bool replay(Apply&& apply) const {
@@ -60,7 +60,7 @@ class AppendOnlyFile {
         }
 
         const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        NBIO::Utility::Buffer buffer(std::max<std::size_t>(512, bytes.size()),
+        nbio::utility::Buffer buffer(std::max<std::size_t>(512, bytes.size()),
                                         std::max<std::size_t>(512, bytes.size()));
         if (!bytes.empty() && !buffer.write(bytes.data(), bytes.size())) {
             return false;
@@ -105,13 +105,13 @@ class AppendOnlyFile {
     // checksum after only some of them, so this reads what is there rather than what
     // the setting would have written: a log checksummed for part of its life, and one
     // written before there were checksums at all, both replay.
-    static bool verify_checksum(NBIO::Utility::Buffer& buffer, std::span<const char> command);
+    static bool verify_checksum(nbio::utility::Buffer& buffer, std::span<const char> command);
 
     std::filesystem::path path_;
     // The file and the channels that write it, made against this thread's engine. Held
     // by the shared_ptr rather than by value because an append in flight keeps a
     // reference of its own and has to outlive a disable() that resets this.
-    std::shared_ptr<NBIO::FS::FileStreamService> file_;
+    std::shared_ptr<nbio::fs::FileStreamService> file_;
     bool enabled_{false};
     bool checksum_{false};
 };

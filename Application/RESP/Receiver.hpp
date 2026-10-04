@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Application/RESP/RESP.hpp>
-#include <NBIO/Async/Task.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
-#include <NBIO/Net/TcpSessionService.hpp>
+#include <nbio/async/Task.hpp>
+#include <nbio/runtime/Runtime.hpp>
+#include <nbio/net/TcpSessionService.hpp>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -26,23 +26,23 @@ class Receiver {
         std::optional<Object> object;
     };
 
-    Receiver(NBIO::Net::TcpSessionService& session, ::NBIO::Utility::Buffer& buffer);
+    Receiver(nbio::net::TcpSessionService& session, ::nbio::utility::Buffer& buffer);
     ~Receiver() noexcept;
 
-    NBIO::Async::Task<NBIO::Runtime, std::optional<Object>> receive();
+    nbio::async::Task<nbio::runtime, std::optional<Object>> Receive();
 
     // Decodes only what is already buffered: no read, no wait. A caller that
     // wants to answer a pipeline in one write asks this until it reports that no
-    // complete command is left, so it never parks with replies still in hand.
-    std::optional<Object> try_receive();
+    // complete command is left, so it never Parks with replies still in hand.
+    std::optional<Object> TryReceive();
 
     // The same two, for a server reading commands rather than a client reading
     // replies. A command written the way a client writes one -- an array of bulk
     // strings -- is read where it lies, as words pointing into the receive
     // buffer, and a GET costs one pass and no allocation. Anything else is handed
     // to the decoder above.
-    NBIO::Async::Task<NBIO::Runtime, std::optional<Command>> receive_command();
-    std::optional<Command> try_receive_command();
+    nbio::async::Task<nbio::runtime, std::optional<Command>> ReceiveCommand();
+    std::optional<Command> TryReceiveCommand();
 
     std::string decode_error() const { return decode_error_; }
     std::string internal_error() const { return interal_error_; }
@@ -57,16 +57,16 @@ class Receiver {
     // that borrowed them has finished with them. The next command is the first
     // thing that may write over them, which is why this is the first thing read
     // does.
-    void release();
+    void Release();
 
     // One attempt at a command that may already be in the buffer: read where it
     // lies when it can be, decoded when it cannot, nothing when there is not
     // enough of it yet.
-    std::optional<Command> take();
+    std::optional<Command> Take();
 
     // What a decoder's outcome means: a protocol error is recorded, a line with
     // no command is remembered as nothing owed, and a command is handed over.
-    std::optional<Object> finish(DecodeResult& decoded);
+    std::optional<Object> Finish(DecodeResult& decoded);
 
     // The decoder for the command being read, created on first use. It is kept
     // between calls on purpose: a decoder abandoned half way through a command
@@ -74,8 +74,8 @@ class Receiver {
     // start in the middle of that command and read its arguments as commands.
     Decoder& decoder();
 
-    NBIO::Net::TcpSessionService& session_;
-    NBIO::Utility::Buffer& buffer_;
+    nbio::net::TcpSessionService& session_;
+    nbio::utility::Buffer& buffer_;
     std::optional<Decoder> pending_;
     // The words of the last command handed out, and how many bytes of the buffer
     // they are views into. Both belong to the connection rather than to a call,

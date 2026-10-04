@@ -2,12 +2,12 @@
 #include <Application/RESP/RESP.hpp>
 #include <Application/RESP/Receiver.hpp>
 #include <Application/RESP/Sender.hpp>
-#include <NBIO/Async/Async.hpp>
-#include <NBIO/Utility/Buffer.hpp>
-#include <NBIO/Net/SocketAddress.hpp>
-#include <NBIO/Net/TcpSocket.hpp>
-#include <NBIO/NBIO.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
+#include <nbio/async/Async.hpp>
+#include <nbio/utility/Buffer.hpp>
+#include <nbio/net/Address.hpp>
+#include <nbio/net/TcpSocket.hpp>
+#include <nbio/nbio.hpp>
+#include <nbio/runtime/Runtime.hpp>
 #include <cctype>
 #include <cstdint>
 #include <iostream>
@@ -150,11 +150,11 @@ std::vector<std::string> Tokenize(const std::string& line) {
 
 }  // namespace
 
-NBIO::Async::Task<NBIO::Runtime, void> run_client(NBIO::Net::SocketAddress address, std::string host, std::uint16_t port) {
+nbio::async::Task<nbio::runtime, void> run_client(nbio::net::Address address, std::string host, std::uint16_t port) {
     // The connect service makes the connection and hands back the session that owns it;
     // the channel that waited for the handshake is gone by the time this returns.
-    NBIO::Net::TcpConnectService gateway{address.family()};
-    auto connected = co_await gateway.connect(address);
+    nbio::net::TcpConnectService gateway{address.family()};
+    auto connected = co_await gateway.Connect(address);
     if (!connected) {
         std::cerr << "connect failed: " << connected.error().message() << '\n';
         co_return;
@@ -184,18 +184,18 @@ NBIO::Async::Task<NBIO::Runtime, void> run_client(NBIO::Net::SocketAddress addre
             continue;
         }
 
-        ::NBIO::Utility::Buffer send_buffer;
+        ::nbio::utility::Buffer send_buffer;
         RESP::Sender sender(*session, send_buffer);
-        if (!co_await sender.send(*request)) {
+        if (!co_await sender.Send(*request)) {
             const std::string reason =
                 sender.internal_error().empty() ? "failed to send command" : sender.internal_error();
             std::cerr << reason << '\n';
             co_return;
         }
 
-        ::NBIO::Utility::Buffer receive_buffer;
+        ::nbio::utility::Buffer receive_buffer;
         RESP::Receiver receiver(*session, receive_buffer);
-        const std::optional<RESP::Object> response = co_await receiver.receive();
+        const std::optional<RESP::Object> response = co_await receiver.Receive();
         if (!response) {
             const std::string reason =
                 receiver.decode_error().empty() ? receiver.internal_error() : receiver.decode_error();
@@ -212,9 +212,9 @@ NBIO::Async::Task<NBIO::Runtime, void> run_client(NBIO::Net::SocketAddress addre
 int main(int argc, char* argv[]) {
     const std::string host = argc > 1 ? argv[1] : "127.0.0.1";
     const std::uint16_t port = argc > 2 ? static_cast<std::uint16_t>(std::stoul(argv[2])) : 6379;
-    const NBIO::Net::SocketAddress address = host.find(':') == std::string::npos
-                                                        ? NBIO::Net::SocketAddress::from_v4(host, port)
-                                                        : NBIO::Net::SocketAddress::from_v6(host, port);
-    NBIO::run(run_client(address, host, port));
+    const nbio::net::Address address = host.find(':') == std::string::npos
+                                                        ? nbio::net::Address::FromV4(host, port)
+                                                        : nbio::net::Address::FromV6(host, port);
+    nbio::run(run_client(address, host, port));
     return 0;
 }

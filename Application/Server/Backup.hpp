@@ -1,9 +1,9 @@
 #pragma once
 
-#include <NBIO/Async/Async.hpp>
-#include <NBIO/Async/Task.hpp>
-#include <NBIO/Notification/ConditionVariable.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
+#include <nbio/async/Async.hpp>
+#include <nbio/async/Task.hpp>
+#include <nbio/notification/ConditionVariable.hpp>
+#include <nbio/runtime/Runtime.hpp>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -62,10 +62,10 @@ class Backup {
     // Writes a snapshot of `entries` to the RDB path. The write happens in
     // a child process, so the event loop waits for it but is never the
     // process that forks.
-    NBIO::Async::Task<NBIO::Runtime, bool> save(std::vector<detail::SnapshotEntry> entries) const;
+    nbio::async::Task<nbio::runtime, bool> save(std::vector<detail::SnapshotEntry> entries) const;
 
     template <template <typename, typename> typename Map>
-    NBIO::Async::Task<NBIO::Runtime, bool> save(Store<std::string, std::string, Map>& store) const {
+    nbio::async::Task<nbio::runtime, bool> save(Store<std::string, std::string, Map>& store) const {
         co_return co_await save(capture(store));
     }
 
@@ -134,8 +134,8 @@ class Backup {
     // Runs `work` on a helper thread. Forking is the reason: a child of the
     // event loop thread would inherit the running backend.
     template <typename Work, typename Result = std::invoke_result_t<Work>>
-    static NBIO::Async::Task<NBIO::Runtime, Result> offload(Work work) {
-        NBIO::Notification::ConditionVariable condition;
+    static nbio::async::Task<nbio::runtime, Result> offload(Work work) {
+        nbio::notification::ConditionVariable condition;
         std::optional<Result> result;
         std::atomic_bool done{false};
         std::atomic_bool start{false};
@@ -148,7 +148,7 @@ class Backup {
                 result.emplace();  // a default value is what a failure looks like here
             }
             done.store(true, std::memory_order_release);
-            condition.notify_one();
+            condition.NotifyOne();
         });
         co_await condition.wait([&start, &done] {
             start.store(true, std::memory_order_release);

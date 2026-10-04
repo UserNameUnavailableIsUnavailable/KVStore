@@ -2,9 +2,9 @@
 
 #include <Application/Server/Backup.hpp>
 #include <Application/Server/Store.hpp>
-#include <NBIO/Async/Async.hpp>
-#include <NBIO/NBIO.hpp>
-#include <NBIO/Runtime/Runtime.hpp>
+#include <nbio/async/Async.hpp>
+#include <nbio/nbio.hpp>
+#include <nbio/runtime/Runtime.hpp>
 #include <chrono>
 #include <filesystem>
 #include <map>
@@ -53,7 +53,7 @@ TEST(BackupTesting, SaveAndLoadRoundTrip) {
 
     KV::Backup backup(temp_path);
     bool saved = false;
-    NBIO::run([&]() -> NBIO::Async::Task<NBIO::Runtime, void> {
+    nbio::run([&]() -> nbio::async::Task<nbio::runtime, void> {
         saved = co_await backup.save(source);
         co_return;
     }());
