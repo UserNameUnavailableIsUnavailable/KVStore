@@ -2,51 +2,42 @@
 
 #include <unistd.h>
 
+#include <Foundation/Async/Scheduler.hpp>
+#include <Foundation/NBIO/Multiplexer.hpp>
 #include <utility>
 
-#include <Foundation/NBIO/Multiplexer.hpp>
-#include <Foundation/Async/Scheduler.hpp>
-
-namespace Foundation::NBIO
-{
-SystemSignalChannel::SystemSignalChannel(Foundation::Core::SystemSignal &signal, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler)
-    : Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kSystemSignal, signal.native_handle(), multiplexer, scheduler), signal_(signal)
-{
+namespace Foundation::NBIO {
+SystemSignalChannel::SystemSignalChannel(Foundation::Core::SystemSignal& signal,
+                                         Foundation::NBIO::Multiplexer& multiplexer,
+                                         Foundation::Async::Scheduler& scheduler)
+    : Foundation::NBIO::Channel<SystemSignalChannel>(Foundation::NBIO::ChannelType::kSystemSignal,
+                                                     signal.native_handle(), multiplexer, scheduler),
+      signal_(signal) {
     signal.non_blocking(true);
     // Registered on the first park(): nothing to watch until a coroutine waits.
 }
 
-SystemSignalChannel::~SystemSignalChannel()
-{
-    multiplexer_.delete_channel(this);
-}
+SystemSignalChannel::~SystemSignalChannel() { multiplexer_.delete_channel(this); }
 
-Payload &SystemSignalChannel::submit()
-{
-    return payload_;
-}
+SystemSignalChannel::Payload& SystemSignalChannel::submit() { return payload_; }
 
-void SystemSignalChannel::park(Async::Coroutine coroutine)
-{
+void SystemSignalChannel::park(Async::Coroutine coroutine) {
     waiters_.push_back(std::move(coroutine));
     arm();
 }
 
-void SystemSignalChannel::complete()
-{
-    auto &payload = std::get<SystemSignalPayload>(payload_);
+void SystemSignalChannel::complete() {
+    auto& payload = payload_;
     payload.release_poll();
 
     // Take the signals out first: that is what makes the signalfd stop reporting,
     // and the waiters below are who they were for.
     (void)signal_.drain();
 
-    for (auto &waiter : waiters_)
-    {
+    for (auto& waiter : waiters_) {
         // is_dead() first: it is what makes done() safe, since the frame may have
         // been reclaimed after the entry was queued.
-        if (waiter)
-        {
+        if (waiter) {
             scheduler_.submit(std::move(waiter));
         }
     }
@@ -58,4 +49,4 @@ void SystemSignalChannel::complete()
     // one is handed to all of them.
     disarm();
 }
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

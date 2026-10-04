@@ -1,57 +1,46 @@
 #include "Server.hpp"
-#include "ConfFile.hpp"
-#include <Foundation/NBIO/EpollMultiplexer.hpp>
-#include <Foundation/NBIO/Multiplexer.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
-#include "Backup.hpp"
 
-#include <Foundation/Async/Async.hpp>
-#include <Foundation/Core/Buffer.hpp>
+#include <spdlog/spdlog.h>
+#include <sys/socket.h>
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
 #include <Application/RESP/Receiver.hpp>
 #include <Application/RESP/Sender.hpp>
-
-
+#include <Foundation/Async/Async.hpp>
+#include <Foundation/Core/Buffer.hpp>
+#include <Foundation/NBIO/EpollMultiplexer.hpp>
+#include <Foundation/NBIO/Multiplexer.hpp>
+#include <Foundation/NBIO/NBIO.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/NBIO/Types.hpp>
 #include <Foundation/NBIO/URingMultiplexer.hpp>
 #include <cstdlib>
 #include <memory>
 #include <optional>
-#include <spdlog/spdlog.h>
+#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <stdexcept>
-#include <sys/socket.h>
 #include <utility>
 #include <vector>
 
-namespace KV
-{
-namespace detail
-{
-RESP::Object Error(std::string message)
-{
-    return RESP::Object(RESP::SimpleError{.value = std::move(message)});
-}
+#include "Backup.hpp"
+#include "ConfFile.hpp"
 
-bool ParseUnsigned(std::string_view text, std::size_t &value) noexcept
-{
-    try
-    {
+namespace KV {
+namespace detail {
+RESP::Object Error(std::string message) { return RESP::Object(RESP::SimpleError{.value = std::move(message)}); }
+
+bool ParseUnsigned(std::string_view text, std::size_t& value) noexcept {
+    try {
         std::size_t consumed = 0;
         const auto parsed = std::stoull(std::string(text), &consumed);
-        if (consumed != text.size())
-        {
+        if (consumed != text.size()) {
             return false;
         }
         value = static_cast<std::size_t>(parsed);
         return true;
-    }
-    catch (const std::exception &)
-    {
+    } catch (const std::exception&) {
         return false;
     }
 }
@@ -59,31 +48,28 @@ bool ParseUnsigned(std::string_view text, std::size_t &value) noexcept
 // server would have used on its own. A file that looks as if it was ignored is
 // otherwise hard to explain, so the command line says when it overrode one.
 template <typename T>
-T Resolve(std::string_view name, const std::optional<T> &given, const std::optional<T> &declared, T fallback)
-{
-    if (given)
-    {
-        if (declared && !(*declared == *given))
-        {
+T Resolve(std::string_view name, const std::optional<T>& given, const std::optional<T>& declared, T fallback) {
+    if (given) {
+        if (declared && !(*declared == *given)) {
             spdlog::warn("config: the file's '{}' is ignored; the command line named one", name);
         }
         return *given;
     }
     return declared ? *declared : std::move(fallback);
-}} // namespace
+}
+}  // namespace detail
 
-void Server::run(const ServerOptions &options)
-{
+void Server::run(const ServerOptions& options) {
     std::vector<CommandLine> commands;
-    if (options.config_file)
-    {
+    if (options.config_file) {
         commands = ReadCommandFile(*options.config_file);
     }
     const StartupSettings declared = TakeStartupSettings(commands);
 
     const std::uint16_t port = detail::Resolve("port", options.port, declared.port, ServerOptions::kDefaultPort);
-    const std::uint16_t replication_port = detail::Resolve("replication-port", options.replication_port,
-                                                           declared.replication_port, ServerOptions::kDefaultReplicationPort);
+    const std::uint16_t replication_port =
+        detail::Resolve("replication-port", options.replication_port, declared.replication_port,
+                        ServerOptions::kDefaultReplicationPort);
     const std::string replication_address =
         detail::Resolve("replication-ip", options.replication_address, declared.replication_address,
                         std::string{ServerOptions::kDefaultReplicationSocketAddress});
@@ -97,17 +83,11 @@ void Server::run(const ServerOptions &options)
 
     const bool keep_log = declared.appendonly.value_or(false);
     const bool has_log = aof_.exists();
-    if (keep_log && has_log)
-    {
-        if (!aof_.replay([this](const KV::Command &command) {
-                return replay_aof_command(command);
-            }))
-        {
+    if (keep_log && has_log) {
+        if (!aof_.replay([this](const KV::Command& command) { return replay_aof_command(command); })) {
             throw std::runtime_error("failed to load the append-only file");
         }
-    }
-    else if (!backup_.load(store_))
-    {
+    } else if (!backup_.load(store_)) {
         throw std::runtime_error("failed to load RDB snapshot");
     }
 
@@ -117,117 +97,90 @@ void Server::run(const ServerOptions &options)
         .rdma_device = rdma_device,
     };
     ReplicationService::Host host{
-        .snapshot_file = [this] {
-            return backup_.path();
-        },
-        .snapshot = [this] {
-            return backup_.save(Backup::capture(store_));
-        },
-        .restore = [this](const std::filesystem::path &file) {
-            return backup_.load_from(file, store_);
-        },
-        .apply = [this](const KV::Command &command) {
-            return apply_replicated_command(command);
-        },
-        .link_changed = [](bool up) {
-            spdlog::info("replication: {}", up ? "the master is up" : "the master went away");
-        },
+        .snapshot_file = [this] { return backup_.path(); },
+        .snapshot = [this] { return backup_.save(Backup::capture(store_)); },
+        .restore = [this](const std::filesystem::path& file) { return backup_.load_from(file, store_); },
+        .apply = [this](const KV::Command& command) { return apply_replicated_command(command); },
+        .link_changed =
+            [](bool up) { spdlog::info("replication: {}", up ? "the master is up" : "the master went away"); },
     };
     staged_save_ready_ = std::make_unique<Foundation::NBIO::ConditionVariable>();
 
-    if (keep_log && !aof_.enable())
-    {
+    if (keep_log && !aof_.enable()) {
         throw std::runtime_error("failed to open the append-only file");
     }
 
     replication_ = std::make_unique<ReplicationService>(std::move(replication_options), std::move(host));
 
-    if (replication_->is_master())
-    {
+    if (replication_->is_master()) {
         Foundation::NBIO::spawn(replication_->serve());
     }
 
     Foundation::NBIO::run(serve(port, std::move(commands)));
 }
 
-Foundation::NBIO::Task<void> Server::serve(std::uint16_t port, std::vector<CommandLine> commands)
-{
+Foundation::NBIO::Task<void> Server::serve(std::uint16_t port, std::vector<CommandLine> commands) {
     // The commands go first: a server that is answering clients is a server that
     // has decided how it is configured.
     co_await apply_commands(std::move(commands));
 
-    try
-    {
+    try {
         co_await serve(Foundation::Core::SocketAddress::from_v4("0.0.0.0", port));
-    }
-    catch (const std::exception &error)
-    {
+    } catch (const std::exception& error) {
         spdlog::error("server stopped: {}", error.what());
         std::exit(EXIT_FAILURE);
     }
 }
 
-Foundation::NBIO::Task<void> Server::apply_commands(std::vector<CommandLine> commands)
-{
-    for (const CommandLine &line : commands)
-    {
+Foundation::NBIO::Task<void> Server::apply_commands(std::vector<CommandLine> commands) {
+    for (const CommandLine& line : commands) {
         const KV::CommandValidation validation = KV::ValidateCommand(CommandRequest(line));
-        if (!validation)
-        {
+        if (!validation) {
             throw std::runtime_error(line.where() + ": " + validation.error);
         }
 
         const RESP::Object response = co_await execute(*validation.command);
-        if (const auto *error = std::get_if<RESP::SimpleError>(&response.value))
-        {
+        if (const auto* error = std::get_if<RESP::SimpleError>(&response.value)) {
             throw std::runtime_error(line.where() + ": " + error->value);
         }
         spdlog::info("config: applied '{}'", line.text);
     }
 
-    if (!commands.empty())
-    {
+    if (!commands.empty()) {
         spdlog::info("config: {} command(s) applied", commands.size());
     }
 }
 
-Foundation::NBIO::Task<void> Server::serve(const Foundation::Core::SocketAddress &address)
-{
+Foundation::NBIO::Task<void> Server::serve(const Foundation::Core::SocketAddress& address) {
     // The listener lives here, in the frame of the loop that uses it, because the
     // accept channel keeps a reference to the acceptor it waits on.
     Foundation::NBIO::TcpAcceptService listener{address};
     co_await accept_clients(listener);
 }
 
-Foundation::NBIO::Task<void> Server::accept_clients(Foundation::NBIO::TcpAcceptService &listener)
-{
-    while (true)
-    {
+Foundation::NBIO::Task<void> Server::accept_clients(Foundation::NBIO::TcpAcceptService& listener) {
+    while (true) {
         auto accepted = co_await listener.accept();
-        if (!accepted)
-        {
+        if (!accepted) {
             continue;
         }
         // What accepting hands over is the whole connection: the session that owns it
         // from here, and the address it came from -- which nothing on this side can
         // know, because the other end chose it.
         auto connection = std::move(*accepted);
-        Foundation::NBIO::spawn(
-            serve_client(std::make_shared<TcpSessionService>(std::move(connection.first))));
+        Foundation::NBIO::spawn(serve_client(std::make_shared<TcpSessionService>(std::move(connection.first))));
     }
 }
 
-namespace
-{
+namespace {
 // How much of a batch may pile up before it is written. A client that pipelines
 // a million commands and never reads the answers must not be able to make the
 // server buffer without limit, and a batch past this size is not going to leave
 // in one write anyway.
 constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
-} // namespace
+}  // namespace
 
-    Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> session)
-{
+Foundation::NBIO::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> session) {
     // A pipeline can hold more than one command, and a single command can be
     // larger than a socket read, so the receive buffer starts roomy and is
     // allowed to grow: the decoder needs the whole command before it can hand
@@ -237,34 +190,26 @@ constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
     auto send_buffer = std::make_unique<::Foundation::Core::Buffer>(16U * 1024U, 16U * 1024U * 1024U);
 
     RESP::Receiver receiver(session->transport(), *recv_buffer);
-    while (true)
-    {
+    while (true) {
         // Waiting for input is the only place this coroutine blocks, and it never
         // does so with replies still in hand: what the client has already sent is
         // answered first.
         auto command = co_await receiver.receive_command();
-        if (receiver.no_command())
-        {
+        if (receiver.no_command()) {
             // A line with no command on it: nothing is owed to the client for
             // it, and the connection stays up for the command that follows.
             continue;
         }
-        if (!command)
-        {
+        if (!command) {
             RESP::Sender sender(session->transport(), *send_buffer);
-            if (!receiver.decode_error().empty())
-            {
+            if (!receiver.decode_error().empty()) {
                 // The bytes that did not parse are already dropped, so the
                 // commands behind them are still decodable: the client is told
                 // and the connection goes on.
-                (void)co_await sender.send(RESP::Object(RESP::SimpleError{
-                    .value = receiver.decode_error()
-                }));
+                (void)co_await sender.send(RESP::Object(RESP::SimpleError{.value = receiver.decode_error()}));
                 continue;
             }
-            (void)co_await sender.send(RESP::Object(RESP::SimpleError{
-                .value = "internal error"
-            }));
+            (void)co_await sender.send(RESP::Object(RESP::SimpleError{.value = "internal error"}));
             co_return;
         }
 
@@ -272,62 +217,49 @@ constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
         // Replies are appended rather than written, so a pipeline leaves in one
         // write instead of one write per command.
         RESP::Sender sender(session->transport(), *send_buffer);
-        while (true)
-        {
+        while (true) {
             // A single-key read is answered out of the words it was read with,
             // before any of this: see answer_read.
             std::optional<RESP::Object> answered =
                 command->object ? std::nullopt : answer_read(command->words, *session);
-            if (!answered)
-            {
+            if (!answered) {
                 // A command the client wrote as an array of bulk strings is
                 // answered out of the words read where they lie; anything else --
                 // an inline line, an argument that is not a string -- was decoded
                 // into an object and is answered from that.
-                const KV::CommandValidation validation = command->object ? KV::ValidateCommand(*command->object)
-                                                                        : KV::ValidateCommand(command->words);
-                if (validation)
-                {
+                const KV::CommandValidation validation =
+                    command->object ? KV::ValidateCommand(*command->object) : KV::ValidateCommand(command->words);
+                if (validation) {
                     answered = co_await dispatch(*session, std::move(*validation.command));
-                }
-                else
-                {
+                } else {
                     answered = detail::Error(validation.error);
                 }
             }
             sender.append(*answered);
-            if (sender.pending() >= kReplyBatchBytes)
-            {
-                if (!co_await sender.flush())
-                {
+            if (sender.pending() >= kReplyBatchBytes) {
+                if (!co_await sender.flush()) {
                     co_return;
                 }
             }
 
             auto next = receiver.try_receive_command();
-            if (next)
-            {
+            if (next) {
                 command = std::move(next);
                 continue;
             }
-            if (!receiver.decode_error().empty())
-            {
-                sender.append(RESP::Object(RESP::SimpleError{
-                    .value = receiver.decode_error()
-                }));
+            if (!receiver.decode_error().empty()) {
+                sender.append(RESP::Object(RESP::SimpleError{.value = receiver.decode_error()}));
             }
             break;
         }
 
-        if (!co_await sender.flush())
-        {
+        if (!co_await sender.flush()) {
             co_return;
         }
     }
 }
 
-std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, TcpSessionService &session)
-{
+std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, TcpSessionService& session) {
     // A read of one key is most of what a server is asked, and it is worth
     // answering without building a command for it. The answer needs the key the
     // client wrote -- which is already here, in the words the request was read
@@ -340,8 +272,7 @@ std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view
     // A transaction is the one case where the command has to be built anyway: a
     // command inside a MULTI is not run when it arrives but when EXEC does, so it
     // has to be kept, with a key that outlives the request it was read from.
-    if (session.is_multi || words.size() != 2 || !KV::IsCommandName(words.front(), KV::CommandType::kGet))
-    {
+    if (session.is_multi || words.size() != 2 || !KV::IsCommandName(words.front(), KV::CommandType::kGet)) {
         return std::nullopt;
     }
 
@@ -351,96 +282,86 @@ std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view
     return RESP::Object(RESP::BulkString{.value = store_.get(session.lookup_key)});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::dispatch(TcpSessionService &session, KV::Command command)
-{
-    if (command.type == KV::CommandType::kMulti)
-    {
-        if (session.is_multi)
-        {
+Foundation::NBIO::Task<RESP::Object> Server::dispatch(TcpSessionService& session, KV::Command command) {
+    if (command.type == KV::CommandType::kMulti) {
+        if (session.is_multi) {
             co_return detail::Error("ERR MULTI calls can not be nested");
         }
         session.is_multi = true;
         co_return RESP::Object(RESP::SimpleString{.value = "OK"});
     }
-    if (command.type == KV::CommandType::kExec)
-    {
-        if (!session.is_multi)
-        {
+    if (command.type == KV::CommandType::kExec) {
+        if (!session.is_multi) {
             co_return detail::Error("ERR EXEC without MULTI");
         }
         session.is_multi = false;
         RESP::Array results;
         results.values.reserve(session.queued_commands.size());
-        for (const KV::Command &queued : session.queued_commands)
-        {
+        for (const KV::Command& queued : session.queued_commands) {
             results.values.push_back(co_await execute(queued));
         }
         session.queued_commands.clear();
         co_return RESP::Object(std::move(results));
     }
-    if (session.is_multi)
-    {
+    if (session.is_multi) {
         session.queued_commands.push_back(std::move(command));
         co_return RESP::Object(RESP::SimpleString{.value = "QUEUED"});
     }
     co_return co_await execute(command);
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command &command)
-{
-    if (replica_read_only_ && KV::IsWriteCommand(command.type))
-    {
+Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command& command) {
+    if (replica_read_only_ && KV::IsWriteCommand(command.type)) {
         co_return detail::Error("READONLY You can't write against a read only replica.");
     }
 
     RESP::Object response = detail::Error("ERR command cannot be executed");
-    switch (command.type)
-    {
-    case KV::CommandType::kPing:
-        response = co_await execute_ping(command);
-        break;
-    case KV::CommandType::kInfo:
-        response = co_await execute_info(command);
-        break;
-    case KV::CommandType::kGet:
-        response = co_await execute_get(command);
-        break;
-    {
-        (void)command;
-        co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
-    }
-    case KV::CommandType::kSet:
-        response = co_await execute_set(command);
-        break;
-    case KV::CommandType::kDel:
-        response = co_await execute_del(command);
-        break;
-    case KV::CommandType::kExists:
-        response = co_await execute_exists(command);
-        break;
-    case KV::CommandType::kDbSize:
-        response = co_await execute_dbsize(command);
-        break;
-    case KV::CommandType::kCommand:
-        response = co_await execute_command_info(command);
-        break;
-    case KV::CommandType::kClient:
-        response = co_await execute_client(command);
-        break;
-    case KV::CommandType::kConfig:
-        response = co_await execute_config(command);
-        break;
-    case KV::CommandType::kBgSave:
-        response = co_await execute_bgsave(command);
-        break;
-    case KV::CommandType::kSave:
-        response = co_await execute_save(command);
-        break;
-    case KV::CommandType::kSlaveOf:
-        response = co_await execute_slaveof(command);
-        break;
-    default:
-        break;
+    switch (command.type) {
+        case KV::CommandType::kPing:
+            response = co_await execute_ping(command);
+            break;
+        case KV::CommandType::kInfo:
+            response = co_await execute_info(command);
+            break;
+        case KV::CommandType::kGet:
+            response = co_await execute_get(command);
+            break;
+            {
+                (void)command;
+                co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
+            }
+        case KV::CommandType::kSet:
+            response = co_await execute_set(command);
+            break;
+        case KV::CommandType::kDel:
+            response = co_await execute_del(command);
+            break;
+        case KV::CommandType::kExists:
+            response = co_await execute_exists(command);
+            break;
+        case KV::CommandType::kDbSize:
+            response = co_await execute_dbsize(command);
+            break;
+        case KV::CommandType::kCommand:
+            response = co_await execute_command_info(command);
+            break;
+        case KV::CommandType::kClient:
+            response = co_await execute_client(command);
+            break;
+        case KV::CommandType::kConfig:
+            response = co_await execute_config(command);
+            break;
+        case KV::CommandType::kBgSave:
+            response = co_await execute_bgsave(command);
+            break;
+        case KV::CommandType::kSave:
+            response = co_await execute_save(command);
+            break;
+        case KV::CommandType::kSlaveOf:
+            response = co_await execute_slaveof(command);
+            break;
+        default:
+            break;
     }
 
     // The same writes the AOF records are the ones a replica has to be told
@@ -449,57 +370,48 @@ Foundation::NBIO::Task<RESP::Object> Server::execute(const KV::Command &command)
     // to hold the write before this frame awaits: a replica that is handed a
     // snapshot across that await would otherwise be given the write in its image
     // and then read it again from the log. Recording never waits itself.
-    if (KV::IsWriteCommand(command.type))
-    {
-        if (replication_ != nullptr)
-        {
+    if (KV::IsWriteCommand(command.type)) {
+        if (replication_ != nullptr) {
             replication_->record(command);
         }
-        if (aof_.enabled())
-        {
+        if (aof_.enabled()) {
             co_await aof_.append(command);
         }
     }
     co_return response;
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_ping(const KV::Command &command)
-{
+Foundation::NBIO::Task<RESP::Object> Server::execute_ping(const KV::Command& command) {
     (void)command;
     co_return RESP::Object(RESP::SimpleString{.value = "PONG"});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_get(const KV::Command &command)
-{
-    const auto &get = std::get<KV::GetParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_get(const KV::Command& command) {
+    const auto& get = std::get<KV::GetParams>(command.parameters);
     co_return RESP::Object(RESP::BulkString{.value = store_.get(get.key)});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_set(const KV::Command &command)
-{
-    const auto &set = std::get<KV::SetParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_set(const KV::Command& command) {
+    const auto& set = std::get<KV::SetParams>(command.parameters);
     store_.set(set.key, set.value);
     note_write();
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_del(const KV::Command &command)
-{
-    const auto &del = std::get<KV::DelParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_del(const KV::Command& command) {
+    const auto& del = std::get<KV::DelParams>(command.parameters);
     const bool exists = store_.contains(del.key);
     store_.set(del.key, std::nullopt);
     note_write();
     co_return RESP::Object(RESP::Integer{.value = exists ? 1 : 0});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_exists(const KV::Command &command)
-{
-    const auto &exists = std::get<KV::ExistsParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_exists(const KV::Command& command) {
+    const auto& exists = std::get<KV::ExistsParams>(command.parameters);
     co_return RESP::Object(RESP::Boolean{.value = store_.contains(exists.key)});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_dbsize(const KV::Command &command)
-{
+Foundation::NBIO::Task<RESP::Object> Server::execute_dbsize(const KV::Command& command) {
     (void)command;
     // The count in the index, like Redis, and not a walk that would also drop the
     // keys whose TTL has passed on the way -- a size query does not get to cost
@@ -511,23 +423,19 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_dbsize(const KV::Command &c
 // `SLAVEOF <ip> <port>`, the one command that changes what this instance is:
 // from here it is a replica, and a replica refuses its own clients' writes. The
 // address is the master's RDMA address, not the TCP one it answers clients on.
-Foundation::NBIO::Task<RESP::Object> Server::execute_slaveof(const KV::Command &command)
-{
-    const auto &slaveof = std::get<KV::SlaveOfParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_slaveof(const KV::Command& command) {
+    const auto& slaveof = std::get<KV::SlaveOfParams>(command.parameters);
 
-    if (replication_ == nullptr) [[unlikely]]
-    {
+    if (replication_ == nullptr) [[unlikely]] {
         co_return RESP::Object(RESP::SimpleError{.value = "ERR replication is not available on this server"});
     }
-    if (replication_->is_replica())
-    {
+    if (replication_->is_replica()) {
         co_return RESP::Object(RESP::SimpleError{.value = "ERR this instance already follows a master"});
     }
 
     const Foundation::Core::SocketAddress master =
         Foundation::Core::SocketAddress::from_v4(slaveof.address, slaveof.port);
-    if (!replication_->slave_of(master)) [[unlikely]]
-    {
+    if (!replication_->slave_of(master)) [[unlikely]] {
         // The one thing that can stop it here is the device, and the service has
         // already said which option names it.
         co_return RESP::Object(
@@ -541,133 +449,112 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_slaveof(const KV::Command &
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-bool Server::replay_aof_command(const KV::Command &command)
-{
-    switch (command.type)
-    {
-    case KV::CommandType::kSet: {
-        const auto &set = std::get<KV::SetParams>(command.parameters);
-        store_.set(set.key, set.value);
-        return true;
-    }
-    case KV::CommandType::kDel: {
-        const auto &del = std::get<KV::DelParams>(command.parameters);
-        store_.set(del.key, std::nullopt);
-        return true;
-    }
-    case KV::CommandType::kExpire:
-        return false;
-    default:
-        return true;
+bool Server::replay_aof_command(const KV::Command& command) {
+    switch (command.type) {
+        case KV::CommandType::kSet: {
+            const auto& set = std::get<KV::SetParams>(command.parameters);
+            store_.set(set.key, set.value);
+            return true;
+        }
+        case KV::CommandType::kDel: {
+            const auto& del = std::get<KV::DelParams>(command.parameters);
+            store_.set(del.key, std::nullopt);
+            return true;
+        }
+        case KV::CommandType::kExpire:
+            return false;
+        default:
+            return true;
     }
 }
 
-bool Server::apply_replicated_command(const KV::Command &command)
-{
+bool Server::apply_replicated_command(const KV::Command& command) {
     // The same mutations the AOF replay knows, and for the same reason: these are
     // the writes a master applies, and this end is applying the ones its master
     // applied, in the order it applied them. Recording them is what lets a replica
     // of this replica be caught up from the same bytes.
-    switch (command.type)
-    {
-    case KV::CommandType::kSet: {
-        const auto &set = std::get<KV::SetParams>(command.parameters);
-        store_.set(set.key, set.value);
-        note_write();
-        break;
-    }
-    case KV::CommandType::kDel: {
-        const auto &del = std::get<KV::DelParams>(command.parameters);
-        store_.set(del.key, std::nullopt);
-        note_write();
-        break;
-    }
-    default:
-        break;
+    switch (command.type) {
+        case KV::CommandType::kSet: {
+            const auto& set = std::get<KV::SetParams>(command.parameters);
+            store_.set(set.key, set.value);
+            note_write();
+            break;
+        }
+        case KV::CommandType::kDel: {
+            const auto& del = std::get<KV::DelParams>(command.parameters);
+            store_.set(del.key, std::nullopt);
+            note_write();
+            break;
+        }
+        default:
+            break;
     }
 
-    if (replication_ != nullptr)
-    {
+    if (replication_ != nullptr) {
         replication_->record(command);
     }
     return true;
 }
 
-std::optional<std::string> Server::config_value(const std::string &parameter) const
-{
-    if (parameter == "appendonly")
-    {
+std::optional<std::string> Server::config_value(const std::string& parameter) const {
+    if (parameter == "appendonly") {
         return aof_.enabled() ? "yes" : "no";
     }
-    if (parameter == "aof_checksum")
-    {
+    if (parameter == "aof_checksum") {
         return aof_.checksum() ? "yes" : "no";
     }
-    if (parameter == "appendfsync")
-    {
+    if (parameter == "appendfsync") {
         // The AOF is written with pwrite and never synced, which is exactly what
         // Redis calls `appendfsync no`.
         return "no";
     }
-    if (parameter == "save")
-    {
-        if (!staged_save_rule_)
-        {
+    if (parameter == "save") {
+        if (!staged_save_rule_) {
             return "";
         }
         return std::to_string(staged_save_rule_->seconds.count()) + " " + std::to_string(staged_save_rule_->changed);
     }
-    if (parameter == "port")
-    {
+    if (parameter == "port") {
         return std::to_string(port_);
     }
-    if (parameter == "rdma_device")
-    {
+    if (parameter == "rdma_device") {
         return rdma_device_;
     }
-    if (parameter == "replication_address")
-    {
+    if (parameter == "replication_address") {
         // The address and port a replica connects to, or nothing when this server
         // serves no replicas.
-        return replication_port_ == 0 ? std::string{}
-                                      : replication_address_ + " " + std::to_string(replication_port_);
+        return replication_port_ == 0 ? std::string{} : replication_address_ + " " + std::to_string(replication_port_);
     }
     return std::nullopt;
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_command_info(const KV::Command &command)
-{
+Foundation::NBIO::Task<RESP::Object> Server::execute_command_info(const KV::Command& command) {
     (void)command;
     // No command metadata to publish. An empty array is a well-formed answer,
     // which is all redis-cli needs to stop reporting the probe as an error.
     co_return RESP::Object(RESP::Array{});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_info(const KV::Command &command)
-{
+Foundation::NBIO::Task<RESP::Object> Server::execute_info(const KV::Command& command) {
     (void)command;
     co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_client(const KV::Command &command)
-{
-    const auto &client = std::get<KV::ClientParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_client(const KV::Command& command) {
+    const auto& client = std::get<KV::ClientParams>(command.parameters);
 
     // The handshake subcommands have to succeed. A client announces itself with
     // `CLIENT SETINFO` the moment it connects, and an error there makes it treat
     // the connection as broken before it ever sends a command. Nothing is kept:
     // this server has no per-connection state to name.
     if (client.subcommand == "setinfo" || client.subcommand == "setname" || client.subcommand == "no-evict" ||
-        client.subcommand == "no-touch")
-    {
+        client.subcommand == "no-touch") {
         co_return RESP::Object(RESP::SimpleString{.value = "OK"});
     }
-    if (client.subcommand == "getname")
-    {
+    if (client.subcommand == "getname") {
         co_return RESP::Object(RESP::BulkString{.value = std::string{}});
     }
-    if (client.subcommand == "id")
-    {
+    if (client.subcommand == "id") {
         co_return RESP::Object(RESP::Integer{.value = 0});
     }
 
@@ -676,23 +563,19 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_client(const KV::Command &c
     co_return RESP::Object(RESP::BulkString{.value = std::string{}});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command &command)
-{
-    const auto &config = std::get<KV::ConfigParams>(command.parameters);
+Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command& command) {
+    const auto& config = std::get<KV::ConfigParams>(command.parameters);
 
-    if (config.values.empty())
-    {
+    if (config.values.empty()) {
         // CONFIG GET answers with a flat name/value array, and an unknown name is
         // an empty array rather than an error -- the same as Redis.
         const std::vector<std::string> names =
-            config.parameter == "*"
-                ? std::vector<std::string>{"appendonly", "aof_checksum", "appendfsync", "save", "port", "replication_address"}
-                : std::vector<std::string>{config.parameter};
+            config.parameter == "*" ? std::vector<std::string>{"appendonly", "aof_checksum", "appendfsync",
+                                                               "save",       "port",         "replication_address"}
+                                    : std::vector<std::string>{config.parameter};
         std::vector<RESP::Object> values;
-        for (const std::string &name : names)
-        {
-            if (const auto value = config_value(name))
-            {
+        for (const std::string& name : names) {
+            if (const auto value = config_value(name)) {
                 values.push_back(RESP::Object(RESP::BulkString{.value = name}));
                 values.push_back(RESP::Object(RESP::BulkString{.value = *value}));
             }
@@ -700,45 +583,32 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command &c
         co_return RESP::Object(RESP::Array{.values = std::move(values)});
     }
 
-    if (config.parameter == "appendonly")
-    {
-        if (config.values.front() == "yes")
-        {
-            if (!aof_.enable())
-            {
+    if (config.parameter == "appendonly") {
+        if (config.values.front() == "yes") {
+            if (!aof_.enable()) {
                 co_return detail::Error("ERR CONFIG SET failed - could not open the AOF");
             }
-        }
-        else
-        {
+        } else {
             aof_.disable();
         }
-    }
-    else if (config.parameter == "aof_checksum")
-    {
+    } else if (config.parameter == "aof_checksum") {
         // The setting decides what is written from here on and nothing else: a log is
         // read for whatever it holds, so toggling this never makes an existing log
         // unreadable.
         aof_.checksum(config.values.front() == "yes");
-    }
-    else if (config.parameter == "save")
-    {
-        if (config.values.size() != 2)
-        {
+    } else if (config.parameter == "save") {
+        if (config.values.size() != 2) {
             co_return detail::Error("ERR CONFIG SET failed - 'save' wants <seconds> <changed>");
         }
 
         std::size_t seconds = 0;
         std::size_t changed = 0;
-        if (!detail::ParseUnsigned(config.values.front(), seconds) || !detail::ParseUnsigned(config.values.back(), changed) ||
-            changed == 0)
-        {
+        if (!detail::ParseUnsigned(config.values.front(), seconds) ||
+            !detail::ParseUnsigned(config.values.back(), changed) || changed == 0) {
             co_return detail::Error("ERR CONFIG SET failed - 'save' wants <seconds> <changed>, with changed > 0");
         }
         configure_staged_save(std::chrono::seconds{seconds}, changed);
-    }
-    else if (KV::IsStartupConfigParameter(config.parameter))
-    {
+    } else if (KV::IsStartupConfigParameter(config.parameter)) {
         // The ports are bound and the replication listener is built while the
         // server is being put together, so a running one has nothing left to
         // apply this to: it belongs in a command file, not in a command.
@@ -748,57 +618,47 @@ Foundation::NBIO::Task<RESP::Object> Server::execute_config(const KV::Command &c
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_bgsave(const KV::Command &command)
-{
+Foundation::NBIO::Task<RESP::Object> Server::execute_bgsave(const KV::Command& command) {
     (void)command;
-    if (!co_await backup_.save(store_))
-    {
+    if (!co_await backup_.save(store_)) {
         co_return detail::Error("ERR failed to save RDB snapshot");
     }
     staged_save_dirty_ = 0;
     co_return RESP::Object(RESP::SimpleString{.value = "Background saving started"});
 }
 
-Foundation::NBIO::Task<RESP::Object> Server::execute_save(const KV::Command &command)
-{
+Foundation::NBIO::Task<RESP::Object> Server::execute_save(const KV::Command& command) {
     (void)command;
     // The image is written in this process, so this frame's thread -- the one the
     // event loop runs on -- is busy until the file is in place. That is what SAVE
     // is for: the snapshot on disk before the answer, with the server standing
     // still in the meantime, where BGSAVE hands the writing to a child.
-    if (!backup_.save_now(store_))
-    {
+    if (!backup_.save_now(store_)) {
         co_return detail::Error("ERR failed to save RDB snapshot");
     }
     staged_save_dirty_ = 0;
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-void Server::note_write()
-{
-    if (!staged_save_rule_)
-    {
+void Server::note_write() {
+    if (!staged_save_rule_) {
         return;
     }
 
     ++staged_save_dirty_;
-    if (staged_save_dirty_ == staged_save_rule_->changed)
-    {
+    if (staged_save_dirty_ == staged_save_rule_->changed) {
         staged_save_ready_->notify_one();
     }
 }
 
-void Server::configure_staged_save(std::chrono::seconds seconds, std::size_t changed)
-{
+void Server::configure_staged_save(std::chrono::seconds seconds, std::size_t changed) {
     staged_save_rule_ = StagedSaveRule{.seconds = seconds, .changed = changed};
     staged_save_dirty_ = 0;
     maybe_start_staged_save();
 }
 
-void Server::maybe_start_staged_save()
-{
-    if (!staged_save_rule_ || staged_save_loop_running_)
-    {
+void Server::maybe_start_staged_save() {
+    if (!staged_save_rule_ || staged_save_loop_running_) {
         return;
     }
 
@@ -806,45 +666,36 @@ void Server::maybe_start_staged_save()
     Foundation::NBIO::spawn(staged_save_periodic());
 }
 
-Foundation::NBIO::Task<void> Server::staged_save_periodic()
-{
-    while (staged_save_rule_)
-    {
+Foundation::NBIO::Task<void> Server::staged_save_periodic() {
+    while (staged_save_rule_) {
         const auto rule = *staged_save_rule_;
         auto timeout = Foundation::NBIO::SystemTimeService{}.sleep(rule.seconds);
-        auto ready = staged_save_ready_->wait([this, expected = rule.changed] {
-            return !staged_save_rule_ || staged_save_dirty_ >= expected;
-        });
+        auto ready = staged_save_ready_->wait(
+            [this, expected = rule.changed] { return !staged_save_rule_ || staged_save_dirty_ >= expected; });
         co_await Foundation::Async::when_all(std::move(timeout), std::move(ready));
 
-        if (!staged_save_rule_)
-        {
+        if (!staged_save_rule_) {
             break;
         }
 
-        if (staged_save_dirty_ < rule.changed)
-        {
+        if (staged_save_dirty_ < rule.changed) {
             // The rule changed or the save was disabled while we were waiting.
             continue;
         }
 
         const bool ok = co_await backup_.save(store_);
-        if (!ok)
-        {
+        if (!ok) {
             spdlog::warn("staged save failed");
             continue;
         }
 
-        if (staged_save_dirty_ > rule.changed)
-        {
+        if (staged_save_dirty_ > rule.changed) {
             staged_save_dirty_ -= rule.changed;
-        }
-        else
-        {
+        } else {
             staged_save_dirty_ = 0;
         }
     }
 
     staged_save_loop_running_ = false;
 }
-} // namespace KV
+}  // namespace KV

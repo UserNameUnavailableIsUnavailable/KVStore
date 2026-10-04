@@ -9,8 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 // A fixed block of memory partitioned into equal chunks, lent out one at a time.
 //
 // A chunk is named by an index, and that handle is what gets encoded into a work
@@ -20,44 +19,33 @@ namespace Foundation::Core
 // and handed to someone else looks exactly like the new owner's. Releasing a
 // chunk is therefore a promise that nothing still refers to it, so drain
 // completions before returning one.
-class BitmapMemory
-{
-  public:
+class BitmapMemory {
+   public:
     static constexpr std::size_t kAlignment = 4096;
 
     static constexpr std::uint32_t kInvalidIndex = std::numeric_limits<std::uint32_t>::max();
 
-    struct Chunk
-    {
+    struct Chunk {
         std::uint32_t index{kInvalidIndex};
 
-        bool is_valid() const noexcept
-        {
-            return index != kInvalidIndex;
-        }
+        bool is_valid() const noexcept { return index != kInvalidIndex; }
 
         // What goes into a work request id, and comes back in the completion.
-        std::uint64_t encode() const noexcept
-        {
-            return index;
-        }
+        std::uint64_t encode() const noexcept { return index; }
 
-        static Chunk decode(std::uint64_t value) noexcept
-        {
-            return {.index = static_cast<std::uint32_t>(value)};
-        }
+        static Chunk decode(std::uint64_t value) noexcept { return {.index = static_cast<std::uint32_t>(value)}; }
 
-        friend bool operator==(const Chunk &, const Chunk &) noexcept = default;
+        friend bool operator==(const Chunk&, const Chunk&) noexcept = default;
     };
 
     // `chunk_size` bytes per chunk, `chunk_count` chunks, one block.
     BitmapMemory(std::size_t chunk_size, std::size_t chunk_count);
     ~BitmapMemory() noexcept;
 
-    BitmapMemory(const BitmapMemory &) = delete;
-    BitmapMemory &operator=(const BitmapMemory &) = delete;
-    BitmapMemory(BitmapMemory &&other) noexcept;
-    BitmapMemory &operator=(BitmapMemory &&other) noexcept;
+    BitmapMemory(const BitmapMemory&) = delete;
+    BitmapMemory& operator=(const BitmapMemory&) = delete;
+    BitmapMemory(BitmapMemory&& other) noexcept;
+    BitmapMemory& operator=(BitmapMemory&& other) noexcept;
 
     // Hands out a free chunk, or nothing when every chunk is out.
     std::optional<Chunk> acquire() noexcept;
@@ -70,41 +58,22 @@ class BitmapMemory
     std::span<char> data(Chunk chunk) noexcept;
     std::span<const char> data(Chunk chunk) const noexcept;
 
-    std::size_t chunk_size() const noexcept
-    {
-        return chunk_size_;
-    }
+    std::size_t chunk_size() const noexcept { return chunk_size_; }
 
-    std::size_t capacity() const noexcept
-    {
-        return chunk_count_;
-    }
+    std::size_t capacity() const noexcept { return chunk_count_; }
 
     // The remaining credits.
-    std::size_t available() const noexcept
-    {
-        return available_;
-    }
+    std::size_t available() const noexcept { return available_; }
 
     // The whole block, for handing to a device registration. Its size is
     // chunk_size() * capacity().
-    char *storage() noexcept
-    {
-        return storage_.get();
-    }
+    char* storage() noexcept { return storage_.get(); }
 
-    const char *storage() const noexcept
-    {
-        return storage_.get();
-    }
+    const char* storage() const noexcept { return storage_.get(); }
 
-  private:
-    struct AlignedDeleter
-    {
-        void operator()(char *pointer) const noexcept
-        {
-            ::operator delete(pointer, std::align_val_t{kAlignment});
-        }
+   private:
+    struct AlignedDeleter {
+        void operator()(char* pointer) const noexcept { ::operator delete(pointer, std::align_val_t{kAlignment}); }
     };
 
     bool in_use(std::size_t index) const noexcept;
@@ -118,6 +87,6 @@ class BitmapMemory
     // Where the next search starts, so a nearly full pool is the only case that
     // scans from the beginning.
     std::size_t search_hint_{0};
-    std::vector<std::uint64_t> in_use_; // one bit per chunk
+    std::vector<std::uint64_t> in_use_;  // one bit per chunk
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

@@ -53,7 +53,6 @@ include_directories(
 
 add_subdirectory(Tutorial)
 add_subdirectory(Foundation)
-add_subdirectory(Application)
 
 set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")
 if(FIND_TARGET)

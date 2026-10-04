@@ -4,8 +4,7 @@
 #include <Foundation/NBIO/Engine.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 
-namespace Foundation::NBIO
-{
+namespace Foundation::NBIO {
 // The thread's signal wait, as a handle: `co_await SystemSignalService{}.wait()`.
 //
 // What it waits for is SIGINT or SIGTERM, whichever comes first, which is the
@@ -18,23 +17,16 @@ namespace Foundation::NBIO
 // process's signal disposition. Installing the handlers is what the first wait does,
 // because a runtime that intercepts SIGINT the moment somebody declares a service
 // would be a nasty thing to find in a program that handles its own signals.
-class SystemSignalService final
-{
-  public:
+class SystemSignalService final {
+   public:
     SystemSignalService() noexcept = default;
 
     // Suspends until a signal is delivered, and installs the handlers if this is the
     // first wait on this thread.
-    Foundation::NBIO::Task<void> wait() const
-    {
-        return WaitForSignal();
-    }
+    Foundation::NBIO::Task<void> wait() const { return WaitForSignal(); }
 
-  private:
+   private:
     // The wait body, as a plain coroutine, and inline because it lives in a header.
-    static Foundation::NBIO::Task<void> WaitForSignal()
-    {
-        co_await Engine::signal_channel().wait();
-    }
+    static Foundation::NBIO::Task<void> WaitForSignal() { co_await Engine::signal_channel().wait(); }
 };
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

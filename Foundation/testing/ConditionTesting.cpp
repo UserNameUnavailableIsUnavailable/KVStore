@@ -1,51 +1,39 @@
 #include <gtest/gtest.h>
 
+#include <Foundation/NBIO/ConditionVariable.hpp>
+#include <Foundation/NBIO/Engine.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <atomic>
 #include <chrono>
 #include <future>
 #include <thread>
 
-#include <Foundation/NBIO/ConditionVariable.hpp>
-#include <Foundation/NBIO/Engine.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
-
-namespace
-{
+namespace {
 using Foundation::NBIO::ConditionVariable;
 using Foundation::NBIO::Engine;
 
 // A ConditionVariable binds the engine's notify channel on construction, so the
 // runtime has to be installed before any test body runs.
-class ConditionTesting : public ::testing::Test
-{
-};
+class ConditionTesting : public ::testing::Test {};
 
-Foundation::NBIO::Task<void> wait_for_flag(ConditionVariable &condition, std::atomic_bool &ready,
-                                           std::atomic_int &resumed, std::promise<void> *first_resume = nullptr)
-{
-    co_await condition.wait([&] {
-        return ready.load(std::memory_order_acquire);
-    });
+Foundation::NBIO::Task<void> wait_for_flag(ConditionVariable& condition, std::atomic_bool& ready,
+                                           std::atomic_int& resumed, std::promise<void>* first_resume = nullptr) {
+    co_await condition.wait([&] { return ready.load(std::memory_order_acquire); });
 
     const int current = resumed.fetch_add(1, std::memory_order_acq_rel) + 1;
-    if (first_resume != nullptr && current == 1)
-    {
+    if (first_resume != nullptr && current == 1) {
         first_resume->set_value();
     }
 }
 
 // Parks forever: the predicate never holds, so the only way out is destruction.
-Foundation::NBIO::Task<void> park(ConditionVariable &condition, std::atomic_int &resumed)
-{
-    co_await condition.wait([] {
-        return false;
-    });
+Foundation::NBIO::Task<void> park(ConditionVariable& condition, std::atomic_int& resumed) {
+    co_await condition.wait([] { return false; });
     resumed.fetch_add(1, std::memory_order_acq_rel);
 }
-} // namespace
+}  // namespace
 
-TEST_F(ConditionTesting, WaitsUntilPredicateTurnsTrue)
-{
+TEST_F(ConditionTesting, WaitsUntilPredicateTurnsTrue) {
     ConditionVariable condition;
     std::atomic_bool ready{false};
     std::atomic_int resumed{0};
@@ -66,8 +54,7 @@ TEST_F(ConditionTesting, WaitsUntilPredicateTurnsTrue)
     EXPECT_TRUE(token.is_dead());
 }
 
-TEST_F(ConditionTesting, NotifyOneWakesOneWaiterAtATime)
-{
+TEST_F(ConditionTesting, NotifyOneWakesOneWaiterAtATime) {
     ConditionVariable condition;
     std::atomic_bool ready{false};
     std::atomic_int resumed{0};
@@ -96,8 +83,7 @@ TEST_F(ConditionTesting, NotifyOneWakesOneWaiterAtATime)
     EXPECT_TRUE(second_token.is_dead());
 }
 
-TEST_F(ConditionTesting, NotifyAllWakesEveryWaiter)
-{
+TEST_F(ConditionTesting, NotifyAllWakesEveryWaiter) {
     ConditionVariable condition;
     std::atomic_bool ready{false};
     std::atomic_int resumed{0};

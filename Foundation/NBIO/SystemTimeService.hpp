@@ -3,11 +3,9 @@
 #include <Foundation/Async/Task.hpp>
 #include <Foundation/NBIO/Engine.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
-
 #include <chrono>
 
-namespace Foundation::NBIO
-{
+namespace Foundation::NBIO {
 // The thread's timer, as a handle: `co_await SystemTimeService{}.sleep(1s)`.
 //
 // The timer itself belongs to the runtime -- one timerfd per thread, which is what
@@ -22,30 +20,24 @@ namespace Foundation::NBIO
 // handle is stateless, so a temporary is as good as a named one -- and the failure
 // case is the honest one: a sleep on a thread with no runtime throws where it is
 // awaited, naming the thing that is actually missing.
-class SystemTimeService final
-{
-  public:
+class SystemTimeService final {
+   public:
     SystemTimeService() noexcept = default;
 
     // Suspends until `duration` has passed since this call, or until `point`: the
     // same timer either way.
-    Foundation::NBIO::Task<void> sleep(std::chrono::steady_clock::duration duration) const
-    {
+    Foundation::NBIO::Task<void> sleep(std::chrono::steady_clock::duration duration) const {
         // Read now rather than when the task first runs, so a sleep of a duration means
         // the duration the caller asked for.
         return SleepUntil(std::chrono::steady_clock::now() + duration);
     }
 
-    Foundation::NBIO::Task<void> sleep(std::chrono::steady_clock::time_point point) const
-    {
-        return SleepUntil(point);
-    }
+    Foundation::NBIO::Task<void> sleep(std::chrono::steady_clock::time_point point) const { return SleepUntil(point); }
 
-  private:
+   private:
     // The sleep body, as a plain coroutine, and inline because it lives in a header.
-    static Foundation::NBIO::Task<void> SleepUntil(std::chrono::steady_clock::time_point point)
-    {
+    static Foundation::NBIO::Task<void> SleepUntil(std::chrono::steady_clock::time_point point) {
         co_await Engine::timer_channel().sleep(point);
     }
 };
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

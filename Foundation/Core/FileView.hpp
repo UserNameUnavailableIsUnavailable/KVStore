@@ -6,52 +6,41 @@
 
 #include "File.hpp"
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 
-class FileView
-{
-  public:
+class FileView {
+   public:
 #if defined(__unix__)
     using Handle = int;
 #elif defined(_WIN32)
     using Handle = void*;
 #endif
-    explicit FileView(const std::filesystem::path &path);
-    explicit FileView(File &file);
-    FileView(const FileView &) = delete;
-    FileView &operator=(const FileView &) = delete;
-    FileView(FileView &&) = delete;
-    FileView &operator=(FileView &&) = delete;
+    explicit FileView(const std::filesystem::path& path);
+    explicit FileView(File& file);
+    FileView(const FileView&) = delete;
+    FileView& operator=(const FileView&) = delete;
+    FileView(FileView&&) = delete;
+    FileView& operator=(FileView&&) = delete;
     ~FileView() noexcept;
 
-    std::size_t size() const noexcept
-    {
-        return size_;
-    }
+    std::size_t size() const noexcept { return size_; }
 
-    const void *data() const noexcept
-    {
-        return data_;
-    }
+    const void* data() const noexcept { return data_; }
 
-    void *data() noexcept
-    {
-        return data_;
-    }
+    void* data() noexcept { return data_; }
 
-  private:
+   private:
 #if defined(_WIN32)
-    using MappingHandle = void *;
+    using MappingHandle = void*;
 #endif
 
     std::unique_ptr<File> owned_file_;
-    File *file_{nullptr};
+    File* file_{nullptr};
 #if defined(_WIN32)
     MappingHandle mapping_handle_{nullptr};
 #endif
-    void *data_{nullptr};
+    void* data_{nullptr};
     std::size_t size_{0};
     FileMode mode_{FileMode::kRead};
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

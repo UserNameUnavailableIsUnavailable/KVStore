@@ -1,25 +1,20 @@
 #pragma once
 
-#include <cstddef>
+#include <Application/RESP/RESP.hpp>
+#include <Foundation/Async/Task.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/TcpSessionService.hpp>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
 
-#include <Foundation/NBIO/TcpSessionService.hpp>
-#include <Foundation/Async/Task.hpp>
-
-#include <Application/RESP/RESP.hpp>
-
-namespace RESP
-{
-class Receiver
-{
-  public:
+namespace RESP {
+class Receiver {
+   public:
     // A command from a client, in whichever shape it was written.
-    struct Command
-    {
+    struct Command {
         // The words of the command when they could be read where they lie: views
         // into the receive buffer, valid until the next command is read. Nothing
         // was copied to have them.
@@ -31,7 +26,7 @@ class Receiver
         std::optional<Object> object;
     };
 
-    Receiver(Foundation::NBIO::TcpSessionService &session, ::Foundation::Core::Buffer &buffer);
+    Receiver(Foundation::NBIO::TcpSessionService& session, ::Foundation::Core::Buffer& buffer);
     ~Receiver() noexcept;
 
     Foundation::NBIO::Task<std::optional<Object>> receive();
@@ -49,23 +44,14 @@ class Receiver
     Foundation::NBIO::Task<std::optional<Command>> receive_command();
     std::optional<Command> try_receive_command();
 
-    std::string decode_error() const
-    {
-        return decode_error_;
-    }
-    std::string internal_error() const
-    {
-        return interal_error_;
-    }
+    std::string decode_error() const { return decode_error_; }
+    std::string internal_error() const { return interal_error_; }
     // True when what arrived held no command at all: an inline line with no
     // words on it, which redis answers nothing to. It is not an error, so the
     // connection goes on rather than being reported and closed.
-    bool no_command() const
-    {
-        return no_command_;
-    }
+    bool no_command() const { return no_command_; }
 
-  private:
+   private:
     // Lets go of the bytes of the command that was handed out: its words are
     // views into them, so nothing may be taken out of the buffer until the caller
     // that borrowed them has finished with them. The next command is the first
@@ -80,16 +66,16 @@ class Receiver
 
     // What a decoder's outcome means: a protocol error is recorded, a line with
     // no command is remembered as nothing owed, and a command is handed over.
-    std::optional<Object> finish(DecodeResult &decoded);
+    std::optional<Object> finish(DecodeResult& decoded);
 
     // The decoder for the command being read, created on first use. It is kept
     // between calls on purpose: a decoder abandoned half way through a command
     // has already taken those bytes out of the buffer, so a fresh one would
     // start in the middle of that command and read its arguments as commands.
-    Decoder &decoder();
+    Decoder& decoder();
 
-    Foundation::NBIO::TcpSessionService &session_;
-    Foundation::Core::Buffer &buffer_;
+    Foundation::NBIO::TcpSessionService& session_;
+    Foundation::Core::Buffer& buffer_;
     std::optional<Decoder> pending_;
     // The words of the last command handed out, and how many bytes of the buffer
     // they are views into. Both belong to the connection rather than to a call,
@@ -100,4 +86,4 @@ class Receiver
     std::string interal_error_;
     bool no_command_ = false;
 };
-} // namespace RESP
+}  // namespace RESP

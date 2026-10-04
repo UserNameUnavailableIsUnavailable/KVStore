@@ -11,39 +11,36 @@
 #include <Foundation/NBIO/Payload.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
 #include <Foundation/NBIO/Types.hpp>
-
 #include <system_error>
 #include <utility>
 
-namespace Foundation::NBIO
-{
+namespace Foundation::NBIO {
 class ConnectAwaiter;
-class TcpConnectChannel final : public Foundation::NBIO::Channel
-{
-  public:
-    TcpConnectChannel(Foundation::Core::TcpConnector connector, Foundation::NBIO::Multiplexer &multiplexer, Foundation::Async::Scheduler &scheduler);
+class TcpConnectChannel final : public Foundation::NBIO::Channel<TcpConnectChannel> {
+   public:
+    using Payload = detail::PollPayload<TcpConnectChannel>;
+
+    TcpConnectChannel(Foundation::Core::TcpConnector connector, Foundation::NBIO::Multiplexer& multiplexer,
+                      Foundation::Async::Scheduler& scheduler);
 
     ~TcpConnectChannel() noexcept;
 
     Foundation::NBIO::Task<Core::expected<Foundation::Core::TcpConnector, std::error_code>> connect(
-        const Foundation::Core::SocketAddress &target);
+        const Foundation::Core::SocketAddress& target);
 
     Foundation::NBIO::Task<Core::expected<Foundation::Core::TcpConnector, std::error_code>> connect(
-        const Foundation::Core::SocketAddress &source, const Foundation::Core::SocketAddress &target);
+        const Foundation::Core::SocketAddress& source, const Foundation::Core::SocketAddress& target);
 
-    Payload &submit();
+    Payload& submit();
     void complete();
 
-  private:
+   private:
     friend class ConnectAwaiter;
 
-    void park(Async::Coroutine waiter) noexcept
-    {
-        waiter_ = std::move(waiter);
-    }
+    void park(Async::Coroutine waiter) noexcept { waiter_ = std::move(waiter); }
 
     Foundation::Core::TcpConnector connector_;
     Async::Coroutine waiter_{};
-    Payload payload_{ConnectPayload{}};
+    Payload payload_{};
 };
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

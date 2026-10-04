@@ -1,16 +1,19 @@
 #include "EventNotifyChannel.hpp"
+
+#include <Foundation/Core/EventNotifier.hpp>
 #include <Foundation/NBIO/Channel.hpp>
 #include <Foundation/NBIO/Multiplexer.hpp>
 #include <Foundation/NBIO/Types.hpp>
-#include <Foundation/Core/EventNotifier.hpp>
 #include <mutex>
 
-namespace Foundation::NBIO
-{
-EventNotifyChannel::EventNotifyChannel(Foundation::Core::EventNotifier& notifier, Foundation::NBIO::Multiplexer& multiplexer, Foundation::Async::Scheduler& scheduler) :
-    Foundation::NBIO::Channel(Foundation::NBIO::ChannelType::kNotify, static_cast<std::uintptr_t>(notifier.native_handle()), multiplexer, scheduler),
-    notifier_(notifier)
-{
+namespace Foundation::NBIO {
+EventNotifyChannel::EventNotifyChannel(Foundation::Core::EventNotifier& notifier,
+                                       Foundation::NBIO::Multiplexer& multiplexer,
+                                       Foundation::Async::Scheduler& scheduler)
+    : Foundation::NBIO::Channel<EventNotifyChannel>(Foundation::NBIO::ChannelType::kNotify,
+                                                    static_cast<std::uintptr_t>(notifier.native_handle()), multiplexer,
+                                                    scheduler),
+      notifier_(notifier) {
     notifier.non_blocking(true);
 
     // Nothing is armed and no read is prepared here: the channel has nothing to
@@ -18,18 +21,11 @@ EventNotifyChannel::EventNotifyChannel(Foundation::Core::EventNotifier& notifier
     // where it arms -- waiter_registered().
 }
 
-EventNotifyChannel::~EventNotifyChannel() noexcept
-{
-    multiplexer_.delete_channel(this);
-}
+EventNotifyChannel::~EventNotifyChannel() noexcept { multiplexer_.delete_channel(this); }
 
-Payload &EventNotifyChannel::submit()
-{
-    return payload_;
-}
+EventNotifyChannel::Payload& EventNotifyChannel::submit() { return payload_; }
 
-void EventNotifyChannel::waiter_registered()
-{
+void EventNotifyChannel::waiter_registered() {
     {
         std::lock_guard lock(mutex_);
         ++parked_;
@@ -40,9 +36,8 @@ void EventNotifyChannel::waiter_registered()
     arm();
 }
 
-void EventNotifyChannel::complete()
-{
-    auto &payload = std::get<NotifyPayload>(payload_);
+void EventNotifyChannel::complete() {
+    auto& payload = payload_;
     payload.release_poll();
 
     // Take the count out first: it is what makes the notification this poll
@@ -54,10 +49,8 @@ void EventNotifyChannel::complete()
         std::lock_guard lock(mutex_);
 
         std::size_t woken = 0;
-        for (auto &notifiee : notifiees_)
-        {
-            if (notifiee) [[likely]]
-            {
+        for (auto& notifiee : notifiees_) {
+            if (notifiee) [[likely]] {
                 scheduler_.submit(std::move(notifiee));
                 ++woken;
             }
@@ -70,23 +63,19 @@ void EventNotifyChannel::complete()
         still_waiting = parked_ > 0;
     }
 
-    if (still_waiting)
-    {
+    if (still_waiting) {
         arm();
-    }
-    else
-    {
+    } else {
         // Nobody is asleep on this condition variable, so there is nothing to
         // watch for.
         disarm();
     }
 }
 
-void EventNotifyChannel::park(Foundation::Async::Coroutine coroutine)
-{
+void EventNotifyChannel::park(Foundation::Async::Coroutine coroutine) {
     std::lock_guard lock(mutex_);
     notifiees_.push_back(std::move(coroutine));
     notifier_.notify();
 }
 
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

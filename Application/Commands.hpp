@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Application/RESP/RESP.hpp>
-
 #include <chrono>
 #include <optional>
 #include <span>
@@ -10,10 +9,8 @@
 #include <variant>
 #include <vector>
 
-namespace KV
-{
-enum class CommandType
-{
+namespace KV {
+enum class CommandType {
     kPing,
     kInfo,
     kGet,
@@ -56,74 +53,54 @@ bool IsStartupConfigParameter(std::string_view name) noexcept;
 // rather than run as a command afterwards.
 bool IsPreloadSetting(std::string_view name) noexcept;
 
-struct PingParams
-{
-};
+struct PingParams {};
 
 // `INFO` is intentionally tiny here: it answers with the server name and takes
 // no arguments.
-struct InfoParams
-{
-};
+struct InfoParams {};
 
-struct GetParams
-{
+struct GetParams {
     std::string key;
 };
 
-struct SetParams
-{
+struct SetParams {
     std::string key;
     std::string value;
 };
 
-struct DelParams
-{
+struct DelParams {
     std::string key;
 };
 
-struct ExistsParams
-{
+struct ExistsParams {
     std::string key;
 };
 
 // `DBSIZE` answers with the number of keys the store holds, so it carries no
 // arguments of its own.
-struct DbSizeParams
-{
-};
+struct DbSizeParams {};
 
-struct ExpireParams
-{
+struct ExpireParams {
     std::string key;
     std::chrono::milliseconds ttl;
 };
 
-struct TTLParams
-{
-};
+struct TTLParams {};
 
-struct MultiParams
-{
-};
+struct MultiParams {};
 
-struct ExecParams
-{
-};
+struct ExecParams {};
 
 // `COMMAND` and its subcommands only describe the command table. This server
 // has no metadata to publish, but it still has to answer: redis-cli probes
 // `COMMAND DOCS` the moment it connects.
-struct CommandParams
-{
-};
+struct CommandParams {};
 
 // `CONFIG GET <parameter>` / `CONFIG SET <parameter> <value>...`, spelled the
 // way Redis spells them. No values is what tells the read form from the write
 // form, and a parameter that takes more than one value gets all of them:
 // `replication_address` wants an address and a port.
-struct ConfigParams
-{
+struct ConfigParams {
     std::string parameter;
     std::vector<std::string> values;
 };
@@ -131,39 +108,32 @@ struct ConfigParams
 // `CLIENT` describes the connection. Nothing here is stateful: it exists
 // because clients announce themselves on connect (`CLIENT SETINFO`), and a
 // client that gets an error instead treats the connection as unusable.
-struct ClientParams
-{
+struct ClientParams {
     std::string subcommand;
     std::vector<std::string> arguments;
 };
 
 // The snapshot command forks a child, so it is named the way Redis names a
 // fork-then-write: `BGSAVE`.
-struct BgSaveParams
-{
-};
+struct BgSaveParams {};
 
 // `SAVE` is the same snapshot written where the server is, which is what makes
 // it the one that stands still while it runs.
-struct SaveParams
-{
-};
+struct SaveParams {};
 
 // `SLAVEOF <ip> <port>` makes this instance a replica of the master at that
 // address. It is the interface a client uses; what the two servers then say to
 // each other is PSYNC, which no client sends.
-struct SlaveOfParams
-{
+struct SlaveOfParams {
     std::string address;
     std::uint16_t port{0};
 };
 
-using Parameters = std::variant<PingParams, GetParams, SetParams, DelParams, ExistsParams, DbSizeParams, ExpireParams, TTLParams,
-                                MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams, BgSaveParams, SaveParams, InfoParams,
-                                SlaveOfParams>;
+using Parameters = std::variant<PingParams, GetParams, SetParams, DelParams, ExistsParams, DbSizeParams, ExpireParams,
+                                TTLParams, MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams,
+                                BgSaveParams, SaveParams, InfoParams, SlaveOfParams>;
 
-struct Command
-{
+struct Command {
     CommandType type;
     Parameters parameters;
 };
@@ -177,24 +147,20 @@ std::string_view CommandName(CommandType type);
 bool IsCommandName(std::string_view name, CommandType type) noexcept;
 
 // The command as the RESP array that would reproduce it.
-RESP::Object CommandToRESP(const Command &command);
+RESP::Object CommandToRESP(const Command& command);
 
 // The RESP wire bytes of `CommandToRESP(command)`. The AOF needs an object so
 // its encoder can stream it; replication needs bytes it can hand to the wire.
-std::string EncodeCommand(const Command &command);
+std::string EncodeCommand(const Command& command);
 
-struct CommandValidation
-{
+struct CommandValidation {
     std::optional<Command> command;
     std::string error;
 
-    explicit operator bool() const noexcept
-    {
-        return command.has_value();
-    }
+    explicit operator bool() const noexcept { return command.has_value(); }
 };
 
-CommandValidation ValidateCommand(const RESP::Object &request);
+CommandValidation ValidateCommand(const RESP::Object& request);
 
 // The same command, named by the words a client wrote it with -- what a server
 // read straight out of its receive buffer has. A command is worth the same
@@ -202,4 +168,4 @@ CommandValidation ValidateCommand(const RESP::Object &request);
 // parameters that have to outlive the bytes (a key, a value) exactly once, where
 // they are stored.
 CommandValidation ValidateCommand(std::span<const std::string_view> arguments);
-} // namespace KV
+}  // namespace KV

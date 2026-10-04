@@ -1,6 +1,8 @@
 #pragma once
 #if defined(__linux__)
 
+#include <rdma/rdma_cma.h>
+
 #include <Foundation/Core/BitmapMemory.hpp>
 #include <Foundation/Core/Expected.hpp>
 #include <Foundation/Core/RdmaResourceManager.hpp>
@@ -12,14 +14,10 @@
 #include <span>
 #include <string>
 
-#include <rdma/rdma_cma.h>
-
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 class RdmaAcceptor;
 
-enum class RdmaSendStatus
-{
+enum class RdmaSendStatus {
     kDone,
     kPending,
     kPeerClosed,
@@ -31,45 +29,44 @@ enum class RdmaSendStatus
 // id reports its connection-management events on, and the queue pair; the device,
 // the protection domain, the memory regions and the chunk pools come from the
 // manager it borrows, which must outlive it.
-class RdmaConnector
-{
+class RdmaConnector {
     friend class RdmaAcceptor;
 
-  public:
+   public:
     using Handle = int;
 
     // The client's end: creates the id and the channel its own events arrive on.
     // Nothing is connected yet -- bind() pins the local address if it matters, and
     // connect() finishes the handshake. Only construction may throw, and it does
     // when the device refuses an id or a channel.
-    explicit RdmaConnector(RdmaResourceManager &resources);
+    explicit RdmaConnector(RdmaResourceManager& resources);
 
     // Pins the local address this connection comes from, before connecting. Left
     // out, the kernel picks along the route.
-    expected<void, std::string> bind(const SocketAddress &local) noexcept;
+    expected<void, std::string> bind(const SocketAddress& local) noexcept;
 
     // Resolves the peer, builds the queue pair and finishes the handshake. What is
     // left is a connection that can send, receive and close.
     expected<void, std::string> connect(SocketAddress peer) noexcept;
 
     // Both completion queues, and the most work requests either queue may hold.
-    static constexpr std::uint32_t kQueueDepth{ 32 };
+    static constexpr std::uint32_t kQueueDepth{32};
 
     // How many sends the user may have in flight, which is also the most of them
     // the device can be holding at once.
-    static constexpr std::uint32_t kSendChunks{ kQueueDepth };
+    static constexpr std::uint32_t kSendChunks{kQueueDepth};
 
-    static constexpr std::uint32_t kReceiveChunks{ kQueueDepth };
+    static constexpr std::uint32_t kReceiveChunks{kQueueDepth};
     // static_assert(kReceiveChunks > kSendChunks,
     //               "a receiver that posts only as many receives as the sender can fill has nothing left to land in");
 
-    RdmaConnector(const RdmaConnector &) = delete;
-    RdmaConnector &operator=(const RdmaConnector &) = delete;
-    RdmaConnector(RdmaConnector &&other) noexcept;
-    RdmaConnector &operator=(RdmaConnector &&other) noexcept;
+    RdmaConnector(const RdmaConnector&) = delete;
+    RdmaConnector& operator=(const RdmaConnector&) = delete;
+    RdmaConnector(RdmaConnector&& other) noexcept;
+    RdmaConnector& operator=(RdmaConnector&& other) noexcept;
     ~RdmaConnector() noexcept;
 
-    friend void swap(RdmaConnector &lhs, RdmaConnector &rhs) noexcept;
+    friend void swap(RdmaConnector& lhs, RdmaConnector& rhs) noexcept;
 
     // A chunk to fill, then hand to send(). Several chunks may be acquired at
     // once so multiple sends can be in flight. An empty answer is not a
@@ -84,10 +81,7 @@ class RdmaConnector
 
     // Sends that have been posted and not yet reaped. Every one of them is
     // holding a chunk the caller cannot use again yet.
-    std::size_t outstanding_sends() const noexcept
-    {
-        return pending_send_chunks_.size();
-    }
+    std::size_t outstanding_sends() const noexcept { return pending_send_chunks_.size(); }
 
     // A chunk the peer filled, to read and then hand back. Empty until data has
     // arrived and been polled.
@@ -119,32 +113,22 @@ class RdmaConnector
     // queue pair and the chunks. The destructor calls it.
     void close() noexcept;
 
-    bool peer_closed() const noexcept
-    {
-        return peer_closed_;
-    }
+    bool peer_closed() const noexcept { return peer_closed_; }
 
     // True once anything has gone wrong with this stream, and then for good:
     // `error()` says what went wrong the first time.
-    bool failed() const noexcept
-    {
-        return !error_.empty();
-    }
+    bool failed() const noexcept { return !error_.empty(); }
 
     // Why the stream failed, and empty while it has not. The device reports its
     // failures as status codes rather than errno values, so this is text rather
     // than a `std::error_code`.
-    const std::string &error() const noexcept
-    {
-        return error_;
-    }
+    const std::string& error() const noexcept { return error_; }
 
-  private:
+   private:
     // The acceptor's end: an id the kernel created for a connection that asked to be
     // admitted, and a channel that id has been migrated onto, so that this
     // connection's events arrive here rather than at the listener.
-    RdmaConnector(::rdma_cm_id *communication_id, ::rdma_event_channel *event_channel,
-                  RdmaResourceManager &resources);
+    RdmaConnector(::rdma_cm_id* communication_id, ::rdma_event_channel* event_channel, RdmaResourceManager& resources);
 
     // Waits, on this connection's own channel, for the event that says the handshake
     // finished. Nothing else is something to report: the id is the only one on this
@@ -170,14 +154,14 @@ class RdmaConnector
     // failure is reported rather than recorded.
     expected<void, std::string> arm_completion_queues() noexcept;
     void drain_completion_events() noexcept;
-    void ack_completion_events(::ibv_cq *queue) noexcept;
-    expected<std::size_t, std::string> poll_completion_queue(::ibv_cq *queue, int timeout_ms) noexcept;
+    void ack_completion_events(::ibv_cq* queue) noexcept;
+    expected<std::size_t, std::string> poll_completion_queue(::ibv_cq* queue, int timeout_ms) noexcept;
 
-    void handle_completion(const struct ::ibv_wc &completion) noexcept;
+    void handle_completion(const struct ::ibv_wc& completion) noexcept;
 
     // Empties one completion queue and acknowledges its events, which is what
     // lets the queue be destroyed at all.
-    void drain_completion_queue(::ibv_cq *queue) noexcept;
+    void drain_completion_queue(::ibv_cq* queue) noexcept;
 
     // Records the first failure and leaves the stream closed for business.
     // Later failures are dropped: the first one is the cause, the rest are its
@@ -190,36 +174,35 @@ class RdmaConnector
     // Tears down everything this stream owns.
     void reset() noexcept;
 
-    ::rdma_cm_id *communication_id_{nullptr}; // each connection gets an id
-    ::rdma_event_channel *event_channel_{nullptr}; // where that id reports its events
-    ::ibv_comp_channel *completion_channel_{nullptr};
-    ::ibv_cq *send_completion_queue_{nullptr};
-    ::ibv_cq *receive_completion_queue_{nullptr};
-    ::ibv_qp *queue_pair_{nullptr};
+    ::rdma_cm_id* communication_id_{nullptr};       // each connection gets an id
+    ::rdma_event_channel* event_channel_{nullptr};  // where that id reports its events
+    ::ibv_comp_channel* completion_channel_{nullptr};
+    ::ibv_cq* send_completion_queue_{nullptr};
+    ::ibv_cq* receive_completion_queue_{nullptr};
+    ::ibv_qp* queue_pair_{nullptr};
 
     // Borrowed for the whole life of the connection: the device, the protection
     // domain, the two registered regions and the two pools this connection's chunks
     // come from.
-    RdmaResourceManager *resources_{nullptr};
+    RdmaResourceManager* resources_{nullptr};
 
     std::uint32_t send_lkey_{0};
     std::uint32_t receive_lkey_{0};
 
-    std::list<BitmapMemory::Chunk> free_send_chunks_; // available for acquire
-    std::list<BitmapMemory::Chunk> busy_send_chunks_; // acquired, not yet posted
-    std::list<BitmapMemory::Chunk> pending_send_chunks_; // posted, awaiting completion
+    std::list<BitmapMemory::Chunk> free_send_chunks_;     // available for acquire
+    std::list<BitmapMemory::Chunk> busy_send_chunks_;     // acquired, not yet posted
+    std::list<BitmapMemory::Chunk> pending_send_chunks_;  // posted, awaiting completion
 
-    std::list<BitmapMemory::Chunk> free_recv_chunks_; // available to repost
-    std::list<BitmapMemory::Chunk> pending_recv_chunks_; // posted, awaiting completion
-    std::list<std::pair<BitmapMemory::Chunk, std::size_t>> ready_recv_chunks_; // FIFO of completed receives
-    std::list<BitmapMemory::Chunk> busy_recv_chunks_; // handed to the user, waiting for release
+    std::list<BitmapMemory::Chunk> free_recv_chunks_;                           // available to repost
+    std::list<BitmapMemory::Chunk> pending_recv_chunks_;                        // posted, awaiting completion
+    std::list<std::pair<BitmapMemory::Chunk, std::size_t>> ready_recv_chunks_;  // FIFO of completed receives
+    std::list<BitmapMemory::Chunk> busy_recv_chunks_;  // handed to the user, waiting for release
 
     unsigned send_unacked_events_{0};
     unsigned receive_unacked_events_{0};
-    std::string error_{}; // empty until the first failure, then the reason
+    std::string error_{};  // empty until the first failure, then the reason
     bool peer_closed_{false};
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core
 
-
-#endif // defined(__linux__)
+#endif  // defined(__linux__)

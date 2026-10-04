@@ -1,22 +1,19 @@
 #pragma once
 
 #include <Foundation/Async/Scheduler.hpp>
-
 #include <Foundation/Core/EventNotifier.hpp>
 #include <Foundation/Core/SystemSignal.hpp>
 #include <Foundation/Core/SystemTimer.hpp>
-
 #include <Foundation/NBIO/EpollMultiplexer.hpp>
 #include <functional>
 #include <memory>
 
-#include "Multiplexer.hpp"
 #include "EventNotifyChannel.hpp"
+#include "Multiplexer.hpp"
 #include "SystemSignalChannel.hpp"
 #include "SystemTimerChannel.hpp"
 
-namespace Foundation::NBIO
-{
+namespace Foundation::NBIO {
 // The NBIO runtime for one thread, and the runtime tag that Foundation::Async
 // tasks are parameterized on.
 //
@@ -32,13 +29,12 @@ namespace Foundation::NBIO
 // multiplexer_.delete_channel() in its destructor, which requires a live
 // multiplexer. Each channel references its resource, so each resource is
 // declared before (and destroyed after) the channel bound to it.
-class Engine
-{
-  public:
-    Engine(const Engine &) = delete;
-    Engine &operator=(const Engine &) = delete;
-    Engine(Engine &&) = delete;
-    Engine &operator=(Engine &&) = delete;
+class Engine {
+   public:
+    Engine(const Engine&) = delete;
+    Engine& operator=(const Engine&) = delete;
+    Engine(Engine&&) = delete;
+    Engine& operator=(Engine&&) = delete;
 
     ~Engine() noexcept;
 
@@ -47,34 +43,31 @@ class Engine
     static void initialize(std::unique_ptr<Multiplexer> multiplexer);
 
     // Whether a backend has been installed on this thread.
-    static bool is_initialized()
-    {
-      return static_cast<bool>(engine_);
-    }
+    static bool is_initialized() { return static_cast<bool>(engine_); }
 
     // The engine current on this thread. Throws when installed() is false.
-    static Engine &instance();
+    static Engine& instance();
 
     // ---- what Foundation::Async asks of a runtime tag ----
-    static Foundation::Async::Scheduler &scheduler();
-    static Multiplexer &multiplexer();
+    static Foundation::Async::Scheduler& scheduler();
+    static Multiplexer& multiplexer();
 
     // The channel carrying application-generated events. ConditionVariable
     // binds to it, so an application event travels the same path as a kernel
     // event: hand the waiter over, let the multiplexer dispatch it.
-    static EventNotifyChannel &notify_channel();
+    static EventNotifyChannel& notify_channel();
 
     // The standing channels owned by the engine.
-    static SystemTimerChannel &timer_channel();
+    static SystemTimerChannel& timer_channel();
 
     // Lazily created: constructing the signal channel intercepts SIGINT and
     // SIGTERM, which must only happen if the application asks for it.
-    static SystemSignalChannel &signal_channel();
+    static SystemSignalChannel& signal_channel();
 
-  private:
+   private:
     explicit Engine(std::unique_ptr<Multiplexer> multiplexer);
 
-    static std::function<void(bool)> make_idle_hook(Multiplexer &multiplexer);
+    static std::function<void(bool)> make_idle_hook(Multiplexer& multiplexer);
 
     std::unique_ptr<Multiplexer> multiplexer_;
     Foundation::Async::Scheduler scheduler_;
@@ -90,4 +83,4 @@ class Engine
 
 // Creates the platform default backend
 std::unique_ptr<Multiplexer> make_default_multiplexer();
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

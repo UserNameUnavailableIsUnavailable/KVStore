@@ -8,16 +8,14 @@
 
 #if defined(HAS_STD_expected)
 #include <expected>
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 using ::std::expected;
 using ::std::unexpected;
-} // namespace Foundation::Core
+}  // namespace Foundation::Core
 #else
 #include <tl/expected.hpp>
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 using ::tl::expected;
 using ::tl::unexpected;
-} // namespace Foundation::Core
-#endif // !defined(HAS_STD_expected)
+}  // namespace Foundation::Core
+#endif  // !defined(HAS_STD_expected)

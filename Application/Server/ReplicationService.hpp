@@ -2,7 +2,6 @@
 #if defined(__linux__)
 
 #include <Application/Commands.hpp>
-
 #include <Foundation/Core/RdmaAcceptor.hpp>
 #include <Foundation/Core/RdmaConnector.hpp>
 #include <Foundation/Core/RdmaResourceManager.hpp>
@@ -13,7 +12,6 @@
 #include <Foundation/NBIO/RdmaDeliverService.hpp>
 #include <Foundation/NBIO/RdmaSessionService.hpp>
 #include <Foundation/NBIO/Runtime.hpp>
-
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -23,8 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace KV
-{
+namespace KV {
 // Replication, as a service the server plugs in: the service owns the wire and
 // the replication port, the server owns the store and the clients.
 //
@@ -51,12 +48,10 @@ namespace KV
 // The link is an RdmaDeliverService rather than raw chunks. A sender that posts
 // more messages than the peer has receives posted has its queue pair torn down
 // under it for RNR, and only the delivery layer knows how far the peer has got.
-class ReplicationService
-{
-  public:
+class ReplicationService {
+   public:
     // What the service asks of the server it plugs into.
-    struct Host
-    {
+    struct Host {
         // The file a snapshot is written to, which is also the file a replica is
         // given: the master streams it and the replica receives into it.
         std::function<std::filesystem::path()> snapshot_file;
@@ -66,18 +61,17 @@ class ReplicationService
         std::function<Foundation::NBIO::Task<bool>()> snapshot;
         // Replaces the store with the RDB file it is given. False when the file
         // does not exist or does not validate against its own CRC-64.
-        std::function<bool(const std::filesystem::path &)> restore;
+        std::function<bool(const std::filesystem::path&)> restore;
         // Applies one command the master has applied, in the order it applied
         // them. Answers whether it could: a replica applies the writes its own
         // clients are refused, so this is the write path without the read-only
         // check, and it is the server's because the store is.
-        std::function<bool(const Command &)> apply;
+        std::function<bool(const Command&)> apply;
         // The link to the master came up, or went down.
         std::function<void(bool)> link_changed;
     };
 
-    struct Options
-    {
+    struct Options {
         // 0 leaves the master side of the service off.
         std::uint16_t listen_port{0};
         std::string listen_address{"0.0.0.0"};
@@ -90,32 +84,23 @@ class ReplicationService
     ReplicationService(Options options, Host host);
     ~ReplicationService() noexcept;
 
-    ReplicationService(const ReplicationService &) = delete;
-    ReplicationService &operator=(const ReplicationService &) = delete;
-    ReplicationService(ReplicationService &&) = delete;
-    ReplicationService &operator=(ReplicationService &&) = delete;
+    ReplicationService(const ReplicationService&) = delete;
+    ReplicationService& operator=(const ReplicationService&) = delete;
+    ReplicationService(ReplicationService&&) = delete;
+    ReplicationService& operator=(ReplicationService&&) = delete;
 
-    bool is_master() const noexcept
-    {
-        return options_.listen_port != 0;
-    }
+    bool is_master() const noexcept { return options_.listen_port != 0; }
 
     // True from the moment SLAVEOF is accepted rather than from the moment the
     // link comes up: an instance told to follow a master is a replica while it
     // is still connecting, and what its clients may write does not depend on the
     // state of a socket.
-    bool is_replica() const noexcept
-    {
-        return following_.load(std::memory_order_acquire);
-    }
+    bool is_replica() const noexcept { return following_.load(std::memory_order_acquire); }
 
     // This master's replication id: an integer, taken when the service is built.
     // A replica quotes it back, so a master that does not recognise it is a
     // master that restarted.
-    std::uint64_t replid() const noexcept
-    {
-        return replid_;
-    }
+    std::uint64_t replid() const noexcept { return replid_; }
 
     // Master side: accepts replicas, gives each one a snapshot, and then sends
     // it the writes this master applies.
@@ -124,22 +109,19 @@ class ReplicationService
     // Makes this instance a replica of `master`, and keeps it one: the link is
     // re-established for as long as the service lives. False when this instance
     // already follows a master, which is the one thing SLAVEOF cannot do twice.
-    bool slave_of(const Foundation::Core::SocketAddress &master);
+    bool slave_of(const Foundation::Core::SocketAddress& master);
 
     // Records a write for the replicas being served. The server calls this for
     // every write it applies, and it never waits: the bytes are appended to each
     // replica's buffer, and whoever is draining that buffer finds them there.
-    void record(const Command &command);
+    void record(const Command& command);
 
-  private:
+   private:
     // One replica being served: its link, and what is waiting to go out on it.
-    struct Replica
-    {
+    struct Replica {
         Replica(std::shared_ptr<Foundation::NBIO::RdmaSessionService> session,
-                std::shared_ptr<Foundation::NBIO::RdmaDeliverService> link) :
-            session(std::move(session)), link(std::move(link))
-        {
-        }
+                std::shared_ptr<Foundation::NBIO::RdmaDeliverService> link)
+            : session(std::move(session)), link(std::move(link)) {}
 
         std::shared_ptr<Foundation::NBIO::RdmaSessionService> session;
         std::shared_ptr<Foundation::NBIO::RdmaDeliverService> link;
@@ -161,24 +143,20 @@ class ReplicationService
     // there, and it is called at the instant the snapshot is captured -- so the
     // attachment outlives the snapshot phase, which is the whole point: the writes
     // applied while the snapshot is on the wire have to land somewhere.
-    struct Attachment
-    {
-        ReplicationService *service{nullptr};
+    struct Attachment {
+        ReplicationService* service{nullptr};
         std::shared_ptr<Replica> replica;
 
         Attachment() = default;
-        Attachment(const Attachment &) = delete;
-        Attachment &operator=(const Attachment &) = delete;
-        ~Attachment()
-        {
-            if (service != nullptr)
-            {
+        Attachment(const Attachment&) = delete;
+        Attachment& operator=(const Attachment&) = delete;
+        ~Attachment() {
+            if (service != nullptr) {
                 service->detach(replica);
             }
         }
 
-        void begin(ReplicationService &owner, std::shared_ptr<Replica> served)
-        {
+        void begin(ReplicationService& owner, std::shared_ptr<Replica> served) {
             service = &owner;
             replica = std::move(served);
             service->replicas_.push_back(replica);
@@ -193,7 +171,7 @@ class ReplicationService
     // say it has loaded it. False when the link did not survive that. The
     // attachment is begun here, at the snapshot, and is left holding the replica
     // for the caller.
-    Foundation::NBIO::Task<bool> send_snapshot(std::shared_ptr<Replica> replica, Attachment &attachment);
+    Foundation::NBIO::Task<bool> send_snapshot(std::shared_ptr<Replica> replica, Attachment& attachment);
 
     // Replica side, for as long as this instance is one.
     Foundation::NBIO::Task<void> follow_forever(Foundation::Core::SocketAddress master);
@@ -201,7 +179,7 @@ class ReplicationService
     // ends. False when that ended before the stream did.
     Foundation::NBIO::Task<bool> sync_once(Foundation::Core::SocketAddress master);
 
-    void detach(const std::shared_ptr<Replica> &replica) noexcept;
+    void detach(const std::shared_ptr<Replica>& replica) noexcept;
     // Drops the replicas whose coroutine has finished, so their chunks go back
     // to the pools and the next replica can be admitted.
     void prune();
@@ -235,12 +213,9 @@ class ReplicationService
     // used twice.
     std::atomic_bool following_{false};
 
-    struct ReplicaLink
-    {
-        explicit ReplicaLink(std::shared_ptr<Foundation::Core::RdmaResourceManager> manager) :
-            resources(std::move(manager)), connector(*resources)
-        {
-        }
+    struct ReplicaLink {
+        explicit ReplicaLink(std::shared_ptr<Foundation::Core::RdmaResourceManager> manager)
+            : resources(std::move(manager)), connector(*resources) {}
 
         // Held first, and held at all: the connection borrows this device. The
         // link is declared last so that it -- and the session inside it, which
@@ -251,6 +226,6 @@ class ReplicationService
     };
     std::unique_ptr<ReplicaLink> link_;
 };
-} // namespace KV
+}  // namespace KV
 
-#endif // defined(__linux__)
+#endif  // defined(__linux__)

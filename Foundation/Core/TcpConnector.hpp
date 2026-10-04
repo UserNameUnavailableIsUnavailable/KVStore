@@ -9,31 +9,26 @@
 #include "SocketAddress.hpp"
 #include "TcpSocket.hpp"
 
-namespace Foundation::Core
-{
-class TcpConnector
-{
-  public:
+namespace Foundation::Core {
+class TcpConnector {
+   public:
     // The client's end: a stream socket of its own, not connected to anything yet.
     // Only construction may throw, and it does when the kernel refuses a socket.
     explicit TcpConnector(SocketAddress::Family family = SocketAddress::Family::kIPv4);
 
-    TcpConnector(const TcpConnector &) = delete;
-    TcpConnector &operator=(const TcpConnector &) = delete;
+    TcpConnector(const TcpConnector&) = delete;
+    TcpConnector& operator=(const TcpConnector&) = delete;
 
-    TcpConnector(TcpConnector &&other) noexcept = default;
-    TcpConnector &operator=(TcpConnector &&other) noexcept = default;
+    TcpConnector(TcpConnector&& other) noexcept = default;
+    TcpConnector& operator=(TcpConnector&& other) noexcept = default;
 
     ~TcpConnector() noexcept = default;
 
-    friend void swap(TcpConnector &left, TcpConnector &right) noexcept
-    {
-        left.socket_.swap(right.socket_);
-    }
+    friend void swap(TcpConnector& left, TcpConnector& right) noexcept { left.socket_.swap(right.socket_); }
 
     // Pins the local address this connection comes from, before connecting. Left
     // out, the kernel picks along the route.
-    expected<void, std::error_code> bind(const SocketAddress &local) noexcept;
+    expected<void, std::error_code> bind(const SocketAddress& local) noexcept;
 
     // Connects to a peer and captures the addresses the connection ended up with.
     // What is left is a connection that can send, receive and close.
@@ -42,7 +37,7 @@ class TcpConnector
     // failed -- by the time it returns. It cannot be used on a socket that has been
     // made non-blocking, because there would be nothing here to wait in; that is
     // what the two halves below are for.
-    expected<void, std::error_code> connect(const SocketAddress &peer) noexcept;
+    expected<void, std::error_code> connect(const SocketAddress& peer) noexcept;
 
     // Begins a connection: the peer is looked up and the SYN goes out. Whether the
     // handshake has finished when this returns is the socket's business -- a blocking
@@ -50,7 +45,7 @@ class TcpConnector
     // not -- and either way the rest is the kernel's. finish_connect() reports how it
     // went, so a caller with an event loop can wait for the socket to become writable
     // instead of waiting in here.
-    expected<void, std::error_code> start_connect(const SocketAddress &peer) noexcept;
+    expected<void, std::error_code> start_connect(const SocketAddress& peer) noexcept;
 
     // Reports how a connection begun with start_connect() ended, and captures the two
     // addresses it ended with. Only meaningful once the socket is writable: before
@@ -74,20 +69,14 @@ class TcpConnector
 
     void close() noexcept;
 
-    bool is_valid() const noexcept
-    {
-        return socket_.is_valid();
-    }
+    bool is_valid() const noexcept { return socket_.is_valid(); }
 
-    std::uintptr_t native_handle() const noexcept
-    {
-        return socket_.native_handle();
-    }
+    std::uintptr_t native_handle() const noexcept { return socket_.native_handle(); }
 
     expected<void, std::error_code> non_blocking(bool toggle = true) noexcept;
     expected<void, std::error_code> reuse_address(bool toggle = true) noexcept;
 
-  private:
+   private:
     friend class TcpAcceptor;
 
     // The acceptor's end: a socket the kernel has already connected to a peer. That
@@ -97,4 +86,4 @@ class TcpConnector
 
     TcpSocket socket_;
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

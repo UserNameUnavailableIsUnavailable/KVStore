@@ -7,17 +7,15 @@
 #include "TcpConnector.hpp"
 #include "TcpSocket.hpp"
 
-namespace Foundation::Core
-{
-class TcpAcceptor
-{
-public:
+namespace Foundation::Core {
+class TcpAcceptor {
+   public:
     explicit TcpAcceptor(SocketAddress::Family family = SocketAddress::Family::kIPv4);
 
-    TcpAcceptor(const TcpAcceptor &) = delete;
-    TcpAcceptor &operator=(const TcpAcceptor &) = delete;
+    TcpAcceptor(const TcpAcceptor&) = delete;
+    TcpAcceptor& operator=(const TcpAcceptor&) = delete;
 
-    expected<void, std::error_code> bind(const SocketAddress &address, std::size_t backlog = 4096) noexcept;
+    expected<void, std::error_code> bind(const SocketAddress& address, std::size_t backlog = 4096) noexcept;
 
     // Sets `SO_REUSEADDR` on the listener, which has to happen before it is bound: a
     // listener that cannot be restarted while the socket it replaced is still in
@@ -41,15 +39,12 @@ public:
 
     expected<void, std::error_code> non_blocking(bool toggle = true) noexcept;
 
-    std::uintptr_t native_handle() const noexcept
-    {
-        return socket_.native_handle();
-    }
+    std::uintptr_t native_handle() const noexcept { return socket_.native_handle(); }
 
     void close() noexcept;
     bool is_valid() const noexcept;
 
-private:
+   private:
     TcpSocket socket_;
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

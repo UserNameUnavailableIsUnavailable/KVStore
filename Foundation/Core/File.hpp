@@ -7,10 +7,8 @@
 
 #include "Expected.hpp"
 
-namespace Foundation::Core
-{
-enum class FileMode : std::uint32_t
-{
+namespace Foundation::Core {
+enum class FileMode : std::uint32_t {
     kRead = 1u << 0,
     kWrite = 1u << 1,
     kReadWrite = kRead | kWrite,
@@ -19,65 +17,52 @@ enum class FileMode : std::uint32_t
     kAppend = 1u << 4,
 };
 
-constexpr FileMode operator|(FileMode lhs, FileMode rhs) noexcept
-{
+constexpr FileMode operator|(FileMode lhs, FileMode rhs) noexcept {
     return static_cast<FileMode>(static_cast<std::uint32_t>(lhs) | static_cast<std::uint32_t>(rhs));
 }
 
-constexpr FileMode operator&(FileMode lhs, FileMode rhs) noexcept
-{
+constexpr FileMode operator&(FileMode lhs, FileMode rhs) noexcept {
     return static_cast<FileMode>(static_cast<std::uint32_t>(lhs) & static_cast<std::uint32_t>(rhs));
 }
 
-constexpr FileMode &operator|=(FileMode &lhs, FileMode rhs) noexcept
-{
+constexpr FileMode& operator|=(FileMode& lhs, FileMode rhs) noexcept {
     lhs = lhs | rhs;
     return lhs;
 }
 
-class File
-{
-  public:
+class File {
+   public:
     // What a file this creates is created with. Named with the standard library's
     // permission type so that no native mode appears in a header; the one place the
     // native mode is wanted -- the open() that creates the file -- spells it out.
-    static constexpr std::filesystem::perms kDefaultPermissions = std::filesystem::perms::owner_read |
-                                                                 std::filesystem::perms::owner_write |
-                                                                 std::filesystem::perms::group_read |
-                                                                 std::filesystem::perms::others_read;
+    static constexpr std::filesystem::perms kDefaultPermissions =
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write | std::filesystem::perms::group_read |
+        std::filesystem::perms::others_read;
 
-    explicit File(const std::filesystem::path &path, FileMode mode, std::filesystem::perms permissions = kDefaultPermissions);
-    File(const File &) = delete;
-    File &operator=(const File &) = delete;
-    File(File &&) = default;
-    File &operator=(File &&) = default;
+    explicit File(const std::filesystem::path& path, FileMode mode,
+                  std::filesystem::perms permissions = kDefaultPermissions);
+    File(const File&) = delete;
+    File& operator=(const File&) = delete;
+    File(File&&) = default;
+    File& operator=(File&&) = default;
     ~File() noexcept;
 
     expected<std::size_t, std::error_code> read(std::span<char> buffer);
     expected<std::size_t, std::error_code> write(std::span<const char> buffer);
 
-    std::uintptr_t native_handle() const noexcept
-    {
-        return handle_;
-    }
+    std::uintptr_t native_handle() const noexcept { return handle_; }
 
-    FileMode mode() const noexcept
-    {
-        return mode_;
-    }
+    FileMode mode() const noexcept { return mode_; }
 
-    int native_flags_for() const noexcept
-    {
-        return native_flags_for(mode_);
-    }
+    int native_flags_for() const noexcept { return native_flags_for(mode_); }
 
     static int native_flags_for(FileMode mode);
 
-  private:
-    std::uintptr_t open_file(const std::filesystem::path &path, FileMode mode, std::filesystem::perms permissions);
+   private:
+    std::uintptr_t open_file(const std::filesystem::path& path, FileMode mode, std::filesystem::perms permissions);
     void close() noexcept;
 
     std::uintptr_t handle_;
     FileMode mode_;
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core
