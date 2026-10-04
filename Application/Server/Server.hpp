@@ -2,12 +2,12 @@
 
 #include <Application/Commands.hpp>
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/Async/Task.hpp>
-#include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/NBIO/ConditionVariable.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/TcpAcceptService.hpp>
-#include <Foundation/NBIO/TcpSessionService.hpp>
+#include <NBIO/Async/Task.hpp>
+#include <NBIO/Net/SocketAddress.hpp>
+#include <NBIO/Notification/ConditionVariable.hpp>
+#include <NBIO/Runtime/Runtime.hpp>
+#include <NBIO/Net/TcpAcceptService.hpp>
+#include <NBIO/Net/TcpSessionService.hpp>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -53,10 +53,10 @@ struct ServerOptions {
 
 class TcpSessionService {
    public:
-    explicit TcpSessionService(std::shared_ptr<Foundation::NBIO::TcpSessionService> transport)
+    explicit TcpSessionService(std::shared_ptr<NBIO::Net::TcpSessionService> transport)
         : transport_(std::move(transport)) {}
 
-    Foundation::NBIO::TcpSessionService& transport() const noexcept { return *transport_; }
+    NBIO::Net::TcpSessionService& transport() const noexcept { return *transport_; }
 
     bool is_multi{false};
     std::vector<KV::Command> queued_commands;
@@ -66,7 +66,7 @@ class TcpSessionService {
     std::string lookup_key;
 
    private:
-    std::shared_ptr<Foundation::NBIO::TcpSessionService> transport_;
+    std::shared_ptr<NBIO::Net::TcpSessionService> transport_;
 };
 
 class Server {
@@ -83,14 +83,14 @@ class Server {
     // Runs the commands a startup file holds, and then serves. Applying them
     // belongs inside the runtime: they are this server's own commands, and
     // executing one can await.
-    Foundation::NBIO::Task<void> serve(std::uint16_t port, std::vector<CommandLine> commands);
-    Foundation::NBIO::Task<void> apply_commands(std::vector<CommandLine> commands);
+    NBIO::Async::Task<NBIO::Runtime, void> serve(std::uint16_t port, std::vector<CommandLine> commands);
+    NBIO::Async::Task<NBIO::Runtime, void> apply_commands(std::vector<CommandLine> commands);
 
-    Foundation::NBIO::Task<void> serve(const Foundation::Core::SocketAddress& address);
+    NBIO::Async::Task<NBIO::Runtime, void> serve(const NBIO::Net::SocketAddress& address);
     // The listener is the caller's: it owns the acceptor the channel waits on, so it
     // has to outlive the loop that accepts through it.
-    Foundation::NBIO::Task<void> accept_clients(Foundation::NBIO::TcpAcceptService& listener);
-    Foundation::NBIO::Task<void> serve_client(std::shared_ptr<TcpSessionService> session);
+    NBIO::Async::Task<NBIO::Runtime, void> accept_clients(NBIO::Net::TcpAcceptService& listener);
+    NBIO::Async::Task<NBIO::Runtime, void> serve_client(std::shared_ptr<TcpSessionService> session);
 
    private:
     struct StagedSaveRule {
@@ -104,25 +104,25 @@ class Server {
     [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words,
                                                           TcpSessionService& session);
 
-    Foundation::NBIO::Task<RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
-    Foundation::NBIO::Task<RESP::Object> execute(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_set(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_info(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_del(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_exists(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_dbsize(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_command_info(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_client(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_config(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command& command);
-    Foundation::NBIO::Task<RESP::Object> execute_slaveof(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_ping(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_get(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_set(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_info(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_del(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_exists(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_dbsize(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_command_info(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_client(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_config(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_bgsave(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_save(const KV::Command& command);
+    NBIO::Async::Task<NBIO::Runtime, RESP::Object> execute_slaveof(const KV::Command& command);
     void note_write();
     void configure_staged_save(std::chrono::seconds seconds, std::size_t changed);
     void maybe_start_staged_save();
-    Foundation::NBIO::Task<void> staged_save_periodic();
+    NBIO::Async::Task<NBIO::Runtime, void> staged_save_periodic();
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.
@@ -151,7 +151,7 @@ class Server {
 
     std::optional<StagedSaveRule> staged_save_rule_{};
     std::size_t staged_save_dirty_{0};
-    std::unique_ptr<Foundation::NBIO::ConditionVariable> staged_save_ready_{};
+    std::unique_ptr<NBIO::Notification::ConditionVariable> staged_save_ready_{};
     bool staged_save_loop_running_{false};
 };
 }  // namespace KV

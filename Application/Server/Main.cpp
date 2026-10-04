@@ -1,9 +1,9 @@
 #include <spdlog/spdlog.h>
 
 #include <CLI/CLI.hpp>
-#include <Foundation/NBIO/EpollMultiplexer.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
-#include <Foundation/NBIO/URingMultiplexer.hpp>
+#include <NBIO/Core/EpollMultiplexer.hpp>
+#include <NBIO/NBIO.hpp>
+#include <NBIO/Core/URingMultiplexer.hpp>
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
@@ -12,12 +12,12 @@
 #include "Server.hpp"
 
 namespace {
-std::unique_ptr<Foundation::NBIO::Multiplexer> make_multiplexer(const std::string& name) {
+std::unique_ptr<NBIO::Core::Multiplexer> make_multiplexer(const std::string& name) {
     if (name == "epoll") {
-        return std::make_unique<Foundation::NBIO::EpollMultiplexer>();
+        return std::make_unique<NBIO::Core::EpollMultiplexer>();
     }
     if (name == "io_uring") {
-        return std::make_unique<Foundation::NBIO::URingMultiplexer>();
+        return std::make_unique<NBIO::Core::URingMultiplexer>();
     }
     throw std::invalid_argument("--multiplexer must be 'epoll' or 'io_uring'");
 }
@@ -59,14 +59,14 @@ int main(int argc, char* argv[]) {
     try {
         auto mux = make_multiplexer(options.multiplexer);
         switch (mux->type()) {
-            case Foundation::NBIO::MultiplexerType::kEpoll:
+            case NBIO::Core::MultiplexerType::kEpoll:
                 spdlog::info("Multiplexer: epoll");
                 break;
-            case Foundation::NBIO::MultiplexerType::kURing:
+            case NBIO::Core::MultiplexerType::kURing:
                 spdlog::info("Multiplexer: io_uring");
                 break;
         }
-        Foundation::NBIO::initialize(std::move(mux));
+        NBIO::initialize(std::move(mux));
 
         KV::Server server;
         server.run(options);

@@ -2,12 +2,12 @@
 #include <Application/RESP/RESP.hpp>
 #include <Application/RESP/Receiver.hpp>
 #include <Application/RESP/Sender.hpp>
-#include <Foundation/Async/Async.hpp>
-#include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/Core/TcpSocket.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
+#include <NBIO/Async/Async.hpp>
+#include <NBIO/Utility/Buffer.hpp>
+#include <NBIO/Net/SocketAddress.hpp>
+#include <NBIO/Net/TcpSocket.hpp>
+#include <NBIO/NBIO.hpp>
+#include <NBIO/Runtime/Runtime.hpp>
 #include <cctype>
 #include <cstdint>
 #include <iostream>
@@ -150,10 +150,10 @@ std::vector<std::string> Tokenize(const std::string& line) {
 
 }  // namespace
 
-Foundation::NBIO::Task<void> run_client(Foundation::Core::SocketAddress address, std::string host, std::uint16_t port) {
+NBIO::Async::Task<NBIO::Runtime, void> run_client(NBIO::Net::SocketAddress address, std::string host, std::uint16_t port) {
     // The connect service makes the connection and hands back the session that owns it;
     // the channel that waited for the handshake is gone by the time this returns.
-    Foundation::NBIO::TcpConnectService gateway{address.family()};
+    NBIO::Net::TcpConnectService gateway{address.family()};
     auto connected = co_await gateway.connect(address);
     if (!connected) {
         std::cerr << "connect failed: " << connected.error().message() << '\n';
@@ -184,7 +184,7 @@ Foundation::NBIO::Task<void> run_client(Foundation::Core::SocketAddress address,
             continue;
         }
 
-        ::Foundation::Core::Buffer send_buffer;
+        ::NBIO::Utility::Buffer send_buffer;
         RESP::Sender sender(*session, send_buffer);
         if (!co_await sender.send(*request)) {
             const std::string reason =
@@ -193,7 +193,7 @@ Foundation::NBIO::Task<void> run_client(Foundation::Core::SocketAddress address,
             co_return;
         }
 
-        ::Foundation::Core::Buffer receive_buffer;
+        ::NBIO::Utility::Buffer receive_buffer;
         RESP::Receiver receiver(*session, receive_buffer);
         const std::optional<RESP::Object> response = co_await receiver.receive();
         if (!response) {
@@ -212,9 +212,9 @@ Foundation::NBIO::Task<void> run_client(Foundation::Core::SocketAddress address,
 int main(int argc, char* argv[]) {
     const std::string host = argc > 1 ? argv[1] : "127.0.0.1";
     const std::uint16_t port = argc > 2 ? static_cast<std::uint16_t>(std::stoul(argv[2])) : 6379;
-    const Foundation::Core::SocketAddress address = host.find(':') == std::string::npos
-                                                        ? Foundation::Core::SocketAddress::from_v4(host, port)
-                                                        : Foundation::Core::SocketAddress::from_v6(host, port);
-    Foundation::NBIO::run(run_client(address, host, port));
+    const NBIO::Net::SocketAddress address = host.find(':') == std::string::npos
+                                                        ? NBIO::Net::SocketAddress::from_v4(host, port)
+                                                        : NBIO::Net::SocketAddress::from_v6(host, port);
+    NBIO::run(run_client(address, host, port));
     return 0;
 }

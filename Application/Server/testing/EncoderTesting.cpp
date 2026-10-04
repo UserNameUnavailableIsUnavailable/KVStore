@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/Core/Buffer.hpp>
+#include <NBIO/Utility/Buffer.hpp>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -25,7 +25,7 @@ namespace {
 // The bytes the coroutine writer produces, growing the buffer the way the AOF
 // does when it has nowhere to flush yet.
 std::string Streamed(const RESP::Object& object, std::size_t capacity = 16, std::size_t max_capacity = 1U << 20) {
-    Foundation::Core::Buffer buffer(capacity, max_capacity);
+    NBIO::Utility::Buffer buffer(capacity, max_capacity);
     auto encoder = RESP::Encode(object, buffer);
     while (encoder.poll() == RESP::EncodeStatus::kNeedFlush) {
         if (!buffer.reserve(buffer.capacity())) {
@@ -37,7 +37,7 @@ std::string Streamed(const RESP::Object& object, std::size_t capacity = 16, std:
 
 // The bytes the direct writer produces, which has to agree with them.
 std::string Direct(const RESP::Object& object, std::size_t capacity = 16, std::size_t max_capacity = 1U << 20) {
-    Foundation::Core::Buffer buffer(capacity, max_capacity);
+    NBIO::Utility::Buffer buffer(capacity, max_capacity);
     if (!RESP::AppendObject(object, buffer)) {
         return "<will not fit>";
     }
@@ -113,7 +113,7 @@ TEST(RESPEncoding, AReplyLargerThanTheBufferIsTheSameBytesEitherWay) {
 // A reply the buffer cannot hold is refused rather than truncated: half a reply
 // is a client waiting for the rest of it forever.
 TEST(RESPEncoding, AReplyTooLargeForTheBufferIsRefused) {
-    Foundation::Core::Buffer buffer(16, 64);
+    NBIO::Utility::Buffer buffer(16, 64);
     EXPECT_FALSE(RESP::AppendObject(RESP::Object(RESP::BulkString{.value = std::string(1024, 'x')}), buffer));
 }
 
@@ -128,10 +128,10 @@ TEST(RESPEncoding, AReplyNestedPastTheLimitIsRefused) {
         return object;
     };
 
-    Foundation::Core::Buffer roomy(16, 1U << 20);
+    NBIO::Utility::Buffer roomy(16, 1U << 20);
     EXPECT_TRUE(RESP::AppendObject(nested(100), roomy));
     EXPECT_EQ(Direct(nested(100)), Streamed(nested(100)));
 
-    Foundation::Core::Buffer buffer(16, 1U << 20);
+    NBIO::Utility::Buffer buffer(16, 1U << 20);
     EXPECT_FALSE(RESP::AppendObject(nested(200), buffer));
 }

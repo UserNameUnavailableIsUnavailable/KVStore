@@ -1,10 +1,10 @@
 #include "Receiver.hpp"
 
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/TcpSocket.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/TcpSessionService.hpp>
+#include <NBIO/Utility/Buffer.hpp>
+#include <NBIO/Net/TcpSocket.hpp>
+#include <NBIO/Runtime/Runtime.hpp>
+#include <NBIO/Net/TcpSessionService.hpp>
 
 namespace RESP {
 namespace {
@@ -15,7 +15,7 @@ namespace {
 constexpr std::size_t kReadHeadroom = 16U * 1024U;
 }  // namespace
 
-Receiver::Receiver(Foundation::NBIO::TcpSessionService& session, ::Foundation::Core::Buffer& buffer)
+Receiver::Receiver(NBIO::Net::TcpSessionService& session, ::NBIO::Utility::Buffer& buffer)
     : session_(session), buffer_(buffer) {}
 
 Receiver::~Receiver() noexcept = default;
@@ -27,7 +27,7 @@ Decoder& Receiver::decoder() {
     return *pending_;
 }
 
-Foundation::NBIO::Task<std::optional<Object>> Receiver::receive() {
+NBIO::Async::Task<NBIO::Runtime, std::optional<Object>> Receiver::receive() {
     // The buffer belongs to the connection, not to this call. Whatever a
     // previous command left behind -- the rest of a pipeline, usually -- is
     // decoded before another read happens, so a client that sends its commands
@@ -123,7 +123,7 @@ std::optional<Receiver::Command> Receiver::take() {
     return Command{.words = {}, .object = std::move(object)};
 }
 
-Foundation::NBIO::Task<std::optional<Receiver::Command>> Receiver::receive_command() {
+NBIO::Async::Task<NBIO::Runtime, std::optional<Receiver::Command>> Receiver::receive_command() {
     no_command_ = false;
     // A protocol error is reported once: the caller was told what was wrong with
     // the bytes and the connection goes on, so the answer belongs to those bytes

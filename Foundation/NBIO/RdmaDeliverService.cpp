@@ -4,18 +4,18 @@
 
 #include <spdlog/spdlog.h>
 
-#include <Foundation/Core/Byte.hpp>
-#include <Foundation/NBIO/Engine.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
+#include <NBIO/Core/Byte.hpp>
+#include <NBIO/NBIO/Engine.hpp>
+#include <NBIO/NBIO/NBIO.hpp>
 #include <algorithm>
 #include <array>
 #include <cstring>
 #include <stdexcept>
 #include <utility>
 
-namespace Foundation::NBIO {
+namespace NBIO::NBIO {
 namespace {
-namespace Core = Foundation::Core;
+namespace FCore = NBIO::Core;
 
 // Every packet carries the acknowledgement it knows, so this only decides how often a
 // receiver that is sending nothing of its own says something: a quarter of the window is
@@ -30,8 +30,8 @@ constexpr std::size_t kMetaBytes = 2 * sizeof(std::uint64_t);
 
 std::array<char, kMetaBytes> EncodeLayout(const RdmaDeliverService::Layout& layout) noexcept {
     std::array<char, kMetaBytes> bytes{};
-    const auto size = Core::to_big_endian(layout.chunk_size);
-    const auto count = Core::to_big_endian(layout.chunk_count);
+    const auto size = FCore::ToBigEndian(layout.chunk_size);
+    const auto count = FCore::ToBigEndian(layout.chunk_count);
     std::memcpy(bytes.data(), &size, sizeof(size));
     std::memcpy(bytes.data() + sizeof(size), &count, sizeof(count));
     return bytes;
@@ -45,21 +45,21 @@ bool DecodeLayout(std::span<const char> bytes, RdmaDeliverService::Layout& layou
     std::uint64_t count = 0;
     std::memcpy(&size, bytes.data(), sizeof(size));
     std::memcpy(&count, bytes.data() + sizeof(size), sizeof(count));
-    layout.chunk_size = Core::from_big_endian(size);
-    layout.chunk_count = Core::from_big_endian(count);
+    layout.chunk_size = FCore::FromBigEndian(size);
+    layout.chunk_count = FCore::FromBigEndian(count);
     return layout.payload_size() > 0 && layout.chunk_count > 0;
 }
 
 // The header, read off the front of a chunk. The packet is the chunk: what the caller
 // is handed later is what comes after this.
-const Core::RdmaHeader& AsPacket(std::span<char> chunk) noexcept {
-    return *reinterpret_cast<const Core::RdmaHeader*>(chunk.data());
+const FCore::RdmaHeader& AsPacket(std::span<char> chunk) noexcept {
+    return *reinterpret_cast<const FCore::RdmaHeader*>(chunk.data());
 }
 
 // The chunk a payload came in, which is the only way back to it: the payload was cut
 // from it and nothing else records where the header started.
 std::span<char> ChunkOf(std::span<char> payload, const RdmaDeliverService::Layout& layout) noexcept {
-    return std::span<char>(payload.data() - sizeof(Core::RdmaHeader), static_cast<std::size_t>(layout.chunk_size));
+    return std::span<char>(payload.data() - sizeof(FCore::RdmaHeader), static_cast<std::size_t>(layout.chunk_size));
 }
 }  // namespace
 
@@ -77,41 +77,41 @@ RdmaDeliverService::RdmaDeliverService(std::shared_ptr<RdmaSessionService> sessi
     // window wider than the posted receives is one the peer will fill and then fail on,
     // with the queue pair torn down for RNR_RETRY_EXC_ERR -- so it is refused here rather
     // than discovered there.
-    if (mine_.chunk_count > Core::RdmaConnector::kReceiveChunks) [[unlikely]] {
+    if (mine_.chunk_count > FCore::RdmaConnector::kReceiveChunks) [[unlikely]] {
         throw std::invalid_argument("the layout offers " + std::to_string(mine_.chunk_count) +
                                     " chunks where the connection posts receives for only " +
-                                    std::to_string(Core::RdmaConnector::kReceiveChunks));
+                                    std::to_string(FCore::RdmaConnector::kReceiveChunks));
     }
 }
 
 RdmaDeliverService::~RdmaDeliverService() noexcept = default;
 
-Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::handshake() {
+NBIO::NBIO::Task<FCore::expected<void, std::string>> RdmaDeliverService::handshake() {
     // Both ends say what they can take as soon as they are connected, so neither has to
     // know who goes first. The reader is not running yet, so the peer's own meta is
     // read here rather than by it.
     const auto mine = EncodeLayout(mine_);
-    const auto open = Core::RdmaPacketType::kMeta | Core::RdmaPacketType::kAck;
+    const auto open = FCore::RdmaPacketType::kMeta | FCore::RdmaPacketType::kAck;
     if (auto sent = co_await send_packet(std::span<const char>(mine.data(), mine.size()), open); !sent) [[unlikely]]
     {
-        co_return Core::unexpected(sent.error());
+        co_return FCore::unexpected(sent.error());
     }
 
     auto incoming = co_await read_packet();
     if (!incoming) [[unlikely]] {
-        co_return Core::unexpected(incoming.error());
+        co_return FCore::unexpected(incoming.error());
     }
-    if (!(incoming->type & Core::RdmaPacketType::kMeta)) [[unlikely]] {
-        co_return Core::unexpected(std::string{"the peer opened with something other than what it can take"});
+    if (!(incoming->type & FCore::RdmaPacketType::kMeta)) [[unlikely]] {
+        co_return FCore::unexpected(std::string{"the peer opened with something other than what it can take"});
     }
-    if (!DecodeLayout(incoming->packet.subspan(sizeof(Core::RdmaHeader)), peer_)) [[unlikely]] {
-        co_return Core::unexpected(std::string{"the peer said it can take nothing"});
+    if (!DecodeLayout(incoming->packet.subspan(sizeof(FCore::RdmaHeader)), peer_)) [[unlikely]] {
+        co_return FCore::unexpected(std::string{"the peer said it can take nothing"});
     }
     // A meta packet carries no payload, so its chunk is finished with as soon as it has
     // been read.
     if (auto released = session_->release(incoming->packet); !released) [[unlikely]]
     {
-        co_return Core::unexpected(released.error());
+        co_return FCore::unexpected(released.error());
     }
     taken_ = 1;
     // The peer's meta was its first packet, so it is also the first thing this end has
@@ -120,7 +120,7 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::ha
     released_ = 1;
     acknowledged_to_peer_ = 1;
     handshaken_ = true;
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
 void RdmaDeliverService::start() {
@@ -130,7 +130,7 @@ void RdmaDeliverService::start() {
     reader_ = NBIO::spawn(Read(shared_from_this()));
 }
 
-Foundation::NBIO::Task<void> RdmaDeliverService::Read(std::shared_ptr<RdmaDeliverService> self) {
+NBIO::NBIO::Task<void> RdmaDeliverService::Read(std::shared_ptr<RdmaDeliverService> self) {
     while (!self->ended_) {
         auto packet = co_await self->read_packet();
         if (!packet) [[unlikely]] {
@@ -170,22 +170,22 @@ void RdmaDeliverService::stop() noexcept {
     ready_available_.notify_all();
 }
 
-Foundation::NBIO::Task<Core::expected<RdmaDeliverService::Incoming, std::string>> RdmaDeliverService::read_packet() {
+NBIO::NBIO::Task<FCore::expected<RdmaDeliverService::Incoming, std::string>> RdmaDeliverService::read_packet() {
     auto incoming = co_await session_->receive();
     if (!incoming) [[unlikely]] {
-        co_return Core::unexpected(incoming.error());
+        co_return FCore::unexpected(incoming.error());
     }
     if (!*incoming) [[unlikely]] {
         // Nothing was waiting, which the session only reports once the link is over.
-        co_return Core::unexpected(std::string{"the connection is gone"});
+        co_return FCore::unexpected(std::string{"the connection is gone"});
     }
 
     const std::span<char> packet = **incoming;
-    if (packet.size() < sizeof(Core::RdmaHeader)) [[unlikely]] {
+    if (packet.size() < sizeof(FCore::RdmaHeader)) [[unlikely]] {
         // A completion shorter than a header is not a packet this protocol sent, and
         // guessing what it was is worse than stopping.
         (void)session_->release(packet);
-        co_return Core::unexpected(std::string{"a packet arrived without a header"});
+        co_return FCore::unexpected(std::string{"a packet arrived without a header"});
     }
 
     const auto& header = AsPacket(packet);
@@ -193,15 +193,15 @@ Foundation::NBIO::Task<Core::expected<RdmaDeliverService::Incoming, std::string>
         .packet = packet, .sequence = header.sequence, .type = header.type, .acknowledge = header.acknowledge};
 }
 
-Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::absorb(Incoming packet) {
+NBIO::NBIO::Task<FCore::expected<void, std::string>> RdmaDeliverService::absorb(Incoming packet) {
     taken_ = std::max(taken_, packet.sequence);
-    if (packet.type & Core::RdmaPacketType::kAck) {
+    if (packet.type & FCore::RdmaPacketType::kAck) {
         // What the peer has finished with, which is what lets this end send again.
         peer_acknowledged_ = std::max(peer_acknowledged_, packet.acknowledge);
         room_.notify_all();
     }
 
-    if (!(packet.type & Core::RdmaPacketType::kPayload)) {
+    if (!(packet.type & FCore::RdmaPacketType::kPayload)) {
         // An ack carries nothing, so its chunk is finished with as soon as it has been
         // read. It is still a packet the peer sent and numbered, though, and its number
         // is released like any other: a number that was never released would hold a slot
@@ -209,23 +209,23 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::ab
         // would slowly fill the window with packets that have nothing in them.
         if (auto released = session_->release(packet.packet); !released) [[unlikely]]
         {
-            co_return Core::unexpected(released.error());
+            co_return FCore::unexpected(released.error());
         }
         released_ = std::max(released_, packet.sequence);
-        co_return Core::expected<void, std::string>{};
+        co_return FCore::expected<void, std::string>{};
     }
 
     // A payload's chunk stays out of the pool until its payload is released, which is
     // what makes the acknowledgement mean "the buffer is back" rather than "the bytes
     // went past".
-    ready_.push_back(Held{.payload = packet.packet.subspan(sizeof(Core::RdmaHeader)), .sequence = packet.sequence});
+    ready_.push_back(Held{.payload = packet.packet.subspan(sizeof(FCore::RdmaHeader)), .sequence = packet.sequence});
     ready_available_.notify_one();
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
-Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::send(std::span<const char> payload) {
+NBIO::NBIO::Task<FCore::expected<void, std::string>> RdmaDeliverService::send(std::span<const char> payload) {
     if (!handshaken_) [[unlikely]] {
-        co_return Core::unexpected(std::string{"the handshake has not happened"});
+        co_return FCore::unexpected(std::string{"the handshake has not happened"});
     }
 
     // What one packet can carry is the smaller of the two ends' payload sizes: this end
@@ -236,21 +236,21 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::se
     while (offset < payload.size()) {
         const auto take = static_cast<std::size_t>(std::min<std::uint64_t>(width, payload.size() - offset));
         if (auto sent = co_await send_packet(payload.subspan(offset, take),
-                                             Core::RdmaPacketType::kPayload | Core::RdmaPacketType::kAck);
+                                             FCore::RdmaPacketType::kPayload | FCore::RdmaPacketType::kAck);
             !sent) [[unlikely]]
         {
-            co_return Core::unexpected(sent.error());
+            co_return FCore::unexpected(sent.error());
         }
         offset += take;
     }
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
-Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::send_packet(std::span<const char> payload,
-                                                                                          Core::RdmaPacketType type) {
+NBIO::NBIO::Task<FCore::expected<void, std::string>> RdmaDeliverService::send_packet(std::span<const char> payload,
+                                                                                          FCore::RdmaPacketType type) {
     if (auto room = co_await wait_for_room(1); !room) [[unlikely]]
     {
-        co_return Core::unexpected(room.error());
+        co_return FCore::unexpected(room.error());
     }
 
     // A chunk to fill, waited for when every one of them is in flight: this is the
@@ -259,7 +259,7 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::se
     while (chunk.empty()) {
         auto acquired = session_->send_channel().acquire();
         if (!acquired) [[unlikely]] {
-            co_return Core::unexpected(acquired.error());
+            co_return FCore::unexpected(acquired.error());
         }
         if (*acquired) {
             chunk = **acquired;
@@ -267,20 +267,20 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::se
         }
         const auto reaped = co_await session_->poll_send(1);
         if (!reaped) [[unlikely]] {
-            co_return Core::unexpected(reaped.error());
+            co_return FCore::unexpected(reaped.error());
         }
         if (*reaped == 0 && session_->send_channel().outstanding() != 0) [[unlikely]] {
-            co_return Core::unexpected(std::string{"the link stopped reporting completions"});
+            co_return FCore::unexpected(std::string{"the link stopped reporting completions"});
         }
     }
 
-    if (payload.size() + sizeof(Core::RdmaHeader) > chunk.size()) [[unlikely]] {
-        co_return Core::unexpected(std::string{"a packet does not fit a chunk"});
+    if (payload.size() + sizeof(FCore::RdmaHeader) > chunk.size()) [[unlikely]] {
+        co_return FCore::unexpected(std::string{"a packet does not fit a chunk"});
     }
 
     // The header goes on here rather than at the caller's hands: what a caller writes is
     // a payload, and what the device carries is a packet.
-    Core::RdmaHeader header{};
+    FCore::RdmaHeader header{};
     header.sequence = ++sent_;
     header.acknowledge = released_;
     header.type = type;
@@ -293,22 +293,22 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::se
 
     if (auto posted = session_->send(chunk, sizeof(header) + payload.size()); !posted) [[unlikely]]
     {
-        co_return Core::unexpected(posted.error());
+        co_return FCore::unexpected(posted.error());
     }
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
-Foundation::NBIO::Task<Core::expected<std::optional<std::span<char>>, std::string>> RdmaDeliverService::receive() {
+NBIO::NBIO::Task<FCore::expected<std::optional<std::span<char>>, std::string>> RdmaDeliverService::receive() {
     co_await ready_available_.wait([this] { return !ready_.empty() || ended_; });
     if (ready_.empty()) [[unlikely]] {
-        co_return Core::expected<std::optional<std::span<char>>, std::string>{std::nullopt};
+        co_return FCore::expected<std::optional<std::span<char>>, std::string>{std::nullopt};
     }
     co_return std::optional<std::span<char>>{ready_.front().payload};
 }
 
-Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::release(std::span<char> payload) {
+NBIO::NBIO::Task<FCore::expected<void, std::string>> RdmaDeliverService::release(std::span<char> payload) {
     if (ready_.empty() || ready_.front().payload.data() != payload.data()) [[unlikely]] {
-        co_return Core::unexpected(std::string{"a payload is released in the order it arrived"});
+        co_return FCore::unexpected(std::string{"a payload is released in the order it arrived"});
     }
     const Held held = ready_.front();
     ready_.pop_front();
@@ -317,7 +317,7 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::re
     // acknowledgement that follows is a claim about.
     if (auto released = session_->release(ChunkOf(held.payload, mine_)); !released) [[unlikely]]
     {
-        co_return Core::unexpected(released.error());
+        co_return FCore::unexpected(released.error());
     }
     released_ = std::max(released_, held.sequence);
 
@@ -325,11 +325,11 @@ Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::re
     // avoid, so one goes out when enough has accumulated to be worth saying -- and every
     // packet already carries it meanwhile.
     if (released_ > acknowledged_to_peer_ && released_ - acknowledged_to_peer_ >= AckEvery(mine_.chunk_count)) {
-        if (auto sent = co_await send_packet(std::span<const char>{}, Core::RdmaPacketType::kAck); !sent) [[unlikely]] {
-            co_return Core::unexpected(sent.error());
+        if (auto sent = co_await send_packet(std::span<const char>{}, FCore::RdmaPacketType::kAck); !sent) [[unlikely]] {
+            co_return FCore::unexpected(sent.error());
         }
     }
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
 bool RdmaDeliverService::room_for(std::uint64_t packets) const noexcept {
@@ -341,13 +341,13 @@ bool RdmaDeliverService::room_for(std::uint64_t packets) const noexcept {
     return sent_ - peer_acknowledged_ + packets <= peer_.chunk_count;
 }
 
-Foundation::NBIO::Task<Core::expected<void, std::string>> RdmaDeliverService::wait_for_room(std::uint64_t packets) {
+NBIO::NBIO::Task<FCore::expected<void, std::string>> RdmaDeliverService::wait_for_room(std::uint64_t packets) {
     co_await room_.wait([this, packets] { return ended_ || room_for(packets); });
     if (ended_ && !room_for(packets)) [[unlikely]] {
-        co_return Core::unexpected(std::string{"the link ended with the window full"});
+        co_return FCore::unexpected(std::string{"the link ended with the window full"});
     }
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
-}  // namespace Foundation::NBIO
+}  // namespace NBIO::NBIO
 
 #endif  // defined(__linux__)

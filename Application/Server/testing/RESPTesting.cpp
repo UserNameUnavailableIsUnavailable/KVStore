@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/Core/Buffer.hpp>
+#include <NBIO/Utility/Buffer.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,7 +16,7 @@
 
 namespace {
 RESP::DecodeResult DecodeBytes(std::string_view bytes, RESP::Dialect dialect = RESP::Dialect::kMultibulkAndInline) {
-    Foundation::Core::Buffer buffer(bytes.size() + 16, bytes.size() + 16);
+    NBIO::Utility::Buffer buffer(bytes.size() + 16, bytes.size() + 16);
     EXPECT_TRUE(buffer.write(bytes.data(), bytes.size()));
 
     auto decoder = RESP::Decode(buffer, dialect);
@@ -136,7 +136,7 @@ TEST(RESPInline, AStreamThatOnlySpeaksMultibulkRejectsALineOfWords) {
 TEST(RESPInline, BothDialectsShareOneStream) {
     // A pipeline may mix them, and each message has to leave the buffer exactly
     // where the next one starts.
-    Foundation::Core::Buffer buffer(128, 128);
+    NBIO::Utility::Buffer buffer(128, 128);
     const std::string stream = "PING\r\n*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\nSET k v\r\n";
     ASSERT_TRUE(buffer.write(stream.data(), stream.size()));
 

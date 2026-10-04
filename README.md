@@ -40,7 +40,7 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
 ### 系统与工具链
 
 - **操作系统**：Linux（内核版本 >= 5.2，建议使用 6.0 及以上的版本以获得完整的 io_uring 特性支持）。服务器、复制与 io_uring 后端都在 `#if defined(__linux__)`
-  保护之下，其它平台上只有 Foundation 的一部分能编译。
+  保护之下，其它平台上只有 NBIO 的一部分能编译。
 - **CMake ≥ 3.20**（顶层 `CMakeLists.txt` 声明；开发机实测 4.2.3）。
 - **支持 C++20 的编译器**：代码用到协程、ranges、指定初始化与 concepts（实测 Clang 21.1.8；
   GCC 11+ / Clang 14+ 具备所需特性）。
@@ -102,7 +102,7 @@ cmake --build build
 | --- | --- |
 | `Server` | 服务器：`build/Application/Server/Server` |
 | `Client` | 命令行客户端：`build/Application/Client/Client` |
-| `FoundationTesting`、`ServerTesting` | 单元测试可执行文件 |
+| `NBIOTesting`、`ServerTesting` | 单元测试可执行文件 |
 | `Echo`、`Sleep`、`Grace`、`SystemSignalSvc`、`ScopedSystemSignalService`、`Condition` | NBIO 示例 |
 | `RdmaEcho`、`RdmaAsyncEcho` | RDMA 示例 |
 | `Tutorial_RdmaServer`、`Tutorial_RdmaClient` | `Tutorial/RDMA` 的原生 verbs 例子 |
@@ -172,7 +172,7 @@ config rdma_device siw0
 
 - `Documentation/REPLICATION.md` — RDMA 全量与增量同步
 - `Documentation/CONFIG.md` — 启动命令文件与启动期设置
-- `Documentation/RDMA.md`、`Foundation/Core/RDMA.md` — RDMA 后端与运行时
+- `Documentation/RDMA.md`、`NBIO/Core/RDMA.md` — RDMA 后端与运行时
 - `Documentation/PSYNC.md` — 两个服务器之间的协议；`Documentation/SLAVEOF.md` — 客户端
   用来发起复制的命令
 - `DESIGN.md`、`PITFALLS.md` — 设计取舍与踩过的坑

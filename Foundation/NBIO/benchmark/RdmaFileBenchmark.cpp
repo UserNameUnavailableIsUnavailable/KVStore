@@ -35,20 +35,20 @@
 #include <unistd.h>
 
 #include <CLI/CLI.hpp>
-#include <Foundation/Core/BitmapMemory.hpp>
-#include <Foundation/Core/Byte.hpp>
-#include <Foundation/Core/Expected.hpp>
-#include <Foundation/Core/RdmaAcceptor.hpp>
-#include <Foundation/Core/RdmaConnector.hpp>
-#include <Foundation/Core/RdmaResourceManager.hpp>
-#include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/NBIO/Engine.hpp>
-#include <Foundation/NBIO/EpollMultiplexer.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
-#include <Foundation/NBIO/RdmaAcceptChannel.hpp>
-#include <Foundation/NBIO/RdmaConnectChannel.hpp>
-#include <Foundation/NBIO/RdmaSessionService.hpp>
-#include <Foundation/NBIO/URingMultiplexer.hpp>
+#include <NBIO/Core/BitmapMemory.hpp>
+#include <NBIO/Core/Byte.hpp>
+#include <NBIO/Core/Expected.hpp>
+#include <NBIO/Core/RdmaAcceptor.hpp>
+#include <NBIO/Core/RdmaConnector.hpp>
+#include <NBIO/Core/RdmaResourceManager.hpp>
+#include <NBIO/Core/SocketAddress.hpp>
+#include <NBIO/NBIO/Engine.hpp>
+#include <NBIO/NBIO/EpollMultiplexer.hpp>
+#include <NBIO/NBIO/NBIO.hpp>
+#include <NBIO/NBIO/RdmaAcceptChannel.hpp>
+#include <NBIO/NBIO/RdmaConnectChannel.hpp>
+#include <NBIO/NBIO/RdmaSessionService.hpp>
+#include <NBIO/NBIO/URingMultiplexer.hpp>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -70,8 +70,8 @@
 #include <vector>
 
 namespace {
-namespace Core = Foundation::Core;
-namespace NBIO = Foundation::NBIO;
+namespace FCore = NBIO::Core;
+namespace NBIO = NBIO::NBIO;
 
 using Clock = std::chrono::steady_clock;
 
@@ -82,7 +82,7 @@ constexpr std::size_t kDefaultPayload = 1U << 30;
 // per receive chunk and the device needs one for every message in flight, so this
 // is not a tuning knob: it is the receiver's own depth, and the number the window
 // has to stay inside to keep the connection alive.
-constexpr std::size_t kWindow = Core::RdmaConnector::kReceiveChunks;
+constexpr std::size_t kWindow = FCore::RdmaConnector::kReceiveChunks;
 
 // What one end of a transfer ended up with. `ok` is false for a transfer that did
 // not finish, and `failure` then says why -- the one thing either end reports.
@@ -123,14 +123,14 @@ struct Report {
 // width the buffer already says: a report is three quad words, and a quad word
 // that is read on a little-endian machine is read the other way round.
 void PutU64(char* out, std::uint64_t value) noexcept {
-    const auto ordered = Core::to_big_endian(value);
+    const auto ordered = FCore::ToBigEndian(value);
     std::memcpy(out, &ordered, sizeof(ordered));
 }
 
 std::uint64_t GetU64(const char* in) noexcept {
     std::uint64_t ordered = 0;
     std::memcpy(&ordered, in, sizeof(ordered));
-    return Core::from_big_endian(ordered);
+    return FCore::FromBigEndian(ordered);
 }
 
 double Seconds(Clock::time_point from, Clock::time_point to) noexcept {
@@ -159,11 +159,11 @@ std::array<char, kReportBytes> Encode(const Report& report) noexcept {
 // to be a completion for this direction: a wake-up, not an end to anything -- the
 // end of a link arrives as an error, because a link that has gone can never
 // satisfy the wait.
-NBIO::Task<Core::expected<std::span<char>, std::string>> NextMessage(NBIO::RdmaSessionService& session) {
+NBIO::Task<FCore::expected<std::span<char>, std::string>> NextMessage(NBIO::RdmaSessionService& session) {
     while (true) {
         auto incoming = co_await session.receive();
         if (!incoming) [[unlikely]] {
-            co_return Core::unexpected(incoming.error());
+            co_return FCore::unexpected(incoming.error());
         }
         if (*incoming) {
             co_return **incoming;
@@ -173,12 +173,12 @@ NBIO::Task<Core::expected<std::span<char>, std::string>> NextMessage(NBIO::RdmaS
 
 // One message off the send pool, waited for: the control plane carries a handful
 // of messages per transfer, and each one is what the other end is waiting on.
-NBIO::Task<Core::expected<void, std::string>> SendReport(NBIO::RdmaSessionService& session, const Report& report) {
+NBIO::Task<FCore::expected<void, std::string>> SendReport(NBIO::RdmaSessionService& session, const Report& report) {
     const auto message = Encode(report);
     while (true) {
         auto acquired = session.send_channel().acquire();
         if (!acquired) [[unlikely]] {
-            co_return Core::unexpected(acquired.error());
+            co_return FCore::unexpected(acquired.error());
         }
         if (!*acquired) [[unlikely]] {
             // Every chunk is in flight: one has to come back before this can go
@@ -186,24 +186,24 @@ NBIO::Task<Core::expected<void, std::string>> SendReport(NBIO::RdmaSessionServic
             // payload as well.
             const auto reaped = co_await session.poll_send(1);
             if (!reaped) [[unlikely]] {
-                co_return Core::unexpected(reaped.error());
+                co_return FCore::unexpected(reaped.error());
             }
             if (*reaped == 0 && session.send_channel().outstanding() != 0) [[unlikely]] {
-                co_return Core::unexpected(std::string{"the link stopped reporting completions"});
+                co_return FCore::unexpected(std::string{"the link stopped reporting completions"});
             }
             continue;
         }
 
         const std::span<char> chunk = **acquired;
         if (chunk.size() < message.size()) [[unlikely]] {
-            co_return Core::unexpected(std::string{"a chunk cannot carry a report"});
+            co_return FCore::unexpected(std::string{"a chunk cannot carry a report"});
         }
         std::memcpy(chunk.data(), message.data(), message.size());
         const auto posted = session.send(chunk, message.size());
         if (!posted) [[unlikely]] {
-            co_return Core::unexpected(posted.error());
+            co_return FCore::unexpected(posted.error());
         }
-        co_return Core::expected<void, std::string>{};
+        co_return FCore::expected<void, std::string>{};
     }
 }
 
@@ -211,14 +211,14 @@ NBIO::Task<Core::expected<void, std::string>> SendReport(NBIO::RdmaSessionServic
 // stands. Reading them all in one pass is what keeps a window that has opened up
 // from being used one message per wake-up, which would make the transfer a round
 // trip per message rather than a stream.
-NBIO::Task<Core::expected<void, std::string>> HarvestCredits(NBIO::RdmaSessionService& session, std::size_t& credited) {
+NBIO::Task<FCore::expected<void, std::string>> HarvestCredits(NBIO::RdmaSessionService& session, std::size_t& credited) {
     while (true) {
         auto incoming = co_await session.try_receive();
         if (!incoming) [[unlikely]] {
-            co_return Core::unexpected(incoming.error());
+            co_return FCore::unexpected(incoming.error());
         }
         if (!*incoming) {
-            co_return Core::expected<void, std::string>{};
+            co_return FCore::expected<void, std::string>{};
         }
 
         const std::span<char> message = **incoming;
@@ -229,14 +229,14 @@ NBIO::Task<Core::expected<void, std::string>> HarvestCredits(NBIO::RdmaSessionSe
         (void)session.release(message);
 
         if (!report || report->kind != kCredit) [[unlikely]] {
-            co_return Core::unexpected("the receiver sent a report of " + std::to_string(size) +
+            co_return FCore::unexpected("the receiver sent a report of " + std::to_string(size) +
                                        " bytes that is not a credit");
         }
         if (report->value < credited) [[unlikely]] {
             // Credits count messages finished, so one that goes backwards is a
             // report about a transfer other than this one -- and acting on it
             // would open the window on a count that never happened.
-            co_return Core::unexpected("the receiver credited " + std::to_string(report->value) +
+            co_return FCore::unexpected("the receiver credited " + std::to_string(report->value) +
                                        " messages after crediting " + std::to_string(credited));
         }
         credited = static_cast<std::size_t>(report->value);
@@ -247,22 +247,22 @@ NBIO::Task<Core::expected<void, std::string>> HarvestCredits(NBIO::RdmaSessionSe
 // Everything already waiting was taken in by the caller, so this is one report and
 // no more -- and it is the wait that makes this a measurement of the receiver as
 // much as of the device.
-NBIO::Task<Core::expected<void, std::string>> WaitForCredit(NBIO::RdmaSessionService& session, std::size_t& credited) {
+NBIO::Task<FCore::expected<void, std::string>> WaitForCredit(NBIO::RdmaSessionService& session, std::size_t& credited) {
     auto incoming = co_await NextMessage(session);
     if (!incoming) [[unlikely]] {
-        co_return Core::unexpected(incoming.error());
+        co_return FCore::unexpected(incoming.error());
     }
     const auto report = Decode(*incoming);
     (void)session.release(*incoming);
     if (!report || report->kind != kCredit) [[unlikely]] {
-        co_return Core::unexpected(std::string{"the receiver stopped reporting credits"});
+        co_return FCore::unexpected(std::string{"the receiver stopped reporting credits"});
     }
     if (report->value <= credited) [[unlikely]] {
-        co_return Core::unexpected("the receiver credited " + std::to_string(report->value) +
+        co_return FCore::unexpected("the receiver credited " + std::to_string(report->value) +
                                    " messages after crediting " + std::to_string(credited));
     }
     credited = static_cast<std::size_t>(report->value);
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
 // The sending half: announce the payload, put it on the wire as fast as the window
@@ -408,7 +408,7 @@ NBIO::Task<void> Send(NBIO::RdmaAcceptChannel& channel, const std::vector<char>&
 // own would be the same message twice. The clock runs from just after the
 // announcement to the last byte, which is the window in which the payload was on
 // the wire.
-NBIO::Task<void> Receive(NBIO::RdmaConnectChannel& channel, Core::SocketAddress master, std::size_t chunk,
+NBIO::Task<void> Receive(NBIO::RdmaConnectChannel& channel, FCore::SocketAddress master, std::size_t chunk,
                          Outcome& outcome, Progress& progress) {
     auto connected = co_await channel.connect(master);
     if (!connected) [[unlikely]] {
@@ -683,8 +683,8 @@ int main(int argc, char* argv[]) {
     // Two managers, one per engine. The manager is single-threaded, and each end of
     // a link is driven by an engine of its own -- one per process, as they would be
     // in two servers, which is why the two ends cannot share one.
-    Core::RdmaResourceManager sending_resources(device);
-    Core::RdmaResourceManager receiving_resources(device);
+    FCore::RdmaResourceManager sending_resources(device);
+    FCore::RdmaResourceManager receiving_resources(device);
 
     // The message size comes from the manager, and the receiver's chunks are what a
     // message has to fit: a bigger one would be truncated by the device rather than
@@ -709,13 +709,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Core::RdmaAcceptor acceptor(sending_resources);
-    const auto listening = acceptor.listen(Core::SocketAddress::from_v4(address, listening_on));
+    FCore::RdmaAcceptor acceptor(sending_resources);
+    const auto listening = acceptor.listen(FCore::SocketAddress::from_v4(address, listening_on));
     if (!listening) [[unlikely]] {
         std::printf("cannot listen on %s:%u: %s\n", address.c_str(), listening_on, listening.error().c_str());
         return 1;
     }
-    const Core::SocketAddress master = Core::SocketAddress::from_v4(address, listening_on);
+    const FCore::SocketAddress master = FCore::SocketAddress::from_v4(address, listening_on);
 
     std::printf("%zu bytes as %zu messages of %zu bytes, window of %zu, %s:%u on %s, %s\n", payload.size(),
                 (payload.size() + message - 1) / message, message, kWindow, address.c_str(), listening_on,
@@ -743,7 +743,7 @@ int main(int argc, char* argv[]) {
     std::thread receiver([&] {
         RunEngine(
             [&] {
-                Core::RdmaConnector connector(receiving_resources);
+                FCore::RdmaConnector connector(receiving_resources);
                 NBIO::RdmaConnectChannel channel(connector, NBIO::Engine::multiplexer(), NBIO::Engine::scheduler());
                 NBIO::run(Receive(channel, master, receiving, taken, progress));
             },

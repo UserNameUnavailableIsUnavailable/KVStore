@@ -10,7 +10,7 @@ target_sources(
 
 add_subdirectory(RESP)
 
-target_link_libraries(Application INTERFACE Foundation)
+target_link_libraries(Application INTERFACE NBIO)
 
 add_subdirectory(Server)
 add_subdirectory(Client)

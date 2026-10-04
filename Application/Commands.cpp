@@ -1,6 +1,6 @@
 #include "Commands.hpp"
 
-#include <Foundation/Core/SocketAddress.hpp>
+#include <NBIO/Net/SocketAddress.hpp>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -139,7 +139,7 @@ bool IsDeviceSocketAddress(std::string_view text) {
         return false;
     }
     try {
-        (void)Foundation::Core::SocketAddress::from_v4(text, 1);
+        (void)NBIO::Net::SocketAddress::from_v4(text, 1);
     } catch (const std::exception&) {
         return false;
     }

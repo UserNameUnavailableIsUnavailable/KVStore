@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Foundation/Async/Async.hpp>
-#include <Foundation/Core/Buffer.hpp>
+#include <NBIO/Async/Async.hpp>
+#include <NBIO/Utility/Buffer.hpp>
 #include <coroutine>
 #include <cstdint>
 #include <optional>
@@ -195,12 +195,12 @@ enum class ScanStatus {
 //
 // `words` is the caller's, so a connection can scan a million commands through
 // one vector and allocate for none of them.
-ScanStatus ScanCommand(const ::Foundation::Core::Buffer& buffer, std::vector<std::string_view>& words,
+ScanStatus ScanCommand(const ::NBIO::Utility::Buffer& buffer, std::vector<std::string_view>& words,
                        std::size_t& size);
 
-Decoder Decode(::Foundation::Core::Buffer& buffer, Dialect dialect = Dialect::kMultibulkOnly);
-Encoder Encode(const Object& object, ::Foundation::Core::Buffer& buffer);
-Encoder Encode(Object&& object, ::Foundation::Core::Buffer& buffer) = delete;
+Decoder Decode(::NBIO::Utility::Buffer& buffer, Dialect dialect = Dialect::kMultibulkOnly);
+Encoder Encode(const Object& object, ::NBIO::Utility::Buffer& buffer);
+Encoder Encode(Object&& object, ::NBIO::Utility::Buffer& buffer) = delete;
 // The bytes of `object`, written into `buffer` without building anything on the
 // way: no string to spell out a number, no list of pieces for the reply to be
 // copied out of, no frame for a coroutine to suspend in. A reply is not a
@@ -214,5 +214,5 @@ Encoder Encode(Object&& object, ::Foundation::Core::Buffer& buffer) = delete;
 // flush in the middle of a reply -- the AOF spilling to the file -- uses. This is
 // for the writer that does not: the reply batch, which is answered to a client
 // and has no other way out.
-bool AppendObject(const Object& object, ::Foundation::Core::Buffer& buffer);
+bool AppendObject(const Object& object, ::NBIO::Utility::Buffer& buffer);
 }  // namespace RESP
