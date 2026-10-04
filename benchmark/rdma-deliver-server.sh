@@ -13,7 +13,7 @@ MESSAGES="${MESSAGES:-}"
 MULTIPLEXER="${MULTIPLEXER:-epoll}"
 
 command=(
-	./build/NBIO/NBIO/benchmark/Release/RdmaDeliverBenchmark
+	./build/nbio/benchmark/Release/RdmaDeliverBenchmark
 	--mode server
 	--ip "$SERVER_IP"
 	--port "$PORT"

@@ -25,12 +25,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(nbio CONFIG REQUIRED)
 
 # jemalloc can replace the process allocator: its archive defines malloc/free/
 # realloc and the C++ operator new/delete, so it is force-linked -- whole
 # archive -- because otherwise the linker would satisfy those from libc and the
-# archive would contribute nothing. The flags are threaded through nbio,
-# which every executable links.
+# archive would contribute nothing.
 #
 option(USE_JEMALLOC "Link jemalloc as the process allocator" OFF)
 if(USE_JEMALLOC)
@@ -53,7 +53,6 @@ include_directories(
 )
 
 add_subdirectory(Tutorial)
-add_subdirectory(nbio)
 add_subdirectory(Application)
 
 set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")
