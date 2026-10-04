@@ -2,7 +2,6 @@
 
 #include <Application/Commands.hpp>
 #include <Application/Server/ConfFile.hpp>
-
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -13,14 +12,12 @@
 #include <string_view>
 #include <vector>
 
-namespace
-{
+namespace {
 using KV::CommandLine;
 
 // Reads a file of this exact text, so a test never depends on one it did not
 // write and never leaves one behind.
-std::vector<CommandLine> ReadLines(std::string_view contents)
-{
+std::vector<CommandLine> ReadLines(std::string_view contents) {
     const auto path =
         std::filesystem::temp_directory_path() / ("kvstore-conf-" + std::to_string(std::random_device{}()) + ".conf");
     {
@@ -33,21 +30,18 @@ std::vector<CommandLine> ReadLines(std::string_view contents)
 }
 
 // The arguments of the only line of a one-line file.
-std::vector<std::string> Arguments(std::string_view one_line)
-{
+std::vector<std::string> Arguments(std::string_view one_line) {
     const std::vector<CommandLine> lines = ReadLines(one_line);
     return lines.empty() ? std::vector<std::string>{} : lines.front().arguments;
 }
 
 // The command a line stands for, as the server would see it.
-std::optional<KV::Command> CommandOf(const std::vector<CommandLine> &lines, std::size_t index = 0)
-{
+std::optional<KV::Command> CommandOf(const std::vector<CommandLine>& lines, std::size_t index = 0) {
     return KV::ValidateCommand(KV::CommandRequest(lines[index])).command;
 }
-} // namespace
+}  // namespace
 
-TEST(ConfFileTesting, TheMastersFileIsOneCommand)
-{
+TEST(ConfFileTesting, TheMastersFileIsOneCommand) {
     // The shape a real file has: the command as it would be typed, in lower case.
     const std::vector<CommandLine> lines = ReadLines("config appendonly yes\n");
     ASSERT_EQ(lines.size(), 1u);
@@ -57,20 +51,20 @@ TEST(ConfFileTesting, TheMastersFileIsOneCommand)
     const auto command = CommandOf(lines);
     ASSERT_TRUE(command.has_value());
     ASSERT_EQ(command->type, KV::CommandType::kConfig);
-    const auto &config = std::get<KV::ConfigParams>(command->parameters);
+    const auto& config = std::get<KV::ConfigParams>(command->parameters);
     EXPECT_EQ(config.parameter, "appendonly");
     ASSERT_EQ(config.values.size(), 1u);
     EXPECT_EQ(config.values.front(), "yes");
 }
 
-TEST(ConfFileTesting, CommentsAndBlankLinesAreNotCommands)
-{
-    const std::vector<CommandLine> lines = ReadLines("  # the master\n"
-                                                     "\n"
-                                                     "\t\n"
-                                                     "config appendonly yes\n"
-                                                     "   # trailing note\n"
-                                                     "dbsize\n");
+TEST(ConfFileTesting, CommentsAndBlankLinesAreNotCommands) {
+    const std::vector<CommandLine> lines = ReadLines(
+        "  # the master\n"
+        "\n"
+        "\t\n"
+        "config appendonly yes\n"
+        "   # trailing note\n"
+        "dbsize\n");
     ASSERT_EQ(lines.size(), 2u);
     EXPECT_EQ(lines[0].text, "config appendonly yes");
     EXPECT_EQ(lines[0].number, 4u) << "the number is the line in the file, not in the commands";
@@ -78,47 +72,55 @@ TEST(ConfFileTesting, CommentsAndBlankLinesAreNotCommands)
     EXPECT_EQ(lines[1].number, 6u);
 }
 
-TEST(ConfFileTesting, ALineSplitsOnWhitespace)
-{
+TEST(ConfFileTesting, ALineSplitsOnWhitespace) {
     EXPECT_EQ(Arguments("config   appendonly\tyes\n"), (std::vector<std::string>{"config", "appendonly", "yes"}));
     EXPECT_EQ(Arguments("\t set  key  value \n"), (std::vector<std::string>{"set", "key", "value"}));
 }
 
-TEST(ConfFileTesting, AQuotedRunIsOneArgument)
-{
-    EXPECT_EQ(Arguments(R"(set greeting "hello world")" "\n"), (std::vector<std::string>{"set", "greeting", "hello world"}));
+TEST(ConfFileTesting, AQuotedRunIsOneArgument) {
+    EXPECT_EQ(Arguments(R"(set greeting "hello world")"
+                        "\n"),
+              (std::vector<std::string>{"set", "greeting", "hello world"}));
 
     // An empty argument is still an argument: `set key ""` writes the empty
     // string, which is not the same as leaving the value out.
-    EXPECT_EQ(Arguments(R"(set key "")" "\n"), (std::vector<std::string>{"set", "key", ""}));
+    EXPECT_EQ(Arguments(R"(set key "")"
+                        "\n"),
+              (std::vector<std::string>{"set", "key", ""}));
 
     // A quote can open in the middle of an argument.
-    EXPECT_EQ(Arguments(R"(set key a" b"c)" "\n"), (std::vector<std::string>{"set", "key", "a bc"}));
+    EXPECT_EQ(Arguments(R"(set key a" b"c)"
+                        "\n"),
+              (std::vector<std::string>{"set", "key", "a bc"}));
 }
 
-TEST(ConfFileTesting, ABackslashEscapesOnlyInsideQuotes)
-{
+TEST(ConfFileTesting, ABackslashEscapesOnlyInsideQuotes) {
     // The line `set key "a\"b"` asks for the argument `a"b`.
-    EXPECT_EQ(Arguments(R"(set key "a\"b")" "\n"), (std::vector<std::string>{"set", "key", "a\"b"}));
-    EXPECT_EQ(Arguments(R"(set key "a\\b")" "\n"), (std::vector<std::string>{"set", "key", "a\\b"}));
+    EXPECT_EQ(Arguments(R"(set key "a\"b")"
+                        "\n"),
+              (std::vector<std::string>{"set", "key", "a\"b"}));
+    EXPECT_EQ(Arguments(R"(set key "a\\b")"
+                        "\n"),
+              (std::vector<std::string>{"set", "key", "a\\b"}));
 
     // Outside quotes a backslash is an ordinary character, so a value is allowed
     // to look like a path.
-    EXPECT_EQ(Arguments(R"(set key C:\logs\today)" "\n"), (std::vector<std::string>{"set", "key", "C:\\logs\\today"}));
+    EXPECT_EQ(Arguments(R"(set key C:\logs\today)"
+                        "\n"),
+              (std::vector<std::string>{"set", "key", "C:\\logs\\today"}));
 }
 
-TEST(ConfFileTesting, TheEndOfALineDoesNotBecomeAnArgument)
-{
+TEST(ConfFileTesting, TheEndOfALineDoesNotBecomeAnArgument) {
     // A file written on Windows has to read the same as one written here.
     EXPECT_EQ(Arguments("config appendonly yes\r\n"), (std::vector<std::string>{"config", "appendonly", "yes"}));
 }
 
-TEST(ConfFileTesting, TheLinesAreCommandsTheServerKnows)
-{
-    const std::vector<CommandLine> lines = ReadLines("info\n"
-                                                     "set greeting \"hello world\"\n"
-                                                     "del greeting\n"
-                                                     "config appendonly no\n");
+TEST(ConfFileTesting, TheLinesAreCommandsTheServerKnows) {
+    const std::vector<CommandLine> lines = ReadLines(
+        "info\n"
+        "set greeting \"hello world\"\n"
+        "del greeting\n"
+        "config appendonly no\n");
     ASSERT_EQ(lines.size(), 4u);
 
     const auto info = CommandOf(lines, 0);
@@ -137,13 +139,12 @@ TEST(ConfFileTesting, TheLinesAreCommandsTheServerKnows)
     const auto config = CommandOf(lines, 3);
     ASSERT_TRUE(config.has_value());
     ASSERT_EQ(config->type, KV::CommandType::kConfig);
-    const auto &parameters = std::get<KV::ConfigParams>(config->parameters);
+    const auto& parameters = std::get<KV::ConfigParams>(config->parameters);
     ASSERT_EQ(parameters.values.size(), 1u);
     EXPECT_EQ(parameters.values.front(), "no");
 }
 
-TEST(ConfFileTesting, ALineTheServerDoesNotKnowIsRefused)
-{
+TEST(ConfFileTesting, ALineTheServerDoesNotKnowIsRefused) {
     // Nothing here decides what to do about it: the message is what the startup
     // reports, and it names the command rather than the line, which is what a
     // client would have been told.
@@ -155,8 +156,7 @@ TEST(ConfFileTesting, ALineTheServerDoesNotKnowIsRefused)
     EXPECT_NE(validation.error.find("unknown command 'frobnicate'"), std::string::npos);
 }
 
-TEST(ConfFileTesting, TheSizeCommandTakesNothing)
-{
+TEST(ConfFileTesting, TheSizeCommandTakesNothing) {
     const std::vector<CommandLine> lines = ReadLines("DBSIZE\n");
     ASSERT_EQ(lines.size(), 1u);
 
@@ -171,15 +171,13 @@ TEST(ConfFileTesting, TheSizeCommandTakesNothing)
     EXPECT_NE(validation.error.find("wrong number of arguments"), std::string::npos);
 }
 
-TEST(ConfFileTesting, AFileThatIsNotThereIsRefused)
-{
+TEST(ConfFileTesting, AFileThatIsNotThereIsRefused) {
     const auto path = std::filesystem::temp_directory_path() / "kvstore-conf-that-is-not-there.conf";
     std::filesystem::remove(path);
     EXPECT_THROW(KV::ReadCommandFile(path), std::runtime_error);
 }
 
-TEST(ConfFileTesting, TheMasterIsNotAFileSetting)
-{
+TEST(ConfFileTesting, TheMasterIsNotAFileSetting) {
     // Which master this instance follows is SLAVEOF's business, and that command
     // arrives once the server is answering. A file that names one therefore holds
     // a command this server does not know rather than a setting taken out of the
@@ -196,12 +194,11 @@ TEST(ConfFileTesting, TheMasterIsNotAFileSetting)
     EXPECT_FALSE(CommandOf(lines).has_value()) << "'replicaof' is not a command this server knows";
 }
 
-TEST(ConfFileTesting, SlaveOfNamesTheMasterToFollow)
-{
+TEST(ConfFileTesting, SlaveOfNamesTheMasterToFollow) {
     const auto command = CommandOf(ReadLines("SLAVEOF 192.168.0.201 8081\n"));
     ASSERT_TRUE(command.has_value());
     ASSERT_EQ(command->type, KV::CommandType::kSlaveOf);
-    const auto &slaveof = std::get<KV::SlaveOfParams>(command->parameters);
+    const auto& slaveof = std::get<KV::SlaveOfParams>(command->parameters);
     EXPECT_EQ(slaveof.address, "192.168.0.201");
     EXPECT_EQ(slaveof.port, 8081);
 
@@ -212,12 +209,12 @@ TEST(ConfFileTesting, SlaveOfNamesTheMasterToFollow)
     EXPECT_FALSE(CommandOf(ReadLines("SLAVEOF 192.168.0.201\n")).has_value());
 }
 
-TEST(ConfFileTesting, ThePortsCanComeFromTheFile)
-{
+TEST(ConfFileTesting, ThePortsCanComeFromTheFile) {
     // The spelling the file wants: the same `CONFIG` command a client could send,
     // with the port and the address of the RDMA device to serve replicas from.
-    std::vector<CommandLine> lines = ReadLines("config port 8082\n"
-                                               "config replication_address 192.168.0.201 8081\n");
+    std::vector<CommandLine> lines = ReadLines(
+        "config port 8082\n"
+        "config replication_address 192.168.0.201 8081\n");
 
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
     ASSERT_TRUE(settings.port.has_value());
@@ -229,12 +226,12 @@ TEST(ConfFileTesting, ThePortsCanComeFromTheFile)
     EXPECT_TRUE(lines.empty());
 }
 
-TEST(ConfFileTesting, TheRestOfTheFileIsStillCommands)
-{
-    std::vector<CommandLine> lines = ReadLines("  # this node serves replicas\n"
-                                               "config replication_address 192.168.0.201 8081\n"
-                                               "config port 8082\n"
-                                               "config aof_checksum yes\n");
+TEST(ConfFileTesting, TheRestOfTheFileIsStillCommands) {
+    std::vector<CommandLine> lines = ReadLines(
+        "  # this node serves replicas\n"
+        "config replication_address 192.168.0.201 8081\n"
+        "config port 8082\n"
+        "config aof_checksum yes\n");
     ASSERT_EQ(lines.size(), 3u);
 
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
@@ -249,13 +246,13 @@ TEST(ConfFileTesting, TheRestOfTheFileIsStillCommands)
     EXPECT_EQ(command->type, KV::CommandType::kConfig);
 }
 
-TEST(ConfFileTesting, WhetherTheLogIsKeptIsSettledWithTheOtherSettings)
-{
+TEST(ConfFileTesting, WhetherTheLogIsKeptIsSettledWithTheOtherSettings) {
     // Which of the two files the store is read from depends on this, so a file has
     // to say it before either one is opened -- which means the line is read here
     // rather than run as a command afterwards.
-    std::vector<CommandLine> lines = ReadLines("config port 8082\n"
-                                               "config appendonly yes\n");
+    std::vector<CommandLine> lines = ReadLines(
+        "config port 8082\n"
+        "config appendonly yes\n");
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
     ASSERT_TRUE(settings.appendonly.has_value());
     EXPECT_TRUE(*settings.appendonly);
@@ -273,26 +270,26 @@ TEST(ConfFileTesting, WhetherTheLogIsKeptIsSettledWithTheOtherSettings)
     EXPECT_FALSE(unmentioned.appendonly.has_value());
 }
 
-TEST(ConfFileTesting, TheLaterSettingWins)
-{
+TEST(ConfFileTesting, TheLaterSettingWins) {
     // A file that names a setting twice means the last one, the way the rest of a
     // file reads.
-    std::vector<CommandLine> lines = ReadLines("config port 8082\n"
-                                               "config port 8083\n");
+    std::vector<CommandLine> lines = ReadLines(
+        "config port 8082\n"
+        "config port 8083\n");
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
     ASSERT_TRUE(settings.port.has_value());
     EXPECT_EQ(*settings.port, 8083);
     EXPECT_TRUE(lines.empty());
 }
 
-TEST(ConfFileTesting, ADirectiveThatNamesNoSettingIsLeftToTheServer)
-{
+TEST(ConfFileTesting, ADirectiveThatNamesNoSettingIsLeftToTheServer) {
     // Nothing that is not a setting is read here, so a line that looks like one
     // is handed to the server as the command it is -- and a server that does not
     // know the name refuses it with the line named, rather than a file that
     // silently does nothing.
-    std::vector<CommandLine> lines = ReadLines("replicaof 127.0.0.1 8081\n"
-                                               "config port 8082\n");
+    std::vector<CommandLine> lines = ReadLines(
+        "replicaof 127.0.0.1 8081\n"
+        "config port 8082\n");
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
     ASSERT_TRUE(settings.port.has_value());
     EXPECT_EQ(*settings.port, 8082);
@@ -301,8 +298,7 @@ TEST(ConfFileTesting, ADirectiveThatNamesNoSettingIsLeftToTheServer)
     EXPECT_FALSE(KV::ValidateCommand(KV::CommandRequest(lines.front())));
 }
 
-TEST(ConfFileTesting, ASettingWithoutItsValueIsRefused)
-{
+TEST(ConfFileTesting, ASettingWithoutItsValueIsRefused) {
     // A setting is still a command, so one that does not carry what it wants is
     // refused by the command validator -- and, refusing it, is left in the list
     // where the startup reports it with the line named.
@@ -317,8 +313,7 @@ TEST(ConfFileTesting, ASettingWithoutItsValueIsRefused)
     EXPECT_FALSE(KV::ValidateCommand(KV::CommandRequest(no_port.front())));
 }
 
-TEST(ConfFileTesting, ASettingTheServerCannotHonourIsRefused)
-{
+TEST(ConfFileTesting, ASettingTheServerCannotHonourIsRefused) {
     const auto refused = [](std::string_view line) {
         std::vector<CommandLine> lines = ReadLines(line);
         KV::TakeStartupSettings(lines);

@@ -7,28 +7,21 @@
 // of a command, or a reply batch that has grown to its first allocation and needs
 // more, is exactly a buffer that holds bytes past the front of its storage and
 // then grows.
-#include <Foundation/Core/Buffer.hpp>
-
 #include <gtest/gtest.h>
 
+#include <Foundation/Core/Buffer.hpp>
 #include <cstddef>
 #include <string>
 
-namespace
-{
-std::string Fill(std::size_t size, char character)
-{
-    return std::string(size, character);
-}
+namespace {
+std::string Fill(std::size_t size, char character) { return std::string(size, character); }
 
-void Append(Foundation::Core::Buffer &buffer, const std::string &bytes)
-{
+void Append(Foundation::Core::Buffer& buffer, const std::string& bytes) {
     ASSERT_TRUE(buffer.write(bytes.data(), bytes.size()));
 }
-} // namespace
+}  // namespace
 
-TEST(Buffer, WhatIsWrittenIsWhatIsRead)
-{
+TEST(Buffer, WhatIsWrittenIsWhatIsRead) {
     Foundation::Core::Buffer buffer(64, 64);
     Append(buffer, "hello");
     EXPECT_EQ(buffer.string_view(), "hello");
@@ -44,8 +37,7 @@ TEST(Buffer, WhatIsWrittenIsWhatIsRead)
 
 // The case the whole class exists for: more arrives than the buffer was given
 // room for, and it grows instead of dropping it.
-TEST(Buffer, WritingPastWhatItHoldsGrowsTheBuffer)
-{
+TEST(Buffer, WritingPastWhatItHoldsGrowsTheBuffer) {
     Foundation::Core::Buffer buffer(8, 4096);
     const std::string bytes = "a line that is longer than the buffer";
     Append(buffer, bytes);
@@ -56,8 +48,7 @@ TEST(Buffer, WritingPastWhatItHoldsGrowsTheBuffer)
 // the storage, and a grow has to keep them where the buffer says they are. A
 // grow that copies them to the front while leaving the window where it was hands
 // the reader whatever happens to be at the old offsets -- here, nothing at all.
-TEST(Buffer, AFullBufferThatHoldsBytesGrowsAndKeepsThem)
-{
+TEST(Buffer, AFullBufferThatHoldsBytesGrowsAndKeepsThem) {
     Foundation::Core::Buffer buffer(16, 4096);
     const std::string held = Fill(16, 'h');
     Append(buffer, held);
@@ -75,8 +66,7 @@ TEST(Buffer, AFullBufferThatHoldsBytesGrowsAndKeepsThem)
 
 // The same, standing on the ceiling: a buffer that cannot grow any further keeps
 // what it holds rather than losing it, and says that the write did not happen.
-TEST(Buffer, ABufferAtItsCeilingKeepsWhatItHolds)
-{
+TEST(Buffer, ABufferAtItsCeilingKeepsWhatItHolds) {
     Foundation::Core::Buffer buffer(16, 24);
     Append(buffer, Fill(16, 'a'));
     buffer.consume(4);

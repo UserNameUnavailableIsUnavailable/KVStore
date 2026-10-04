@@ -1,15 +1,12 @@
 #pragma once
 
-namespace Foundation::NBIO
-{
-enum class EventModelType
-{
+namespace Foundation::NBIO {
+enum class EventModelType {
     kReactor,
     kProactor,
 };
 
-enum class MultiplexerType
-{
+enum class MultiplexerType {
 #if defined(__linux__)
     kEpoll,
     kURing
@@ -21,8 +18,7 @@ enum class MultiplexerType
 // Every channel is simplex: it is dedicated to exactly one event. A connection
 // therefore owns two channels (receive and send) over the same socket, and a
 // listener owns one (accept).
-enum class ChannelType
-{
+enum class ChannelType {
     kAccept,
     // A connection being made: the socket becoming writable is the completion, and
     // what it means is the socket's own answer rather than the readiness itself.
@@ -39,4 +35,4 @@ enum class ChannelType
     kRdmaSend,
     kRdmaReceive,
 };
-} // namespace Foundation::NBIO
+}  // namespace Foundation::NBIO

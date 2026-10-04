@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Application/RESP/RESP.hpp>
-
 #include <Foundation/Core/SocketAddress.hpp>
-
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -11,8 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace KV
-{
+namespace KV {
 // The command file a server reads at startup: one command per line, written the
 // way it would be typed at a prompt. Configuring the server this way gives it
 // one language instead of two -- whatever a client may send, a file may say, and
@@ -22,8 +19,7 @@ namespace KV
 // a backslash escapes the character after it, so a value with spaces in it can be
 // written. Blank lines and lines whose first character is '#' are skipped, so a
 // file can explain itself.
-struct CommandLine
-{
+struct CommandLine {
     // The file it came from, so a message about it can name the line instead of
     // leaving the reader to look for it.
     std::filesystem::path file;
@@ -40,11 +36,11 @@ struct CommandLine
 // Reads the file. Throws std::runtime_error when it cannot be opened: a command
 // file is only ever named deliberately, so one that is not there is a mistake
 // rather than a server that starts with half a configuration.
-std::vector<CommandLine> ReadCommandFile(const std::filesystem::path &path);
+std::vector<CommandLine> ReadCommandFile(const std::filesystem::path& path);
 
 // The request a line stands for: the RESP array a client would have sent, so the
 // same validation and the same execution apply to both.
-RESP::Object CommandRequest(const CommandLine &line);
+RESP::Object CommandRequest(const CommandLine& line);
 
 // The lines of a file that are settings rather than commands. They are the facts
 // a server has to know before it exists -- the port it answers clients on, whether
@@ -60,8 +56,7 @@ RESP::Object CommandRequest(const CommandLine &line);
 // client sends it once the server is answering. Nothing means this file did not
 // say: what the command line named wins over all of it, and a value no one named
 // falls back to the server's own default.
-struct StartupSettings
-{
+struct StartupSettings {
     std::optional<std::uint16_t> port;
     std::optional<std::uint16_t> replication_port;
     std::optional<std::string> replication_address;
@@ -76,5 +71,5 @@ struct StartupSettings
 // stays is only the commands. A keyword that names a setting but is not followed
 // by what it wants throws std::runtime_error, and the message names the file and
 // the line. A later line overrides an earlier one.
-StartupSettings TakeStartupSettings(std::vector<CommandLine> &lines);
-} // namespace KV
+StartupSettings TakeStartupSettings(std::vector<CommandLine>& lines);
+}  // namespace KV

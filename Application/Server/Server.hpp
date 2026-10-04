@@ -1,7 +1,15 @@
 #pragma once
 
-#include <cstdint>
+#include <Application/Commands.hpp>
+#include <Application/RESP/RESP.hpp>
+#include <Foundation/Async/Task.hpp>
+#include <Foundation/Core/SocketAddress.hpp>
+#include <Foundation/NBIO/ConditionVariable.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
+#include <Foundation/NBIO/TcpAcceptService.hpp>
+#include <Foundation/NBIO/TcpSessionService.hpp>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -13,29 +21,17 @@
 #include "AppendOnlyFile.hpp"
 #include "Backup.hpp"
 #include "ConfFile.hpp"
-#include "Store.hpp"
 #include "ReplicationService.hpp"
+#include "Store.hpp"
 
-#include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/ConditionVariable.hpp>
-#include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/NBIO/TcpAcceptService.hpp>
-#include <Foundation/NBIO/TcpSessionService.hpp>
-#include <Foundation/Async/Task.hpp>
-
-#include <Application/RESP/RESP.hpp>
-#include <Application/Commands.hpp>
-
-namespace KV
-{
+namespace KV {
 // What a server is told to do, from the command line and from a startup file.
 // Nothing here means "not named": a value is resolved as the command line, then
 // the file, then the default, so a flag overrides the file only when it was
 // actually given. The defaults describe a plain stand-alone instance: no
 // replication listener, and no master to follow -- which one it follows is what
 // SLAVEOF says, and it says it at runtime.
-struct ServerOptions
-{
+struct ServerOptions {
     static constexpr std::uint16_t kDefaultPort = 8080;
     static constexpr std::uint16_t kDefaultReplicationPort = 0;
     static constexpr std::string_view kDefaultReplicationSocketAddress = "0.0.0.0";
@@ -55,17 +51,12 @@ struct ServerOptions
     std::optional<std::filesystem::path> config_file{};
 };
 
-class TcpSessionService
-{
-  public:
-    explicit TcpSessionService(std::shared_ptr<Foundation::NBIO::TcpSessionService> transport) : transport_(std::move(transport))
-    {
-    }
+class TcpSessionService {
+   public:
+    explicit TcpSessionService(std::shared_ptr<Foundation::NBIO::TcpSessionService> transport)
+        : transport_(std::move(transport)) {}
 
-    Foundation::NBIO::TcpSessionService &transport() const noexcept
-    {
-        return *transport_;
-    }
+    Foundation::NBIO::TcpSessionService& transport() const noexcept { return *transport_; }
 
     bool is_multi{false};
     std::vector<KV::Command> queued_commands;
@@ -74,21 +65,20 @@ class TcpSessionService
     // GET costs no allocation once it has grown to the longest one seen.
     std::string lookup_key;
 
-  private:
+   private:
     std::shared_ptr<Foundation::NBIO::TcpSessionService> transport_;
 };
 
-class Server
-{
-  public:
+class Server {
+   public:
     Server() = default;
     ~Server() = default;
-    Server(const Server &) = delete;
-    Server &operator=(const Server &) = delete;
-    Server(Server &&) = delete;
-    Server &operator=(Server &&) = delete;
+    Server(const Server&) = delete;
+    Server& operator=(const Server&) = delete;
+    Server(Server&&) = delete;
+    Server& operator=(Server&&) = delete;
 
-    void run(const ServerOptions &options);
+    void run(const ServerOptions& options);
 
     // Runs the commands a startup file holds, and then serves. Applying them
     // belongs inside the runtime: they are this server's own commands, and
@@ -96,15 +86,14 @@ class Server
     Foundation::NBIO::Task<void> serve(std::uint16_t port, std::vector<CommandLine> commands);
     Foundation::NBIO::Task<void> apply_commands(std::vector<CommandLine> commands);
 
-    Foundation::NBIO::Task<void> serve(const Foundation::Core::SocketAddress &address);
+    Foundation::NBIO::Task<void> serve(const Foundation::Core::SocketAddress& address);
     // The listener is the caller's: it owns the acceptor the channel waits on, so it
     // has to outlive the loop that accepts through it.
-    Foundation::NBIO::Task<void> accept_clients(Foundation::NBIO::TcpAcceptService &listener);
+    Foundation::NBIO::Task<void> accept_clients(Foundation::NBIO::TcpAcceptService& listener);
     Foundation::NBIO::Task<void> serve_client(std::shared_ptr<TcpSessionService> session);
 
-  private:
-    struct StagedSaveRule
-    {
+   private:
+    struct StagedSaveRule {
         std::chrono::seconds seconds{0};
         std::size_t changed{0};
     };
@@ -112,23 +101,24 @@ class Server
     // The answer to a command that reads one key, or nothing when the request is
     // not one: see the definition for why it is worth answering before a command
     // is built for it.
-    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words, TcpSessionService &session);
+    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words,
+                                                          TcpSessionService& session);
 
-    Foundation::NBIO::Task<RESP::Object> dispatch(TcpSessionService &session, KV::Command command);
-    Foundation::NBIO::Task<RESP::Object> execute(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_set(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_info(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_del(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_exists(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_dbsize(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_command_info(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_client(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_config(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command &command);
-    Foundation::NBIO::Task<RESP::Object> execute_slaveof(const KV::Command &command);
+    Foundation::NBIO::Task<RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
+    Foundation::NBIO::Task<RESP::Object> execute(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_ping(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_get(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_set(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_info(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_del(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_exists(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_dbsize(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_command_info(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_client(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_config(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_bgsave(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_save(const KV::Command& command);
+    Foundation::NBIO::Task<RESP::Object> execute_slaveof(const KV::Command& command);
     void note_write();
     void configure_staged_save(std::chrono::seconds seconds, std::size_t changed);
     void maybe_start_staged_save();
@@ -136,13 +126,13 @@ class Server
 
     // The current value of one CONFIG parameter, or nothing when this server
     // does not know the name.
-    std::optional<std::string> config_value(const std::string &parameter) const;
+    std::optional<std::string> config_value(const std::string& parameter) const;
 
-    bool replay_aof_command(const KV::Command &command);
+    bool replay_aof_command(const KV::Command& command);
     // Applies one command a master has applied. A replica refuses writes from its
     // own clients, so this is the write path without that check: it is the master
     // that said this write happened, in this order.
-    bool apply_replicated_command(const KV::Command &command);
+    bool apply_replicated_command(const KV::Command& command);
 
     LRUStore<std::string, std::string, HashMap> store_;
     AppendOnlyFile aof_;
@@ -164,4 +154,4 @@ class Server
     std::unique_ptr<Foundation::NBIO::ConditionVariable> staged_save_ready_{};
     bool staged_save_loop_running_{false};
 };
-} // namespace KV
+}  // namespace KV

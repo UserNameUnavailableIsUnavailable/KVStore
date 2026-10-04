@@ -2,15 +2,8 @@
 
 #include "Engine.hpp"
 
-namespace Foundation::NBIO
-{
-void initialize(std::unique_ptr<Multiplexer> multiplexer)
-{
-    Engine::initialize(std::move(multiplexer));
-}
+namespace Foundation::NBIO {
+void initialize(std::unique_ptr<Multiplexer> multiplexer) { Engine::initialize(std::move(multiplexer)); }
 
-void run(Task<void> main)
-{
-    Foundation::Async::run(std::move(main));
-}
-} // namespace Foundation::NBIO
+void run(Task<void> main) { Foundation::Async::run(std::move(main)); }
+}  // namespace Foundation::NBIO

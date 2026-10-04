@@ -1,30 +1,24 @@
 #include "AppendOnlyFile.hpp"
-#include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/Core/Byte.hpp>
 
 #include <Foundation/Async/Async.hpp>
-
+#include <Foundation/Core/Byte.hpp>
+#include <Foundation/NBIO/Runtime.hpp>
 #include <array>
 #include <cstring>
+#include <iostream>
 #include <span>
 #include <system_error>
-#include <iostream>
 
-namespace KV
-{
-bool AppendOnlyFile::enable()
-{
-    if (enabled_)
-    {
+namespace KV {
+bool AppendOnlyFile::enable() {
+    if (enabled_) {
         return true;
     }
 
-    if (const auto parent = path_.parent_path(); !parent.empty())
-    {
+    if (const auto parent = path_.parent_path(); !parent.empty()) {
         std::error_code error;
         std::filesystem::create_directories(parent, error);
-        if (error)
-        {
+        if (error) {
             return false;
         }
     }
@@ -34,12 +28,9 @@ bool AppendOnlyFile::enable()
     // the log on after the engine is there. It throws when the file cannot be opened;
     // enable() answers a question instead, and both callers say what a `false` means in
     // their own terms.
-    try
-    {
+    try {
         file_ = std::make_shared<Foundation::NBIO::FileStreamService>(path_);
-    }
-    catch (const std::exception &)
-    {
+    } catch (const std::exception&) {
         file_.reset();
         return false;
     }
@@ -48,8 +39,7 @@ bool AppendOnlyFile::enable()
     return true;
 }
 
-void AppendOnlyFile::disable() noexcept
-{
+void AppendOnlyFile::disable() noexcept {
     file_.reset();
     enabled_ = false;
 }
@@ -67,22 +57,19 @@ void AppendOnlyFile::disable() noexcept
 constexpr std::size_t kInitialEntryBytes = 1024;
 constexpr std::size_t kMaximumEntryBytes = (16U * 1024U * 1024U) + (64U * 1024U);
 
-bool AppendOnlyFile::verify_checksum(Foundation::Core::Buffer &buffer, std::span<const char> command)
-{
+bool AppendOnlyFile::verify_checksum(Foundation::Core::Buffer& buffer, std::span<const char> command) {
     // A checksum is a bulk string of four bytes and nothing else is: a command is an
     // array, and an array is the only other thing an entry holds.
     const std::span<const char> rest = buffer.readable_span();
-    if (rest.size() < 10 || rest[0] != '$')
-    {
-        return true; // nothing follows this command but the next one
+    if (rest.size() < 10 || rest[0] != '$') {
+        return true;  // nothing follows this command but the next one
     }
 
     std::uint32_t stored = 0;
     std::memcpy(&stored, rest.data() + 4, sizeof(stored));
     const auto expected = Foundation::Core::from_big_endian(stored);
     const auto actual = static_cast<std::uint32_t>(CRC::Calculate(command.data(), command.size(), CRC::CRC_32()));
-    if (expected != actual)
-    {
+    if (expected != actual) {
         std::cerr << "AOF checksum mismatch: the log is damaged\n";
         return false;
     }
@@ -91,10 +78,8 @@ bool AppendOnlyFile::verify_checksum(Foundation::Core::Buffer &buffer, std::span
     return true;
 }
 
-Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
-{
-    if (!enabled_)
-    {
+Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command& command) {
+    if (!enabled_) {
         co_return;
     }
 
@@ -103,17 +88,14 @@ Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
     // entry it started rather than read a file that is no longer there.
     const std::shared_ptr<Foundation::NBIO::FileStreamService> file = file_;
 
-    try
-    {
+    try {
         Foundation::Core::Buffer buffer{kInitialEntryBytes, kMaximumEntryBytes};
         const auto object = CommandToRESP(command);
         auto encoder = RESP::Encode(object, buffer);
-        while (encoder.poll() == RESP::EncodeStatus::kNeedFlush)
-        {
+        while (encoder.poll() == RESP::EncodeStatus::kNeedFlush) {
             // The encoder wants room, not a flush: growing the buffer keeps the
             // entry in one piece and the write that follows to one call.
-            if (!buffer.reserve(buffer.capacity()))
-            {
+            if (!buffer.reserve(buffer.capacity())) {
                 throw std::runtime_error("AOF entry is larger than the log can hold");
             }
         }
@@ -123,8 +105,7 @@ Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
         // same buffer, so the entry is still one write -- and it is written from the
         // bytes just encoded rather than from a re-encoding of them, so what is
         // checksummed is what the log holds.
-        if (checksum_)
-        {
+        if (checksum_) {
             const std::span<const char> entry = buffer.readable_span();
             const auto crc = CRC::Calculate(entry.data(), entry.size(), CRC::CRC_32());
 
@@ -135,29 +116,23 @@ Foundation::NBIO::Task<void> AppendOnlyFile::append(const Command &command)
             std::memcpy(trailer.data() + 4, &ordered, sizeof(ordered));
             trailer[8] = '\r';
             trailer[9] = '\n';
-            if (!buffer.write(trailer.data(), trailer.size()))
-            {
+            if (!buffer.write(trailer.data(), trailer.size())) {
                 throw std::runtime_error("AOF entry is larger than the log can hold");
             }
         }
 
         const std::size_t size = buffer.readable_size();
         const auto result = co_await file->write(buffer.readable_span());
-        if (!result || *result != size)
-        {
+        if (!result || *result != size) {
             throw std::runtime_error("failed to append AOF entry");
         }
-    }
-    catch (const std::exception &ex)
-    {
+    } catch (const std::exception& ex) {
         std::cerr << "AOF append failed: " << ex.what() << '\n';
         throw;
-    }
-    catch (...)
-    {
+    } catch (...) {
         std::cerr << "AOF append failed: unknown exception\n";
         throw;
     }
     co_return;
 }
-} // namespace KV
+}  // namespace KV

@@ -4,7 +4,6 @@
 
 #include <Foundation/Core/Byte.hpp>
 #include <Foundation/Core/FileView.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -23,10 +22,8 @@
 #include <unistd.h>
 #endif
 
-namespace KV
-{
-namespace detail
-{
+namespace KV {
+namespace detail {
 constexpr std::uint8_t kAux = 0xFA;
 constexpr std::uint8_t kResizeDb = 0xFB;
 constexpr std::uint8_t kExpireTimeMs = 0xFC;
@@ -34,67 +31,50 @@ constexpr std::uint8_t kSelectDb = 0xFE;
 constexpr std::uint8_t kEof = 0xFF;
 constexpr std::uint8_t kString = 0x00;
 
-void Write(std::ofstream &file, const void *data, std::size_t size)
-{
-    file.write(static_cast<const char *>(data), static_cast<std::streamsize>(size));
+void Write(std::ofstream& file, const void* data, std::size_t size) {
+    file.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
 }
 
-void WriteByte(std::ofstream &file, std::uint8_t value)
-{
-    Write(file, &value, sizeof(value));
-}
+void WriteByte(std::ofstream& file, std::uint8_t value) { Write(file, &value, sizeof(value)); }
 
-void WriteLength(std::ofstream &file, std::uint64_t value)
-{
-    if (value < (1U << 6U))
-    {
+void WriteLength(std::ofstream& file, std::uint64_t value) {
+    if (value < (1U << 6U)) {
         WriteByte(file, static_cast<std::uint8_t>(value));
-    }
-    else if (value < (1U << 14U))
-    {
+    } else if (value < (1U << 14U)) {
         WriteByte(file, static_cast<std::uint8_t>(0x40U | (value >> 8U)));
         WriteByte(file, static_cast<std::uint8_t>(value));
-    }
-    else if (value <= std::numeric_limits<std::uint32_t>::max())
-    {
+    } else if (value <= std::numeric_limits<std::uint32_t>::max()) {
         WriteByte(file, 0x80U);
         const std::uint32_t big_endian = Foundation::Core::to_big_endian(static_cast<std::uint32_t>(value));
         Write(file, &big_endian, sizeof(big_endian));
-    }
-    else
-    {
+    } else {
         WriteByte(file, 0x81U);
         const std::uint64_t big_endian = Foundation::Core::to_big_endian(value);
         Write(file, &big_endian, sizeof(big_endian));
     }
 }
 
-void WriteString(std::ofstream &file, std::string_view value)
-{
+void WriteString(std::ofstream& file, std::string_view value) {
     WriteLength(file, value.size());
     Write(file, value.data(), value.size());
 }
 
-void WriteAux(std::ofstream &file, std::string_view key, std::string_view value)
-{
+void WriteAux(std::ofstream& file, std::string_view key, std::string_view value) {
     WriteByte(file, kAux);
     WriteString(file, key);
     WriteString(file, value);
 }
 
-std::uint64_t Checksum(const std::filesystem::path &path)
-{
+std::uint64_t Checksum(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-    constexpr CRC::Parameters<std::uint64_t, 64> kRedisCrc64{
-        0xAD93D23594C935A9ULL, 0x0000000000000000ULL, 0x0000000000000000ULL, true, true};
+    constexpr CRC::Parameters<std::uint64_t, 64> kRedisCrc64{0xAD93D23594C935A9ULL, 0x0000000000000000ULL,
+                                                             0x0000000000000000ULL, true, true};
     return CRC::Calculate(bytes.data(), bytes.size(), kRedisCrc64);
 }
 
-bool ReadExact(std::span<const std::uint8_t> bytes, std::size_t &offset, void *data, std::size_t size)
-{
-    if (offset + size > bytes.size())
-    {
+bool ReadExact(std::span<const std::uint8_t> bytes, std::size_t& offset, void* data, std::size_t size) {
+    if (offset + size > bytes.size()) {
         return false;
     }
     std::memcpy(data, bytes.data() + offset, size);
@@ -102,49 +82,39 @@ bool ReadExact(std::span<const std::uint8_t> bytes, std::size_t &offset, void *d
     return true;
 }
 
-bool ReadByte(std::span<const std::uint8_t> bytes, std::size_t &offset, std::uint8_t &value)
-{
+bool ReadByte(std::span<const std::uint8_t> bytes, std::size_t& offset, std::uint8_t& value) {
     return ReadExact(bytes, offset, &value, sizeof(value));
 }
 
-bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t &offset, std::uint64_t &value)
-{
+bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t& offset, std::uint64_t& value) {
     std::uint8_t header = 0;
-    if (!ReadByte(bytes, offset, header))
-    {
+    if (!ReadByte(bytes, offset, header)) {
         return false;
     }
 
-    if ((header & 0xC0U) == 0x00U)
-    {
+    if ((header & 0xC0U) == 0x00U) {
         value = header & 0x3FU;
         return true;
     }
-    if ((header & 0xC0U) == 0x40U)
-    {
+    if ((header & 0xC0U) == 0x40U) {
         std::uint8_t low = 0;
-        if (!ReadByte(bytes, offset, low))
-        {
+        if (!ReadByte(bytes, offset, low)) {
             return false;
         }
         value = (static_cast<std::uint64_t>(header & 0x3FU) << 8U) | low;
         return true;
     }
-    if (header == 0x80U)
-    {
+    if (header == 0x80U) {
         std::uint32_t big_endian = 0;
-        if (!ReadExact(bytes, offset, &big_endian, sizeof(big_endian)))
-        {
+        if (!ReadExact(bytes, offset, &big_endian, sizeof(big_endian))) {
             return false;
         }
         value = Foundation::Core::from_big_endian(big_endian);
         return true;
     }
-    if (header == 0x81U)
-    {
+    if (header == 0x81U) {
         std::uint64_t big_endian = 0;
-        if (!ReadExact(bytes, offset, &big_endian, sizeof(big_endian)))
-        {
+        if (!ReadExact(bytes, offset, &big_endian, sizeof(big_endian))) {
             return false;
         }
         value = Foundation::Core::from_big_endian(big_endian);
@@ -153,129 +123,105 @@ bool ReadLength(std::span<const std::uint8_t> bytes, std::size_t &offset, std::u
     return false;
 }
 
-bool ReadString(std::span<const std::uint8_t> bytes, std::size_t &offset, std::string &value)
-{
+bool ReadString(std::span<const std::uint8_t> bytes, std::size_t& offset, std::string& value) {
     std::uint64_t length = 0;
-    if (!ReadLength(bytes, offset, length))
-    {
+    if (!ReadLength(bytes, offset, length)) {
         return false;
     }
-    if (offset + length > bytes.size())
-    {
+    if (offset + length > bytes.size()) {
         return false;
     }
-    value.assign(reinterpret_cast<const char *>(bytes.data() + offset), static_cast<std::size_t>(length));
+    value.assign(reinterpret_cast<const char*>(bytes.data() + offset), static_cast<std::size_t>(length));
     offset += static_cast<std::size_t>(length);
     return true;
 }
 
-bool ValidateChecksum(std::span<const std::uint8_t> bytes)
-{
-    if (bytes.size() < sizeof(std::uint64_t))
-    {
+bool ValidateChecksum(std::span<const std::uint8_t> bytes) {
+    if (bytes.size() < sizeof(std::uint64_t)) {
         return false;
     }
 
     std::uint64_t stored_checksum = 0;
     std::memcpy(&stored_checksum, bytes.data() + (bytes.size() - sizeof(stored_checksum)), sizeof(stored_checksum));
-    constexpr CRC::Parameters<std::uint64_t, 64> kRedisCrc64{
-        0xAD93D23594C935A9ULL, 0x0000000000000000ULL, 0x0000000000000000ULL, true, true};
+    constexpr CRC::Parameters<std::uint64_t, 64> kRedisCrc64{0xAD93D23594C935A9ULL, 0x0000000000000000ULL,
+                                                             0x0000000000000000ULL, true, true};
     const auto computed = CRC::Calculate(bytes.data(), bytes.size() - sizeof(stored_checksum), kRedisCrc64);
     return computed == stored_checksum;
 }
 
-bool ReadSnapshot(std::span<const std::uint8_t> bytes, std::vector<LoadedEntry> &entries)
-{
+bool ReadSnapshot(std::span<const std::uint8_t> bytes, std::vector<LoadedEntry>& entries) {
     entries.clear();
-    if (bytes.empty())
-    {
+    if (bytes.empty()) {
         return true;
     }
 
-    if (bytes.size() < 9 + sizeof(std::uint64_t))
-    {
+    if (bytes.size() < 9 + sizeof(std::uint64_t)) {
         return false;
     }
 
-    if (!ValidateChecksum(bytes))
-    {
+    if (!ValidateChecksum(bytes)) {
         return false;
     }
 
     std::size_t offset = 0;
     constexpr char kHeader[] = "REDIS0006";
     if (bytes.size() < sizeof(kHeader) - 1 + sizeof(std::uint64_t) ||
-        std::memcmp(bytes.data(), kHeader, sizeof(kHeader) - 1) != 0)
-    {
+        std::memcmp(bytes.data(), kHeader, sizeof(kHeader) - 1) != 0) {
         return false;
     }
     offset += sizeof(kHeader) - 1;
 
-    while (offset < bytes.size() - sizeof(std::uint64_t))
-    {
+    while (offset < bytes.size() - sizeof(std::uint64_t)) {
         std::uint8_t op = 0;
-        if (!ReadByte(bytes, offset, op))
-        {
+        if (!ReadByte(bytes, offset, op)) {
             return false;
         }
 
-        if (op == kAux)
-        {
+        if (op == kAux) {
             std::string key;
             std::string value;
-            if (!ReadString(bytes, offset, key) || !ReadString(bytes, offset, value))
-            {
+            if (!ReadString(bytes, offset, key) || !ReadString(bytes, offset, value)) {
                 return false;
             }
             continue;
         }
-        if (op == kSelectDb)
-        {
+        if (op == kSelectDb) {
             std::uint64_t db = 0;
-            if (!ReadLength(bytes, offset, db))
-            {
+            if (!ReadLength(bytes, offset, db)) {
                 return false;
             }
             continue;
         }
-        if (op == kResizeDb)
-        {
+        if (op == kResizeDb) {
             std::uint64_t keys = 0;
             std::uint64_t expires = 0;
-            if (!ReadLength(bytes, offset, keys) || !ReadLength(bytes, offset, expires))
-            {
+            if (!ReadLength(bytes, offset, keys) || !ReadLength(bytes, offset, expires)) {
                 return false;
             }
             continue;
         }
-        if (op == kEof)
-        {
+        if (op == kEof) {
             break;
         }
 
         std::optional<std::chrono::system_clock::time_point> expires_at;
-        if (op == kExpireTimeMs)
-        {
+        if (op == kExpireTimeMs) {
             std::uint64_t deadline_ms = 0;
-            if (!ReadExact(bytes, offset, &deadline_ms, sizeof(deadline_ms)))
-            {
+            if (!ReadExact(bytes, offset, &deadline_ms, sizeof(deadline_ms))) {
                 return false;
             }
             expires_at = std::chrono::system_clock::time_point{std::chrono::milliseconds{deadline_ms}};
-            if (!ReadByte(bytes, offset, op))
-            {
+            if (!ReadByte(bytes, offset, op)) {
                 return false;
             }
         }
 
-        if (op != kString)
-        {
+        if (op != kString) {
             return false;
         }
 
         LoadedEntry entry;
-        if (!ReadString(bytes, offset, entry.key) || !ReadString(bytes, offset, entry.value))
-        {
+        if (!ReadString(bytes, offset, entry.key) || !ReadString(bytes, offset, entry.value)) {
             return false;
         }
         entry.expires_at = std::move(expires_at);
@@ -285,18 +231,16 @@ bool ReadSnapshot(std::span<const std::uint8_t> bytes, std::vector<LoadedEntry> 
     return true;
 }
 
-bool WriteSnapshot(const std::filesystem::path &path, const std::vector<SnapshotEntry> &entries)
-{
+bool WriteSnapshot(const std::filesystem::path& path, const std::vector<SnapshotEntry>& entries) {
     const std::filesystem::path temporary = path.string() + ".tmp";
     std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-    if (!file)
-    {
+    if (!file) {
         return false;
     }
 
     Write(file, "REDIS0006", 9);
     WriteAux(file, "redis-ver", "KVStore");
-    WriteAux(file, "redis-bits", std::to_string(sizeof(void *) * 8));
+    WriteAux(file, "redis-bits", std::to_string(sizeof(void*) * 8));
     WriteAux(file, "ctime", std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())));
     WriteAux(file, "used-mem", "0");
     WriteByte(file, kSelectDb);
@@ -304,14 +248,11 @@ bool WriteSnapshot(const std::filesystem::path &path, const std::vector<Snapshot
 
     WriteByte(file, kResizeDb);
     WriteLength(file, entries.size());
-    WriteLength(file, std::count_if(entries.begin(), entries.end(), [](const SnapshotEntry &entry) {
-        return entry.ttl.has_value();
-    }));
+    WriteLength(file, std::count_if(entries.begin(), entries.end(),
+                                    [](const SnapshotEntry& entry) { return entry.ttl.has_value(); }));
 
-    for (const SnapshotEntry &entry : entries)
-    {
-        if (entry.ttl)
-        {
+    for (const SnapshotEntry& entry : entries) {
+        if (entry.ttl) {
             WriteByte(file, kExpireTimeMs);
             const auto deadline = std::chrono::system_clock::now() + *entry.ttl;
             const std::uint64_t milliseconds = static_cast<std::uint64_t>(
@@ -325,8 +266,7 @@ bool WriteSnapshot(const std::filesystem::path &path, const std::vector<Snapshot
     WriteByte(file, kEof);
     file.flush();
     file.close();
-    if (!file)
-    {
+    if (!file) {
         return false;
     }
 
@@ -334,71 +274,58 @@ bool WriteSnapshot(const std::filesystem::path &path, const std::vector<Snapshot
     std::ofstream checksum_file(temporary, std::ios::binary | std::ios::app);
     Write(checksum_file, &checksum, sizeof(checksum));
     checksum_file.close();
-    if (!checksum_file)
-    {
+    if (!checksum_file) {
         return false;
     }
     std::filesystem::rename(temporary, path);
     return true;
 }
 
-bool ReadSnapshot(const std::filesystem::path &path, std::vector<LoadedEntry> &entries)
-{
-    if (!std::filesystem::exists(path))
-    {
+bool ReadSnapshot(const std::filesystem::path& path, std::vector<LoadedEntry>& entries) {
+    if (!std::filesystem::exists(path)) {
         entries.clear();
         return true;
     }
     Foundation::Core::File file(path, Foundation::Core::FileMode::kRead);
     Foundation::Core::FileView view(file);
-    if (view.size() == 0)
-    {
+    if (view.size() == 0) {
         entries.clear();
         return true;
     }
 
-    const auto *bytes_begin = static_cast<const std::uint8_t *>(view.data());
+    const auto* bytes_begin = static_cast<const std::uint8_t*>(view.data());
     return ReadSnapshot(std::span<const std::uint8_t>(bytes_begin, view.size()), entries);
 }
-} // namespace detail
+}  // namespace detail
 
-namespace
-{
+namespace {
 // The fork is the whole point of a background save: the child writes the image
 // and the parent only waits, so the event loop never runs the (potentially
 // large) serialisation itself.
-bool WriteSnapshotInChild(const std::filesystem::path &path, const std::vector<detail::SnapshotEntry> &entries)
-{
+bool WriteSnapshotInChild(const std::filesystem::path& path, const std::vector<detail::SnapshotEntry>& entries) {
     const pid_t child = ::fork();
-    if (child < 0)
-    {
+    if (child < 0) {
         return false;
     }
-    if (child == 0)
-    {
+    if (child == 0) {
         _exit(detail::WriteSnapshot(path, entries) ? EXIT_SUCCESS : EXIT_FAILURE);
     }
 
     int status = 0;
-    if (::waitpid(child, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS)
-    {
+    if (::waitpid(child, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
         return false;
     }
     return true;
 }
-} // namespace
+}  // namespace
 
-Foundation::NBIO::Task<bool> Backup::save(std::vector<detail::SnapshotEntry> entries) const
-{
-    co_return co_await offload([this, entries = std::move(entries)] {
-        return WriteSnapshotInChild(path_, entries);
-    });
+Foundation::NBIO::Task<bool> Backup::save(std::vector<detail::SnapshotEntry> entries) const {
+    co_return co_await offload([this, entries = std::move(entries)] { return WriteSnapshotInChild(path_, entries); });
 }
 
-bool Backup::save_now(std::vector<detail::SnapshotEntry> entries) const
-{
+bool Backup::save_now(std::vector<detail::SnapshotEntry> entries) const {
     // No child and no offload: the image is serialised on the caller's thread, so
     // the caller waits for it and nothing of the server runs while it is written.
     return detail::WriteSnapshot(path_, entries);
 }
-} // namespace KV
+}  // namespace KV

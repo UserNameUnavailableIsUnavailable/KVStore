@@ -12,24 +12,21 @@
 
 #include <atomic>
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 
 std::once_flag SystemSignal::once_;
 std::mutex SystemSignal::m_;
 std::list<std::uintptr_t> SystemSignal::handles_;
 static std::atomic_size_t s_count{0};
 
-SystemSignal::SystemSignal()
-{
+SystemSignal::SystemSignal() {
     {
         std::lock_guard<std::mutex> lock(m_);
         handle_ = static_cast<std::uintptr_t>(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC));
         handles_.push_back(handle_);
         it_ = std::prev(handles_.end());
     }
-    if (handle_ == static_cast<std::uintptr_t>(-1))
-    {
+    if (handle_ == static_cast<std::uintptr_t>(-1)) {
         throw std::runtime_error("failed to create eventfd");
     }
     std::call_once(once_, [] {
@@ -37,70 +34,55 @@ SystemSignal::SystemSignal()
         std::signal(SIGINT, [](int) {
             std::lock_guard<std::mutex> lock(m_);
             s_count++;
-            if (handles_.empty())
-            {
+            if (handles_.empty()) {
                 SIG_DFL(SIGINT);
             }
-            for (auto handle : handles_)
-            {
+            for (auto handle : handles_) {
                 ::eventfd_write(handle, s_count);
             }
         });
         std::signal(SIGTERM, [](int) {
             std::lock_guard<std::mutex> lock(m_);
-            if (handles_.empty())
-            {
+            if (handles_.empty()) {
                 SIG_DFL(SIGTERM);
             }
-            for (auto handle : handles_)
-            {
+            for (auto handle : handles_) {
                 ::eventfd_write(handle, s_count);
             }
         });
     });
 }
 
-void SystemSignal::non_blocking(bool enabled)
-{
+void SystemSignal::non_blocking(bool enabled) {
     int flags = ::fcntl(handle_, F_GETFL, 0);
-    if (enabled)
-    {
+    if (enabled) {
         flags |= O_NONBLOCK;
-    }
-    else
-    {
+    } else {
         flags &= ~O_NONBLOCK;
     }
-    if (::fcntl(handle_, F_SETFL, flags) < 0)
-    {
+    if (::fcntl(handle_, F_SETFL, flags) < 0) {
         throw std::runtime_error("failed to set non-blocking mode");
     }
 }
 
-expected<void, std::error_code> SystemSignal::drain() const
-{
+expected<void, std::error_code> SystemSignal::drain() const {
     uint64_t value = 0;
-    while (true)
-    {
+    while (true) {
         const auto n = ::eventfd_read(handle_, &value);
-        if (n > 0)
-        {
+        if (n > 0) {
             return {};
         }
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return unexpected<std::error_code>(std::make_error_code(std::errc::operation_would_block));
         }
-        if (errno == EINTR)
-        {
+        if (errno == EINTR) {
             continue;
         }
         return unexpected<std::error_code>(std::error_code(errno, std::system_category()));
     }
 }
 
-SystemSignal::~SystemSignal() noexcept
-{
+SystemSignal::~SystemSignal() noexcept {
     std::signal(SIGINT, SIG_DFL);
     std::signal(SIGTERM, SIG_DFL);
     {
@@ -109,4 +91,4 @@ SystemSignal::~SystemSignal() noexcept
     }
     ::close(handle_);
 }
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

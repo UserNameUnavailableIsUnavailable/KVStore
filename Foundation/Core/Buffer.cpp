@@ -4,32 +4,26 @@
 #include <cstddef>
 #include <cstring>
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 Buffer::Buffer(std::size_t capacity, std::size_t max_capacity)
-    : // begin_/end_ start at base_, so the storage must at least hold that.
-      capacity_(std::min(capacity, max_capacity)), max_capacity_(max_capacity),
-      storage_(std::make_unique<char[]>(capacity_))
-{
-}
+    :  // begin_/end_ start at base_, so the storage must at least hold that.
+      capacity_(std::min(capacity, max_capacity)),
+      max_capacity_(max_capacity),
+      storage_(std::make_unique<char[]>(capacity_)) {}
 
 Buffer::~Buffer() noexcept = default;
 
-bool Buffer::reserve(std::size_t size)
-{
-    if (writable_size() >= size)
-    {
+bool Buffer::reserve(std::size_t size) {
+    if (writable_size() >= size) {
         return true;
     }
     const std::size_t minimal = capacity_ + size;
-    if (minimal > max_capacity_)
-    {
+    if (minimal > max_capacity_) {
         return false;
     }
     // bargaining if the minimal requirement satisfied
     std::size_t capacity = minimal;
-    if (capacity + capacity / 2 < max_capacity_)
-    {
+    if (capacity + capacity / 2 < max_capacity_) {
         capacity = capacity + capacity / 2;
     }
     // move the existing data to the beginning of the new storage, leaving no space for prepending
@@ -40,8 +34,7 @@ bool Buffer::reserve(std::size_t size)
     // were never copied to.
     const std::size_t held = readable_size();
     auto storage = std::make_unique<char[]>(capacity);
-    if (held != 0)
-    {
+    if (held != 0) {
         std::memcpy(storage.get(), storage_.get() + begin_, held);
     }
     storage_ = std::move(storage);
@@ -51,14 +44,11 @@ bool Buffer::reserve(std::size_t size)
     return true;
 }
 
-bool Buffer::write(const char *data, std::size_t size)
-{
-    if (size == 0)
-    {
+bool Buffer::write(const char* data, std::size_t size) {
+    if (size == 0) {
         return true;
     }
-    if (!reserve(size))
-    {
+    if (!reserve(size)) {
         return false;
     }
     std::memcpy(storage_.get() + end_, data, size);
@@ -66,29 +56,22 @@ bool Buffer::write(const char *data, std::size_t size)
     return true;
 }
 
-bool Buffer::write(const char *data)
-{
-    return Buffer::write(data, std::strlen(data));
-}
+bool Buffer::write(const char* data) { return Buffer::write(data, std::strlen(data)); }
 
-void Buffer::consume(std::size_t size) noexcept
-{
+void Buffer::consume(std::size_t size) noexcept {
     assert(size <= readable_size());
     begin_ += std::min(size, readable_size());
 }
 
-void Buffer::shrink()
-{
+void Buffer::shrink() {
     const std::size_t held = readable_size();
     // Minimum capacity that still honours the reserved prefix.
     const std::size_t capacity = held;
-    if (capacity >= capacity_)
-    {
-        return; // shrinking must never grow
+    if (capacity >= capacity_) {
+        return;  // shrinking must never grow
     }
     auto storage = std::make_unique<char[]>(capacity);
-    if (held != 0)
-    {
+    if (held != 0) {
         std::memcpy(storage.get(), storage_.get() + begin_, held);
     }
     storage_ = std::move(storage);
@@ -96,4 +79,4 @@ void Buffer::shrink()
     begin_ = 0;
     end_ = held;
 }
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

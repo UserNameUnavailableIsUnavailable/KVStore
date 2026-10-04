@@ -12,19 +12,17 @@
 
 #include "SocketAddress.hpp"
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 // The listening end of an RDMA link, and nothing else: the device, the protection
 // domain, the regions and the pools a connection is built from belong to the
 // resource manager it is given, and the connections themselves outlive it.
-class RdmaAcceptor
-{
-public:
-    explicit RdmaAcceptor(RdmaResourceManager &resources);
+class RdmaAcceptor {
+   public:
+    explicit RdmaAcceptor(RdmaResourceManager& resources);
     ~RdmaAcceptor() noexcept;
 
-    RdmaAcceptor(const RdmaAcceptor &) = delete;
-    RdmaAcceptor &operator=(const RdmaAcceptor &) = delete;
+    RdmaAcceptor(const RdmaAcceptor&) = delete;
+    RdmaAcceptor& operator=(const RdmaAcceptor&) = delete;
 
     expected<void, std::string> listen(SocketAddress address, int backlog = 4096) noexcept;
 
@@ -34,18 +32,17 @@ public:
 
     expected<void, std::string> non_blocking(bool enabled = true) noexcept;
     expected<void, std::string> reuse_address(bool enabled = true) noexcept;
-    
-    std::uintptr_t native_handle() const noexcept
-    {
+
+    std::uintptr_t native_handle() const noexcept {
         return event_channel_ ? static_cast<std::uintptr_t>(event_channel_->fd) : static_cast<std::uintptr_t>(-1);
     }
 
-private:
-    RdmaResourceManager *resources_{ nullptr };
-    ::rdma_cm_id *communication_id_{ nullptr }; // the listener itself, never a connection
-    ::rdma_event_channel *event_channel_{ nullptr };
+   private:
+    RdmaResourceManager* resources_{nullptr};
+    ::rdma_cm_id* communication_id_{nullptr};  // the listener itself, never a connection
+    ::rdma_event_channel* event_channel_{nullptr};
     SocketAddress address_;
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core
 
-#endif // defined(__linux__)
+#endif  // defined(__linux__)

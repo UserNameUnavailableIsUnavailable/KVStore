@@ -14,21 +14,14 @@
 #error "Unsupported platform"
 #endif
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 // A thin, copyable wrapper around `sockaddr_storage`. It owns no sockets and
 // only describes an endpoint (IPv4 or IPv6). All platform specifics are hidden
 // behind a small vocabulary: build it from a textual IP + port, or let the
 // kernel fill it in through `Bind`/`Accept`/`GetPeerSocketAddress`.
-class SocketAddress
-{
-  public:
-    enum class Family
-    {
-        kIPv4,
-        kIPv6,
-        kUnsupported
-    };
+class SocketAddress {
+   public:
+    enum class Family { kIPv4, kIPv6, kUnsupported };
 
     SocketAddress() noexcept = default;
 
@@ -40,42 +33,30 @@ class SocketAddress
 
     Family family() const noexcept;
 
-    bool is_valid() const noexcept
-    {
-        return storage_.ss_family != AF_UNSPEC;
-    }
+    bool is_valid() const noexcept { return storage_.ss_family != AF_UNSPEC; }
 
     std::string ip() const;
 
     std::uint16_t port() const noexcept;
 
-    template <typename T = ::sockaddr> T *storage() noexcept
-    {
-        return reinterpret_cast<T *>(&storage_);
+    template <typename T = ::sockaddr>
+    T* storage() noexcept {
+        return reinterpret_cast<T*>(&storage_);
     }
 
-    template <typename T = ::sockaddr> const T *storage() const noexcept
-    {
-        return reinterpret_cast<const T *>(&storage_);
+    template <typename T = ::sockaddr>
+    const T* storage() const noexcept {
+        return reinterpret_cast<const T*>(&storage_);
     }
 
-    ::socklen_t &length() noexcept
-    {
-        return length_;
-    }
+    ::socklen_t& length() noexcept { return length_; }
 
-    const ::socklen_t &length() const noexcept
-    {
-        return length_;
-    }
+    const ::socklen_t& length() const noexcept { return length_; }
 
-    static constexpr ::socklen_t capacity() noexcept
-    {
-        return sizeof(storage_);
-    }
+    static constexpr ::socklen_t capacity() noexcept { return sizeof(storage_); }
 
-  private:
+   private:
     ::sockaddr_storage storage_{};
     ::socklen_t length_ = 0;
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core

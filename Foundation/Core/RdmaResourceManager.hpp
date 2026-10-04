@@ -2,28 +2,27 @@
 #if defined(__linux__)
 
 #include <infiniband/verbs.h>
-#include "BitmapMemory.hpp"
 
 #include <memory>
 #include <stdexcept>
 #include <string_view>
 
+#include "BitmapMemory.hpp"
+
 // The RDMA CM id is only ever taken by reference here, so its definition is not
 // needed: what an id carries is the device, and the device is what is compared.
 struct rdma_cm_id;
 
-namespace Foundation::Core
-{
+namespace Foundation::Core {
 // This class is designed to be used in a single thread
-class RdmaResourceManager
-{
-public:
+class RdmaResourceManager {
+   public:
     RdmaResourceManager(std::string_view device_name);
     ~RdmaResourceManager() noexcept;
 
-    RdmaResourceManager(const RdmaResourceManager &) = delete;
-    RdmaResourceManager &operator=(const RdmaResourceManager &) = delete;
-    
+    RdmaResourceManager(const RdmaResourceManager&) = delete;
+    RdmaResourceManager& operator=(const RdmaResourceManager&) = delete;
+
     ::ibv_context* device_context() noexcept { return device_context_; }
     ::ibv_pd* protection_domain() noexcept { return protection_domain_.get(); }
     ::ibv_mr* receive_region() noexcept { return receive_region_.get(); }
@@ -34,18 +33,12 @@ public:
     // so this is what says the id's queue pair would be built on the context this
     // manager's domain and regions were made on -- a connection built with another
     // device's regions and keys fails every completion it posts.
-    bool serves(const ::rdma_cm_id &id) const noexcept;
+    bool serves(const ::rdma_cm_id& id) const noexcept;
 
-    BitmapMemory& receive_memory()
-    {
-        return receive_memory_;
-    }
-    BitmapMemory& send_memory()
-    {
-        return send_memory_;
-    }
+    BitmapMemory& receive_memory() { return receive_memory_; }
+    BitmapMemory& send_memory() { return send_memory_; }
 
-private:
+   private:
     struct PdDel {
         void operator()(::ibv_pd* pd) noexcept {
             if (pd) {
@@ -71,6 +64,6 @@ private:
     std::unique_ptr<::ibv_mr, MrDel> receive_region_;
     std::unique_ptr<::ibv_mr, MrDel> send_region_;
 };
-} // namespace Foundation::Core
+}  // namespace Foundation::Core
 
 #endif

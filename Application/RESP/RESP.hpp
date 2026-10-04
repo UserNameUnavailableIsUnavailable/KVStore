@@ -10,75 +10,57 @@
 #include <variant>
 #include <vector>
 
-namespace RESP
-{
-struct SimpleString
-{
+namespace RESP {
+struct SimpleString {
     std::string value;
 };
 
-struct SimpleError
-{
+struct SimpleError {
     std::string value;
 };
 
-struct Integer
-{
+struct Integer {
     std::int64_t value;
 };
-struct BulkString
-{
+struct BulkString {
     std::optional<std::string> value;
 };
-struct Null
-{
-};
-struct Boolean
-{
+struct Null {};
+struct Boolean {
     bool value;
 };
-struct Double
-{
+struct Double {
     double value;
 };
-struct BigNumber
-{
+struct BigNumber {
     std::string value;
 };
-struct BulkError
-{
+struct BulkError {
     std::string value;
 };
-struct VerbatimString
-{
+struct VerbatimString {
     std::string format;
     std::string value;
 };
 
 struct Object;
-struct Array
-{
+struct Array {
     std::vector<Object> values;
 };
-struct Set
-{
+struct Set {
     std::vector<Object> values;
 };
-struct Map
-{
+struct Map {
     std::vector<std::pair<Object, Object>> values;
 };
-struct Attribute
-{
+struct Attribute {
     std::vector<std::pair<Object, Object>> values;
 };
-struct Push
-{
+struct Push {
     std::vector<Object> values;
 };
 
-struct Object
-{
+struct Object {
     using Value = std::variant<SimpleString, SimpleError, Integer, BulkString, Null, Boolean, Double, BigNumber,
                                BulkError, VerbatimString, Array, Set, Map, Attribute, Push>;
 
@@ -87,36 +69,29 @@ struct Object
     // Object MUST be explicitly constructed.
     // Sender & Receiver may hold references to objects, implicit construction can cause dangling references.
     template <typename T>
-    Object(T &&object) : value(std::forward<T>(object))
-    {
-    }
+    Object(T&& object) : value(std::forward<T>(object)) {}
 };
 
-enum class DecodeStatus
-{
+enum class DecodeStatus {
     kNeedInput,
     kComplete,
     kProtocolError,
 };
 
-struct DecodeResult
-{
+struct DecodeResult {
     DecodeStatus status = DecodeStatus::kNeedInput;
     std::optional<Object> object;
     std::string error;
 };
 
-enum class EncodeStatus
-{
+enum class EncodeStatus {
     kComplete,
     kNeedFlush,
 };
 
-class Encoder
-{
-  public:
-    struct promise_type
-    {
+class Encoder {
+   public:
+    struct promise_type {
         Encoder get_return_object() noexcept;
         std::suspend_always initial_suspend() noexcept;
         std::suspend_always final_suspend() noexcept;
@@ -129,10 +104,10 @@ class Encoder
 
     Encoder() noexcept = default;
     explicit Encoder(std::coroutine_handle<promise_type> handle) noexcept;
-    Encoder(const Encoder &) = delete;
-    Encoder &operator=(const Encoder &) = delete;
-    Encoder(Encoder &&other) noexcept;
-    Encoder &operator=(Encoder &&other) noexcept;
+    Encoder(const Encoder&) = delete;
+    Encoder& operator=(const Encoder&) = delete;
+    Encoder(Encoder&& other) noexcept;
+    Encoder& operator=(Encoder&& other) noexcept;
     ~Encoder() noexcept;
 
     [[nodiscard]] bool done() const noexcept;
@@ -141,15 +116,13 @@ class Encoder
     void resume() noexcept;
     [[nodiscard]] EncodeStatus status() const noexcept;
 
-  private:
+   private:
     std::coroutine_handle<promise_type> handle_{};
 };
 
-class Decoder
-{
-  public:
-    struct promise_type
-    {
+class Decoder {
+   public:
+    struct promise_type {
         Decoder get_return_object() noexcept;
         std::suspend_always initial_suspend() noexcept;
         std::suspend_always final_suspend() noexcept;
@@ -163,10 +136,10 @@ class Decoder
 
     Decoder() noexcept = default;
     explicit Decoder(std::coroutine_handle<promise_type> handle) noexcept;
-    Decoder(const Decoder &) = delete;
-    Decoder &operator=(const Decoder &) = delete;
-    Decoder(Decoder &&other) noexcept;
-    Decoder &operator=(Decoder &&other) noexcept;
+    Decoder(const Decoder&) = delete;
+    Decoder& operator=(const Decoder&) = delete;
+    Decoder(Decoder&& other) noexcept;
+    Decoder& operator=(Decoder&& other) noexcept;
     ~Decoder() noexcept;
 
     [[nodiscard]] bool done() const noexcept;
@@ -175,12 +148,12 @@ class Decoder
     DecodeStatus poll();
     void resume();
     [[nodiscard]] DecodeStatus status() const noexcept;
-    [[nodiscard]] const DecodeResult &result() const noexcept;
+    [[nodiscard]] const DecodeResult& result() const noexcept;
     // The same result, movable: a decoder that has finished with it hands the
     // object over instead of copying it.
-    [[nodiscard]] DecodeResult &result() noexcept;
+    [[nodiscard]] DecodeResult& result() noexcept;
 
-  private:
+   private:
     std::coroutine_handle<promise_type> handle_{};
 };
 
@@ -189,14 +162,12 @@ class Decoder
 // multi-bulk. The replication link is written by this program, which only ever
 // sends multi-bulk, so a word where a type marker belongs stays the protocol
 // error it is there.
-enum class Dialect
-{
+enum class Dialect {
     kMultibulkOnly,
     kMultibulkAndInline,
 };
 
-enum class ScanStatus
-{
+enum class ScanStatus {
     // Not all of the command is here yet: read more and scan the same bytes
     // again.
     kNeedInput,
@@ -224,11 +195,12 @@ enum class ScanStatus
 //
 // `words` is the caller's, so a connection can scan a million commands through
 // one vector and allocate for none of them.
-ScanStatus ScanCommand(const ::Foundation::Core::Buffer &buffer, std::vector<std::string_view> &words, std::size_t &size);
+ScanStatus ScanCommand(const ::Foundation::Core::Buffer& buffer, std::vector<std::string_view>& words,
+                       std::size_t& size);
 
-Decoder Decode(::Foundation::Core::Buffer &buffer, Dialect dialect = Dialect::kMultibulkOnly);
-Encoder Encode(const Object &object, ::Foundation::Core::Buffer &buffer);
-Encoder Encode(Object &&object, ::Foundation::Core::Buffer &buffer) = delete;
+Decoder Decode(::Foundation::Core::Buffer& buffer, Dialect dialect = Dialect::kMultibulkOnly);
+Encoder Encode(const Object& object, ::Foundation::Core::Buffer& buffer);
+Encoder Encode(Object&& object, ::Foundation::Core::Buffer& buffer) = delete;
 // The bytes of `object`, written into `buffer` without building anything on the
 // way: no string to spell out a number, no list of pieces for the reply to be
 // copied out of, no frame for a coroutine to suspend in. A reply is not a
@@ -242,5 +214,5 @@ Encoder Encode(Object &&object, ::Foundation::Core::Buffer &buffer) = delete;
 // flush in the middle of a reply -- the AOF spilling to the file -- uses. This is
 // for the writer that does not: the reply batch, which is answered to a client
 // and has no other way out.
-bool AppendObject(const Object &object, ::Foundation::Core::Buffer &buffer);
-} // namespace RESP
+bool AppendObject(const Object& object, ::Foundation::Core::Buffer& buffer);
+}  // namespace RESP
