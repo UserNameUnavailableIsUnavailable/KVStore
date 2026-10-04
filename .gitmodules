@@ -1,0 +1,3 @@
+[submodule "NBIO"]
+	path = NBIO
+	url = https://github.com/UserNameUnavailableIsUnavailable/NBIO.git

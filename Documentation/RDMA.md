@@ -832,7 +832,7 @@ The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`
 1. **Dependencies.** `NBIO/Core/CMakeLists.txt` has no `find_package` at
    all — Core is dependency-free. Backend dependencies live with their backend,
    and the codebase already follows this rule: `liburing` is declared in
-   `NBIO/NBIO/CMakeLists.txt`, not in Core. By the same rule `rdma-core`
+   `nbio/CMakeLists.txt`, not in Core. By the same rule `rdma-core`
    belongs to `RDMA`. Putting the primitives in Core would force `libibverbs` /
    `librdmacm` on every consumer of `NBIO`, including a TCP-only build.
 2. **Reach.** Core holds primitives that are dependency-free *and* useful to more
@@ -854,7 +854,7 @@ The CM event channel is engine-owned like `Core::EventNotifier`; the completion
 channel is connection-owned. A QP has no fd of its own; a completion is pollable
 only because the channel's CQ was created against its completion channel.
 
-`NBIO/RDMA/CMakeLists.txt` follows `NBIO/NBIO/CMakeLists.txt` and is
+`NBIO/RDMA/CMakeLists.txt` follows `nbio/CMakeLists.txt` and is
 Linux-gated:
 
 ```cmake
