@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Application/RESP/RESP.hpp>
-#include <Foundation/Async/Task.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
-#include <Foundation/NBIO/TcpSessionService.hpp>
+#include <NBIO/Async/Task.hpp>
+#include <NBIO/Runtime/Runtime.hpp>
+#include <NBIO/Net/TcpSessionService.hpp>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -26,10 +26,10 @@ class Receiver {
         std::optional<Object> object;
     };
 
-    Receiver(Foundation::NBIO::TcpSessionService& session, ::Foundation::Core::Buffer& buffer);
+    Receiver(NBIO::Net::TcpSessionService& session, ::NBIO::Utility::Buffer& buffer);
     ~Receiver() noexcept;
 
-    Foundation::NBIO::Task<std::optional<Object>> receive();
+    NBIO::Async::Task<NBIO::Runtime, std::optional<Object>> receive();
 
     // Decodes only what is already buffered: no read, no wait. A caller that
     // wants to answer a pipeline in one write asks this until it reports that no
@@ -41,7 +41,7 @@ class Receiver {
     // strings -- is read where it lies, as words pointing into the receive
     // buffer, and a GET costs one pass and no allocation. Anything else is handed
     // to the decoder above.
-    Foundation::NBIO::Task<std::optional<Command>> receive_command();
+    NBIO::Async::Task<NBIO::Runtime, std::optional<Command>> receive_command();
     std::optional<Command> try_receive_command();
 
     std::string decode_error() const { return decode_error_; }
@@ -74,8 +74,8 @@ class Receiver {
     // start in the middle of that command and read its arguments as commands.
     Decoder& decoder();
 
-    Foundation::NBIO::TcpSessionService& session_;
-    Foundation::Core::Buffer& buffer_;
+    NBIO::Net::TcpSessionService& session_;
+    NBIO::Utility::Buffer& buffer_;
     std::optional<Decoder> pending_;
     // The words of the last command handed out, and how many bytes of the buffer
     // they are views into. Both belong to the connection rather than to a call,

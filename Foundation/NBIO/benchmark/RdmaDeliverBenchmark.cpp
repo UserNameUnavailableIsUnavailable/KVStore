@@ -1,20 +1,20 @@
 #if defined(__linux__)
 
 #include <CLI/CLI.hpp>
-#include <Foundation/Core/Byte.hpp>
-#include <Foundation/Core/Expected.hpp>
-#include <Foundation/Core/RdmaAcceptor.hpp>
-#include <Foundation/Core/RdmaConnector.hpp>
-#include <Foundation/Core/RdmaHeader.hpp>
-#include <Foundation/Core/RdmaResourceManager.hpp>
-#include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/NBIO/Engine.hpp>
-#include <Foundation/NBIO/EpollMultiplexer.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
-#include <Foundation/NBIO/RdmaAcceptChannel.hpp>
-#include <Foundation/NBIO/RdmaConnectChannel.hpp>
-#include <Foundation/NBIO/RdmaDeliverService.hpp>
-#include <Foundation/NBIO/URingMultiplexer.hpp>
+#include <NBIO/Utility/Byte.hpp>
+#include <NBIO/Core/Expected.hpp>
+#include <NBIO/Core/RdmaAcceptor.hpp>
+#include <NBIO/Core/RdmaConnector.hpp>
+#include <NBIO/Core/RdmaHeader.hpp>
+#include <NBIO/Core/RdmaResourceManager.hpp>
+#include <NBIO/Core/SocketAddress.hpp>
+#include <NBIO/NBIO/Engine.hpp>
+#include <NBIO/NBIO/EpollMultiplexer.hpp>
+#include <NBIO/NBIO/NBIO.hpp>
+#include <NBIO/NBIO/RdmaAcceptChannel.hpp>
+#include <NBIO/NBIO/RdmaConnectChannel.hpp>
+#include <NBIO/NBIO/RdmaDeliverService.hpp>
+#include <NBIO/NBIO/URingMultiplexer.hpp>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -27,8 +27,8 @@
 #include <vector>
 
 namespace {
-namespace Core = Foundation::Core;
-namespace NBIO = Foundation::NBIO;
+namespace FCore = NBIO::Core;
+namespace NBIO = NBIO::NBIO;
 
 using Clock = std::chrono::steady_clock;
 
@@ -59,14 +59,14 @@ constexpr std::size_t kPreferredDefaultMessageBytes = 4096;
 constexpr std::size_t kDefaultMessages = 200000;
 
 void PutU64(char* out, std::uint64_t value) noexcept {
-    const auto ordered = Core::to_big_endian(value);
+    const auto ordered = FCore::ToBigEndian(value);
     std::memcpy(out, &ordered, sizeof(ordered));
 }
 
 std::uint64_t GetU64(const char* in) noexcept {
     std::uint64_t ordered = 0;
     std::memcpy(&ordered, in, sizeof(ordered));
-    return Core::from_big_endian(ordered);
+    return FCore::FromBigEndian(ordered);
 }
 
 std::array<char, kReportBytes> EncodeReport(const Report& report) noexcept {
@@ -113,13 +113,13 @@ void RunEngine(Body body, const std::string& multiplexer, Outcome& outcome) {
     }
 }
 
-NBIO::Task<Core::expected<std::span<char>, std::string>> ReceiveOne(NBIO::RdmaDeliverService& service) {
+NBIO::Task<FCore::expected<std::span<char>, std::string>> ReceiveOne(NBIO::RdmaDeliverService& service) {
     auto incoming = co_await service.receive();
     if (!incoming) [[unlikely]] {
-        co_return Core::unexpected(incoming.error());
+        co_return FCore::unexpected(incoming.error());
     }
     if (!*incoming) [[unlikely]] {
-        co_return Core::unexpected(std::string{"the link ended"});
+        co_return FCore::unexpected(std::string{"the link ended"});
     }
     co_return **incoming;
 }
@@ -199,7 +199,7 @@ NBIO::Task<void> ServerBenchmark(NBIO::RdmaAcceptChannel& channel, NBIO::RdmaDel
     co_return;
 }
 
-NBIO::Task<void> ClientBenchmark(NBIO::RdmaConnectChannel& channel, const Core::SocketAddress& peer,
+NBIO::Task<void> ClientBenchmark(NBIO::RdmaConnectChannel& channel, const FCore::SocketAddress& peer,
                                  NBIO::RdmaDeliverService::Layout layout, std::size_t message_bytes,
                                  std::size_t messages, Outcome& outcome) {
     auto connected = co_await channel.connect(peer);
@@ -322,7 +322,7 @@ int main(int argc, char* argv[]) {
         return application.exit(error);
     }
 
-    Core::RdmaResourceManager resources(device);
+    FCore::RdmaResourceManager resources(device);
     const auto receive_chunk = resources.receive_memory().chunk_size();
     if (receive_chunk == 0) [[unlikely]] {
         std::printf("receive chunk size is zero\n");
@@ -330,7 +330,7 @@ int main(int argc, char* argv[]) {
     }
 
     const NBIO::RdmaDeliverService::Layout layout{.chunk_size = receive_chunk,
-                                                  .chunk_count = Core::RdmaConnector::kReceiveChunks};
+                                                  .chunk_count = FCore::RdmaConnector::kReceiveChunks};
     const auto default_message_bytes =
         std::min<std::size_t>(kPreferredDefaultMessageBytes, static_cast<std::size_t>(layout.payload_size()));
     if (message_bytes_option->count() == 0) {
@@ -346,7 +346,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    const auto peer = Core::SocketAddress::from_v4(ip, port);
+    const auto peer = FCore::SocketAddress::from_v4(ip, port);
     std::printf(
         "mode=%s ip=%s local_ip=%s port=%u device=%s message_bytes=%zu messages=%zu window=%llu multiplexer=%s\n",
         mode.c_str(), ip.c_str(), local_ip.empty() ? "<auto>" : local_ip.c_str(), static_cast<unsigned>(port),
@@ -355,7 +355,7 @@ int main(int argc, char* argv[]) {
 
     Outcome outcome;
     if (mode == "server") {
-        Core::RdmaAcceptor acceptor(resources);
+        FCore::RdmaAcceptor acceptor(resources);
         assert(acceptor.reuse_address(true).has_value());
         const auto bound = acceptor.listen(peer);
 
@@ -372,9 +372,9 @@ int main(int argc, char* argv[]) {
     } else {
         RunEngine(
             [&] {
-                Core::RdmaConnector connector(resources);
+                FCore::RdmaConnector connector(resources);
                 if (!local_ip.empty()) {
-                    if (const auto bound = connector.bind(Core::SocketAddress::from_v4(local_ip, 0)); !bound) {
+                    if (const auto bound = connector.bind(FCore::SocketAddress::from_v4(local_ip, 0)); !bound) {
                         throw std::runtime_error("cannot bind local RDMA address: " + bound.error());
                     }
                 }

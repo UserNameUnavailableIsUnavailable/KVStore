@@ -11,7 +11,7 @@ writes reach the replicas as they happen.
 ### System and toolchain
 
 - **Operating system**: Linux (kernel version >= 5.2. 6.0 and higher are recommended for full io_uring features). The server, replication and the io_uring backend
-  all sit behind `#if defined(__linux__)`; on other platforms only part of `Foundation`
+  all sit behind `#if defined(__linux__)`; on other platforms only part of `NBIO`
   compiles.
 - **CMake ≥ 3.20** (declared at the top of `CMakeLists.txt`; 4.2.3 on the development
   machine).
@@ -80,7 +80,7 @@ Targets worth knowing:
 | --- | --- |
 | `Server` | The server: `build/Application/Server/Server` |
 | `Client` | The command line client: `build/Application/Client/Client` |
-| `FoundationTesting`, `ServerTesting` | The test executables |
+| `NBIOTesting`, `ServerTesting` | The test executables |
 | `Echo`, `Sleep`, `Grace`, `SystemSignalSvc`, `ScopedSystemSignalService`, `Condition` | NBIO examples |
 | `RdmaEcho`, `RdmaAsyncEcho` | RDMA examples |
 | `Tutorial_RdmaServer`, `Tutorial_RdmaClient` | The raw verbs example in `Tutorial/RDMA` |
@@ -152,7 +152,7 @@ config rdma_device siw0
 
 - `Documentation/REPLICATION.md` — RDMA full and incremental synchronization
 - `Documentation/CONFIG.md` — the startup command file and its startup settings
-- `Documentation/RDMA.md`, `Foundation/Core/RDMA.md` — the RDMA backend and runtime
+- `Documentation/RDMA.md`, `NBIO/Core/RDMA.md` — the RDMA backend and runtime
 - `Documentation/PSYNC.md` — the server-to-server protocol; `Documentation/SLAVEOF.md` —
   the command a client sends to start it
 - `DESIGN.md`, `PITFALLS.md` — design decisions and the traps hit on the way

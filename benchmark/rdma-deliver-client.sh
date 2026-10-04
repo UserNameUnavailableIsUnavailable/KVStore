@@ -21,7 +21,7 @@ if [[ -z "$LOCAL_IP" ]]; then
 fi
 
 command=(
-	./build/Foundation/NBIO/benchmark/Release/RdmaDeliverBenchmark
+	./build/NBIO/NBIO/benchmark/Release/RdmaDeliverBenchmark
 	--mode client
 	--ip "$SERVER_IP"
 	--port "$PORT"

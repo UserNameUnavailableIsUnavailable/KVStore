@@ -1,15 +1,15 @@
 #include "Sender.hpp"
 
-#include <Foundation/Async/Task.hpp>
-#include <Foundation/Core/Buffer.hpp>
-#include <Foundation/Core/TcpSocket.hpp>
-#include <Foundation/NBIO/Runtime.hpp>
+#include <NBIO/Async/Task.hpp>
+#include <NBIO/Utility/Buffer.hpp>
+#include <NBIO/Net/TcpSocket.hpp>
+#include <NBIO/Runtime/Runtime.hpp>
 #include <stdexcept>
 
 #include "RESP.hpp"
 
 namespace RESP {
-Sender::Sender(Foundation::NBIO::TcpSessionService& session, Foundation::Core::Buffer& buffer)
+Sender::Sender(NBIO::Net::TcpSessionService& session, NBIO::Utility::Buffer& buffer)
     : session_(session), buffer_(buffer) {
     if (!buffer.is_empty()) {
         throw std::logic_error("send buffer must be clean");
@@ -27,7 +27,7 @@ void Sender::append(const Object& object) {
     }
 }
 
-Foundation::NBIO::Task<bool> Sender::flush() {
+NBIO::Async::Task<NBIO::Runtime, bool> Sender::flush() {
     while (!buffer_.is_empty()) {
         auto result = co_await session_.send(buffer_.readable_span());
         if (!result) {
@@ -43,7 +43,7 @@ Foundation::NBIO::Task<bool> Sender::flush() {
     co_return true;
 }
 
-Foundation::NBIO::Task<bool> Sender::send(const Object& object) {
+NBIO::Async::Task<NBIO::Runtime, bool> Sender::send(const Object& object) {
     append(object);
     co_return co_await flush();
 }

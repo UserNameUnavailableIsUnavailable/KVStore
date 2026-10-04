@@ -16,21 +16,21 @@
 #include <unistd.h>
 
 #include <CLI/CLI.hpp>
-#include <Foundation/Core/BitmapMemory.hpp>
-#include <Foundation/Core/Byte.hpp>
-#include <Foundation/Core/Expected.hpp>
-#include <Foundation/Core/RdmaAcceptor.hpp>
-#include <Foundation/Core/RdmaConnector.hpp>
-#include <Foundation/Core/RdmaHeader.hpp>
-#include <Foundation/Core/RdmaResourceManager.hpp>
-#include <Foundation/Core/SocketAddress.hpp>
-#include <Foundation/NBIO/Engine.hpp>
-#include <Foundation/NBIO/EpollMultiplexer.hpp>
-#include <Foundation/NBIO/NBIO.hpp>
-#include <Foundation/NBIO/RdmaAcceptChannel.hpp>
-#include <Foundation/NBIO/RdmaConnectChannel.hpp>
-#include <Foundation/NBIO/RdmaDeliverService.hpp>
-#include <Foundation/NBIO/URingMultiplexer.hpp>
+#include <NBIO/Core/BitmapMemory.hpp>
+#include <NBIO/Core/Byte.hpp>
+#include <NBIO/Core/Expected.hpp>
+#include <NBIO/Core/RdmaAcceptor.hpp>
+#include <NBIO/Core/RdmaConnector.hpp>
+#include <NBIO/Core/RdmaHeader.hpp>
+#include <NBIO/Core/RdmaResourceManager.hpp>
+#include <NBIO/Core/SocketAddress.hpp>
+#include <NBIO/NBIO/Engine.hpp>
+#include <NBIO/NBIO/EpollMultiplexer.hpp>
+#include <NBIO/NBIO/NBIO.hpp>
+#include <NBIO/NBIO/RdmaAcceptChannel.hpp>
+#include <NBIO/NBIO/RdmaConnectChannel.hpp>
+#include <NBIO/NBIO/RdmaDeliverService.hpp>
+#include <NBIO/NBIO/URingMultiplexer.hpp>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -49,8 +49,8 @@
 #include <vector>
 
 namespace {
-namespace Core = Foundation::Core;
-namespace NBIO = Foundation::NBIO;
+namespace FCore = NBIO::Core;
+namespace NBIO = NBIO::NBIO;
 
 using Clock = std::chrono::steady_clock;
 
@@ -99,8 +99,8 @@ std::uint64_t PatternSum(std::size_t bytes) noexcept {
 
 std::array<char, kReportBytes> EncodeReport(const Report& report) noexcept {
     std::array<char, kReportBytes> bytes{};
-    const auto count = Core::to_big_endian(report.bytes);
-    const auto sum = Core::to_big_endian(report.checksum);
+    const auto count = FCore::ToBigEndian(report.bytes);
+    const auto sum = FCore::ToBigEndian(report.checksum);
     std::memcpy(bytes.data(), &count, sizeof(count));
     std::memcpy(bytes.data() + sizeof(count), &sum, sizeof(sum));
     return bytes;
@@ -114,8 +114,8 @@ bool DecodeReport(std::span<const char> bytes, Report& report) noexcept {
     std::uint64_t sum = 0;
     std::memcpy(&count, bytes.data(), sizeof(count));
     std::memcpy(&sum, bytes.data() + sizeof(count), sizeof(sum));
-    report.bytes = Core::from_big_endian(count);
-    report.checksum = Core::from_big_endian(sum);
+    report.bytes = FCore::FromBigEndian(count);
+    report.checksum = FCore::FromBigEndian(sum);
     return true;
 }
 
@@ -126,28 +126,28 @@ double SecondsSince(Clock::time_point started) noexcept {
 // Takes `bytes` of the pattern, checking each one against its own offset, and gives every
 // packet's chunk back as it goes -- which is also what moves the sender's window along,
 // so a receiver that holds payloads holds the sender with them.
-NBIO::Task<Core::expected<void, std::string>> Take(NBIO::RdmaDeliverService& service, std::size_t bytes,
+NBIO::Task<FCore::expected<void, std::string>> Take(NBIO::RdmaDeliverService& service, std::size_t bytes,
                                                    Progress& progress) {
     std::size_t received = 0;
     while (received < bytes) {
         auto incoming = co_await service.receive();
         if (!incoming) [[unlikely]] {
-            co_return Core::unexpected(incoming.error());
+            co_return FCore::unexpected(incoming.error());
         }
         if (!*incoming) [[unlikely]] {
             // The one thing that ends a receive with nothing in it is the link being over.
-            co_return Core::unexpected("the link ended after " + std::to_string(received) + " of " +
+            co_return FCore::unexpected("the link ended after " + std::to_string(received) + " of " +
                                        std::to_string(bytes) + " bytes");
         }
 
         const std::span<char> payload = **incoming;
         if (payload.size() > bytes - received) [[unlikely]] {
-            co_return Core::unexpected("a packet carried " + std::to_string(payload.size()) + " bytes where " +
+            co_return FCore::unexpected("a packet carried " + std::to_string(payload.size()) + " bytes where " +
                                        std::to_string(bytes - received) + " were still expected");
         }
         for (std::size_t offset = 0; offset < payload.size(); ++offset) {
             if (payload[offset] != PatternByte(received + offset)) [[unlikely]] {
-                co_return Core::unexpected("byte " + std::to_string(received + offset) + " arrived as " +
+                co_return FCore::unexpected("byte " + std::to_string(received + offset) + " arrived as " +
                                            std::to_string(static_cast<unsigned char>(payload[offset])));
             }
         }
@@ -156,10 +156,10 @@ NBIO::Task<Core::expected<void, std::string>> Take(NBIO::RdmaDeliverService& ser
 
         if (auto released = co_await service.release(payload); !released) [[unlikely]]
         {
-            co_return Core::unexpected(released.error());
+            co_return FCore::unexpected(released.error());
         }
     }
-    co_return Core::expected<void, std::string>{};
+    co_return FCore::expected<void, std::string>{};
 }
 
 // The sending end: wait to be admitted, say what this end can take, push the payload,
@@ -236,7 +236,7 @@ NBIO::Task<void> SendEnd(NBIO::RdmaAcceptChannel& channel, NBIO::RdmaDeliverServ
 // The receiving end, and the one the window is really about: it takes the payload,
 // releases each packet, and answers. Its own reader is what advances the sender's window,
 // so an acknowledgement that went out at the wrong moment would stall the sender here.
-NBIO::Task<void> ReceiveEnd(NBIO::RdmaConnectChannel& channel, Core::SocketAddress master,
+NBIO::Task<void> ReceiveEnd(NBIO::RdmaConnectChannel& channel, FCore::SocketAddress master,
                             NBIO::RdmaDeliverService::Layout layout, std::size_t bytes, Outcome& outcome,
                             Progress& progress) {
     auto connected = co_await channel.connect(master);
@@ -392,8 +392,8 @@ int main(int argc, char* argv[]) {
 
     // Two managers, one per engine: the manager is single-threaded, and each end of a
     // link is driven by an engine of its own.
-    Core::RdmaResourceManager sending_resources(device);
-    Core::RdmaResourceManager receiving_resources(device);
+    FCore::RdmaResourceManager sending_resources(device);
+    FCore::RdmaResourceManager receiving_resources(device);
 
     const auto send_chunk = sending_resources.send_memory().chunk_size();
     const auto receive_chunk = receiving_resources.receive_memory().chunk_size();
@@ -415,7 +415,7 @@ int main(int argc, char* argv[]) {
     // and says nothing about what the device has actually been handed. Advertise the pool
     // and the peer will fill the window and then fail on it with RNR.
     const NBIO::RdmaDeliverService::Layout layout{.chunk_size = receive_chunk,
-                                                  .chunk_count = Core::RdmaConnector::kReceiveChunks};
+                                                  .chunk_count = FCore::RdmaConnector::kReceiveChunks};
     const auto packet_payload = layout.payload_size();
     if (packet_payload == 0) [[unlikely]] {
         std::printf("a chunk of %zu bytes holds no payload once the header is in it\n", receive_chunk);
@@ -428,13 +428,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Core::RdmaAcceptor acceptor(sending_resources);
-    const auto listening = acceptor.listen(Core::SocketAddress::from_v4(address, listening_on));
+    FCore::RdmaAcceptor acceptor(sending_resources);
+    const auto listening = acceptor.listen(FCore::SocketAddress::from_v4(address, listening_on));
     if (!listening) [[unlikely]] {
         std::printf("cannot listen on %s:%u: %s\n", address.c_str(), listening_on, listening.error().c_str());
         return 1;
     }
-    const Core::SocketAddress master = Core::SocketAddress::from_v4(address, listening_on);
+    const FCore::SocketAddress master = FCore::SocketAddress::from_v4(address, listening_on);
 
     std::printf("%zu bytes as %zu packets of %zu bytes, window of %zu of a pool of %zu, %s:%u on %s, %s\n", bytes,
                 (bytes + packet_payload - 1) / packet_payload, packet_payload, layout.chunk_count, pool,
@@ -465,7 +465,7 @@ int main(int argc, char* argv[]) {
     std::thread receiver([&] {
         RunEngine(
             [&] {
-                Core::RdmaConnector connector(receiving_resources);
+                FCore::RdmaConnector connector(receiving_resources);
                 NBIO::RdmaConnectChannel channel(connector, NBIO::Engine::multiplexer(), NBIO::Engine::scheduler());
                 NBIO::run(ReceiveEnd(channel, master, layout, bytes, receiving, progress));
             },

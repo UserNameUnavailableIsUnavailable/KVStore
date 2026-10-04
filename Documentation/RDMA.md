@@ -3,16 +3,16 @@
 ## Overview
 
 The RDMA backend is a second, self-contained asynchronous runtime in
-`Foundation`, living in `Foundation/RDMA`. It is an alternative to the
-`Foundation::NBIO` runtime and is expected to be used the same way:
+`NBIO`, living in `NBIO/RDMA`. It is an alternative to the
+`NBIO::NBIO` runtime and is expected to be used the same way:
 
 ```cpp
-Foundation::RDMA::run(serve(address));
+NBIO::RDMA::run(serve(address));
 ```
 
 `NBIO` and `RDMA` are **two independent systems**. They deliberately share the
-generic coroutine machinery in `Foundation::Async` and the resources in
-`Foundation::Core`, mirroring each other's *shape* where that shape is genuinely
+generic coroutine machinery in `NBIO::Async` and the resources in
+`NBIO::Core`, mirroring each other's *shape* where that shape is genuinely
 the same. They do **not** share channels, sessions, or a common backend base
 class: nothing in `NBIO` knows that `RDMA` exists, and nothing in `RDMA` includes
 `NBIO`. Duplication of a few small, stable types is accepted in exchange for two
@@ -29,8 +29,8 @@ as decisions land.
 
 ## Goals
 
-- A runtime that a `Foundation::Async` task can run on, reached through
-  `Foundation::RDMA::run()` and `Foundation::RDMA::spawn()`.
+- A runtime that a `NBIO::Async` task can run on, reached through
+  `NBIO::RDMA::run()` and `NBIO::RDMA::spawn()`.
 - Reliable, connection-oriented, ordered data transfer — "TCP-like" semantics —
   for the first version.
 - A server path (`listen_on` → `accept` → `TcpSessionService`) that mirrors the `NBIO`
@@ -44,7 +44,7 @@ as decisions land.
 - One-sided operations (`RDMA READ` / `RDMA WRITE`) and atomic verbs.
 - Zero-copy receive into application-owned memory.
 - Native InfiniBand addressing (LID/GID routing); the first version targets
-  RoCEv2 so that the existing `Foundation::Core::SocketAddress` (IPv4) can be reused.
+  RoCEv2 so that the existing `NBIO::Core::SocketAddress` (IPv4) can be reused.
 - Automatic reconnection / failover.
 - Multi-threaded engines. Like `NBIO`, one engine per thread, installed as a
   `thread_local`.
@@ -80,14 +80,14 @@ boundaries are an implementation detail the `TcpSessionService` hides.
 4. **Graceful close.** A disconnect surfaces to every outstanding operation as a
    conclusive status, never as a hang.
 5. **Error surfacing.** Completion errors are mapped into the same
-   `Foundation::Core::ReceiveResult` / `SendResult` shapes `NBIO` uses, so the
+   `NBIO::Core::ReceiveResult` / `SendResult` shapes `NBIO` uses, so the
    RESP layer is unchanged.
 
 ### No sockets; three layers of identity
 
-**The RDMA backend never creates a socket.** `Foundation::Core::TcpSocket` is not
+**The RDMA backend never creates a socket.** `NBIO::Core::TcpSocket` is not
 used at all — there is no `socket()`/`bind()`/`accept()` anywhere under
-`Foundation/RDMA`. Two things take its place:
+`NBIO/RDMA`. Two things take its place:
 
 - `Core::SocketAddress` is still reused, because `rdma_cm` still speaks in `sockaddr`
   terms: `rdma_bind_addr(id, addr)` and `rdma_resolve_addr(id, ...)` both take a
@@ -137,11 +137,11 @@ flowchart TD
         RESP["RESP / Server"]
     end
 
-    subgraph Sync["Foundation::Async"]
+    subgraph Sync["NBIO::Async"]
         T["Task / Coroutine / Scheduler"]
     end
 
-    subgraph RDMA["Foundation::RDMA"]
+    subgraph RDMA["NBIO::RDMA"]
         RUN["RDMA::run() / spawn() / sleep_for()"]
         ENG["Engine (thread_local, runtime tag)"]
         MUX["Multiplexer (CQ poll + fd poll)"]
@@ -152,7 +152,7 @@ flowchart TD
         SESS["TcpSessionService (byte stream)"]
     end
 
-    subgraph Core["Foundation::Core"]
+    subgraph Core["NBIO::Core"]
         ADDR["SocketAddress / Buffer / SystemTimer / EventNotifier / SystemSignal"]
     end
 
@@ -168,8 +168,8 @@ flowchart TD
     MUX --> Core
 ```
 
-The engine is the runtime tag that `Foundation::Async` tasks are parameterized
-on, exactly as `NBIO::Engine` is. `Foundation::Async` never sees RDMA specifics;
+The engine is the runtime tag that `NBIO::Async` tasks are parameterized
+on, exactly as `NBIO::Engine` is. `NBIO::Async` never sees RDMA specifics;
 it asks the tag for a scheduler.
 
 ## Components
@@ -180,7 +180,7 @@ One engine per thread, installed as a `thread_local`. It owns everything the
 backend needs and hands it out through static accessors.
 
 ```cpp
-namespace Foundation::RDMA
+namespace NBIO::RDMA
 {
 class Engine
 {
@@ -189,8 +189,8 @@ class Engine
     static bool is_initialized();
     static Engine &instance();
 
-    // What Foundation::Async asks of a runtime tag.
-    static Foundation::Async::Scheduler &scheduler();
+    // What NBIO::Async asks of a runtime tag.
+    static NBIO::Async::Scheduler &scheduler();
     static Multiplexer &multiplexer();
 
     static EventNotifyChannel &notify_channel();
@@ -200,7 +200,7 @@ class Engine
   private:
     static thread_local std::unique_ptr<Engine> engine_;
 };
-} // namespace Foundation::RDMA
+} // namespace NBIO::RDMA
 ```
 
 Member order matters for the same reason it does in `NBIO::Engine`: the
@@ -410,7 +410,7 @@ class Channel
     constexpr static Handle kInvalidHandle = 0;
 
     Channel(ChannelType type, Connection &connection, Multiplexer &multiplexer,
-            Foundation::Async::Scheduler &scheduler);
+            NBIO::Async::Scheduler &scheduler);
 
     ChannelType type() const noexcept;
     Handle handle() const noexcept;          // assigned by the multiplexer at registration
@@ -602,14 +602,14 @@ Jobs are the payload the multiplexer fills in, exactly as in `NBIO`:
 ```cpp
 struct ReceiveJob
 {
-    Foundation::Core::Buffer *buffer{nullptr};
-    Foundation::Core::ReceiveResult result{};
+    NBIO::Core::Buffer *buffer{nullptr};
+    NBIO::Core::ReceiveResult result{};
 };
 
 struct SendJob
 {
-    Foundation::Core::Buffer *buffer{nullptr};
-    Foundation::Core::SendResult result{};
+    NBIO::Core::Buffer *buffer{nullptr};
+    NBIO::Core::SendResult result{};
 };
 ```
 
@@ -618,7 +618,7 @@ struct SendJob
 A `Connection` is a thin owner around one `rdma_cm_id *`, which already holds
 the queue pair (`id->qp`), the protection domain and the CQs. It is the
 "underlying object" that a send channel and a receive channel are pinned to,
-playing the role `Foundation::Core::TcpSocket` plays in `NBIO` — but with no
+playing the role `NBIO::Core::TcpSocket` plays in `NBIO` — but with no
 socket: there is no fd for the connection, and the object is reached through
 `rdma_cm` and the verbs API rather than through the kernel's socket interface.
 
@@ -659,7 +659,7 @@ class Device
 
 ### `MemoryRegion` — registered memory
 
-The RDMA NIC can only DMA from registered memory, and `Foundation::Core::Buffer`
+The RDMA NIC can only DMA from registered memory, and `NBIO::Core::Buffer`
 owns a plain `std::unique_ptr<char[]>`. Registration is therefore a first-class
 concept.
 
@@ -696,8 +696,8 @@ deliberate first-version trade-off; see Open Decisions.
 class TcpSessionService : protected std::enable_shared_from_this<TcpSessionService>
 {
   public:
-    Task<Foundation::Core::ReceiveResult> receive(Foundation::Core::Buffer &buffer);
-    Task<Foundation::Core::SendResult> send(Foundation::Core::Buffer &buffer);
+    Task<NBIO::Core::ReceiveResult> receive(NBIO::Core::Buffer &buffer);
+    Task<NBIO::Core::SendResult> send(NBIO::Core::Buffer &buffer);
 
     void close() noexcept;
     unsigned int id() const noexcept;
@@ -710,7 +710,7 @@ Internally it owns a `TcpReceiveChannel` and a `TcpSendChannel` over the same
 ## Public API
 
 ```cpp
-namespace Foundation::RDMA
+namespace NBIO::RDMA
 {
 // ---- runtime ----
 void initialize(Configuration configuration = {});
@@ -718,20 +718,20 @@ bool is_initialized();
 void run(Task<void> main);
 
 template <typename T>
-Foundation::Async::CoroutineToken spawn(Task<T> task);
+NBIO::Async::CoroutineToken spawn(Task<T> task);
 
 Task<void> sleep_until(std::chrono::steady_clock::time_point time_point);
 Task<void> sleep_for(std::chrono::steady_clock::duration duration);
 Task<void> wait_for_signal();
 
 // ---- server ----
-std::unique_ptr<Listener> listen_on(const Foundation::Core::SocketAddress &address,
+std::unique_ptr<Listener> listen_on(const NBIO::Core::SocketAddress &address,
                                     int backlog = 128);
 
 // ---- connection ----
-Task<std::shared_ptr<TcpSessionService>> connect_to(const Foundation::Core::SocketAddress &address);
+Task<std::shared_ptr<TcpSessionService>> connect_to(const NBIO::Core::SocketAddress &address);
 std::shared_ptr<TcpSessionService> establish_with(Connection connection);
-} // namespace Foundation::RDMA
+} // namespace NBIO::RDMA
 ```
 
 The server loop reads like the `NBIO` one:
@@ -742,7 +742,7 @@ while (true)
     auto connection = co_await listener->accept();
     if (connection)
     {
-        Foundation::RDMA::spawn(serve_client(establish_with(std::move(*connection))));
+        NBIO::RDMA::spawn(serve_client(establish_with(std::move(*connection))));
     }
 }
 ```
@@ -798,14 +798,14 @@ normal event loop — no blocking calls.
 | receive-slot pool exhausted | backpressure: `receive()` waits until a slot returns |
 
 The invariant from `NBIO` carries over: **a channel is never resumed after its
-waiting coroutine is gone.** Cancellation support in `Foundation::Async`
+waiting coroutine is gone.** Cancellation support in `NBIO::Async`
 (`CoroutineControlBlock`) is the mechanism; a cancelled waiter must be detached
 from the channel before its frame is reclaimed.
 
 ## Directory Layout
 
 ```
-Foundation/RDMA/
+NBIO/RDMA/
   CMakeLists.txt
   Runtime.hpp              // using Runtime = Engine; Task<T> alias
   RDMA.hpp / RDMA.cpp      // umbrella + public API (run, spawn, listen_on, ...)
@@ -826,15 +826,15 @@ Foundation/RDMA/
 
 The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`,
 `Connection`, `EventChannel`) sit *below* the channel layer, playing the role
-`Foundation::Core::TcpSocket` plays for `NBIO`. They do **not** belong in
-`Foundation::Core`, for two reasons:
+`NBIO::Core::TcpSocket` plays for `NBIO`. They do **not** belong in
+`NBIO::Core`, for two reasons:
 
-1. **Dependencies.** `Foundation/Core/CMakeLists.txt` has no `find_package` at
+1. **Dependencies.** `NBIO/Core/CMakeLists.txt` has no `find_package` at
    all — Core is dependency-free. Backend dependencies live with their backend,
    and the codebase already follows this rule: `liburing` is declared in
-   `Foundation/NBIO/CMakeLists.txt`, not in Core. By the same rule `rdma-core`
+   `NBIO/NBIO/CMakeLists.txt`, not in Core. By the same rule `rdma-core`
    belongs to `RDMA`. Putting the primitives in Core would force `libibverbs` /
-   `librdmacm` on every consumer of `Foundation`, including a TCP-only build.
+   `librdmacm` on every consumer of `NBIO`, including a TCP-only build.
 2. **Reach.** Core holds primitives that are dependency-free *and* useful to more
    than one backend (`TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal`). No other
    backend can use an `ibv_qp`. What RDMA genuinely shares with Core is the value
@@ -854,7 +854,7 @@ The CM event channel is engine-owned like `Core::EventNotifier`; the completion
 channel is connection-owned. A QP has no fd of its own; a completion is pollable
 only because the channel's CQ was created against its completion channel.
 
-`Foundation/RDMA/CMakeLists.txt` follows `Foundation/NBIO/CMakeLists.txt` and is
+`NBIO/RDMA/CMakeLists.txt` follows `NBIO/NBIO/CMakeLists.txt` and is
 Linux-gated:
 
 ```cmake
@@ -862,8 +862,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(rdma_core REQUIRED IMPORTED_TARGET librdmacm libibverbs)
 
-    target_sources(Foundation INTERFACE ...)
-    target_link_libraries(Foundation INTERFACE PkgConfig::rdma_core)
+    target_sources(NBIO INTERFACE ...)
+    target_link_libraries(NBIO INTERFACE PkgConfig::rdma_core)
 endif()
 ```
 
@@ -897,11 +897,11 @@ so that non-Linux configuration is unaffected.
 
    | Layer | Contents |
    |---|---|
-   | `Foundation::Async` | `Task`, `Coroutine`, `Scheduler` |
-   | `Foundation::Core` | `SocketAddress`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
-   | `Foundation::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
-   | `Foundation::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
-   | `Foundation::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |
+   | `NBIO::Async` | `Task`, `Coroutine`, `Scheduler` |
+   | `NBIO::Core` | `SocketAddress`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
+   | `NBIO::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
+   | `NBIO::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
+   | `NBIO::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |
 
    Each backend then supplies only its multiplexer, its data-path channels, its
    `Runtime` alias and its default-multiplexer factory. Everything else is
