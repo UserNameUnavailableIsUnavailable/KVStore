@@ -5,9 +5,10 @@
 #include <spdlog/spdlog.h>
 
 #include <Application/resp/resp.hpp>
-#include <nbio/utility/buffer.hpp>
-#include <nbio/async/runtime.hpp>
-#include <nbio/time/system_time_service.hpp>
+#include <nbio/async.hpp>
+#include <nbio/net.hpp>
+#include <nbio/time.hpp>
+#include <nbio/utility.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -176,7 +177,10 @@ class LinkStream {
         if (!incoming) [[unlikely]] {
             co_return false;
         }
-        const std::span<char> payload = *incoming;
+        if (incoming->state == nbio::net::RdmaPayloadState::kEnded) [[unlikely]] {
+            co_return false;
+        }
+        const std::span<char> payload = incoming->payload;
         // Copied first and given back second: what is released is what the
         // receive was handed, and after that it is no longer ours to read.
         const bool written = buffer_.write(payload.data(), payload.size());
@@ -302,21 +306,15 @@ nbio::async::Task<void> ReplicationService::serve() {
         // The device, its regions and its pools belong to the service, not to
         // this frame: every connection is built from them and every link outlives
         // the accept loop. They were opened when the service was constructed.
-        acceptor_.emplace(*resources_);
-        const auto bound =
-            acceptor_->Listen(nbio::net::Address::FromV4(options_.listen_address, options_.listen_port));
-        if (!bound) [[unlikely]] {
-            spdlog::error("replication: the listener stopped: {}", bound.error());
-            co_return;
-        }
+        acceptor_.emplace(*resources_,
+                          nbio::net::Address::FromV4(options_.listen_address, options_.listen_port));
         spdlog::info("replication: serving replicas on rdma://{}:{} as replid {}", options_.listen_address,
                      options_.listen_port, replid_);
 
-        nbio::net::RdmaAcceptChannel channel(*acceptor_, nbio::async::Runtime::multiplexer(), nbio::async::Runtime::scheduler());
         while (true) {
-            auto session = co_await channel.accept();
+            auto session = co_await acceptor_->Accept();
             if (!session) [[unlikely]] {
-                spdlog::error("replication: the listener stopped: {}", session.error());
+                spdlog::error("replication: the listener stopped: {}", session.error().message());
                 co_return;
             }
             prune();
@@ -544,10 +542,9 @@ nbio::async::Task<void> ReplicationService::follow_forever(nbio::net::Address ma
 
 nbio::async::Task<bool> ReplicationService::sync_once(nbio::net::Address master) {
     link_ = std::make_unique<ReplicaLink>(resources_);
-    nbio::net::RdmaConnectChannel channel(link_->connector, nbio::async::Runtime::multiplexer(), nbio::async::Runtime::scheduler());
-    auto session = co_await channel.Connect(master);
+    auto session = co_await link_->connector.Connect(master);
     if (!session) [[unlikely]] {
-        spdlog::warn("replication: connecting to {} failed: {}", Endpoint(master), session.error());
+        spdlog::warn("replication: connecting to {} failed: {}", Endpoint(master), session.error().message());
         co_return false;
     }
 
