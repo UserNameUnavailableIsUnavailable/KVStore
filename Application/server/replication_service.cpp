@@ -173,10 +173,10 @@ class LinkStream {
     // the same call, out of the same buffer.
     nbio::async::Task<bool> more() {
         auto incoming = co_await link_.Receive();
-        if (!incoming || !*incoming) [[unlikely]] {
+        if (!incoming) [[unlikely]] {
             co_return false;
         }
-        const std::span<char> payload = **incoming;
+        const std::span<char> payload = *incoming;
         // Copied first and given back second: what is released is what the
         // receive was handed, and after that it is no longer ours to read.
         const bool written = buffer_.write(payload.data(), payload.size());
