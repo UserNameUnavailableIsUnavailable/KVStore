@@ -5,6 +5,6 @@
     "repository": "https://github.com/microsoft/vcpkg"
   },
   "overlay-ports": [
-    "NBIO/ports"
+    "../NBIO/ports"
   ]
 }

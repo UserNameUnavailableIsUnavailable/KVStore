@@ -100,7 +100,7 @@ cmake --build build
 
 | 目标 | 说明 |
 | --- | --- |
-| `Server` | 服务器：`build/Application/Server/Server` |
+| `Server` | 服务器：`build/Application/server/Server` |
 | `Client` | 命令行客户端：`build/Application/Client/Client` |
 | `NBIOTesting`、`ServerTesting` | 单元测试可执行文件 |
 | `Echo`、`Sleep`、`Grace`、`SystemSignalSvc`、`ScopedSystemSignalService`、`Condition` | NBIO 示例 |
@@ -123,12 +123,12 @@ ctest --test-dir build --output-on-failure
 
 ```bash
 # 单机
-./build/Application/Server/Server --port 8080
+./build/Application/server/Server --port 8080
 
 # 主从（同一台机器上的两个实例）
-./build/Application/Server/Server \
+./build/Application/server/Server \
     --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
-./build/Application/Server/Server --port 8082 --rdma-device siw0
+./build/Application/server/Server --port 8082 --rdma-device siw0
 
 # 副本跟随哪个主节点，是运行时由客户端告诉它的
 ./build/Application/Client/Client 127.0.0.1 8082 SLAVEOF 192.168.0.201 8081
@@ -140,7 +140,7 @@ ctest --test-dir build --output-on-failure
 服务器也可以完全由启动命令文件驱动——每一行都是一条命令，管道里的命令同样能在文件里写：
 
 ```bash
-./build/Application/Server/Server -c Application/master.conf
+./build/Application/server/Server -c Application/master.conf
 ```
 
 `Application/master.conf`（对外提供服务，并在 RDMA 设备上服务副本）：

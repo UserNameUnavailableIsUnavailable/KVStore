@@ -1,2 +1,2 @@
 #!/bin/sh
-./build/Application/Server/Release/Server --config ./configs/slave.conf --multiplexer epoll
+./build/Application/server/Release/Server --config ./configs/slave.conf --multiplexer epoll

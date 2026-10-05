@@ -5,7 +5,7 @@
             "name": "Debug KVServer",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/Server/KVServer",
+            "program": "${workspaceFolder}/build/server/KVServer",
             "args": ["8080"],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,

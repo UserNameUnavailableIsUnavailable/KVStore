@@ -78,7 +78,7 @@ Targets worth knowing:
 
 | Target | What it is |
 | --- | --- |
-| `Server` | The server: `build/Application/Server/Server` |
+| `Server` | The server: `build/Application/server/Server` |
 | `Client` | The command line client: `build/Application/Client/Client` |
 | `NBIOTesting`, `ServerTesting` | The test executables |
 | `Echo`, `Sleep`, `Grace`, `SystemSignalSvc`, `ScopedSystemSignalService`, `Condition` | NBIO examples |
@@ -102,12 +102,12 @@ packet and every credit.
 
 ```bash
 # stand-alone
-./build/Application/Server/Server --port 8080
+./build/Application/server/Server --port 8080
 
 # a master and a replica on one machine
-./build/Application/Server/Server \
+./build/Application/server/Server \
     --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
-./build/Application/Server/Server --port 8082 --rdma-device siw0
+./build/Application/server/Server --port 8082 --rdma-device siw0
 
 # and the replica is pointed at the master at runtime, by a client
 ./build/Application/Client/Client 127.0.0.1 8082 SLAVEOF 192.168.0.201 8081
@@ -120,7 +120,7 @@ A server can also be driven entirely by a startup command file, in which every l
 command — anything a connection may send, a file may say:
 
 ```bash
-./build/Application/Server/Server -c Application/master.conf
+./build/Application/server/Server -c Application/master.conf
 ```
 
 `Application/master.conf` (serves clients, and replicas on the RDMA device):

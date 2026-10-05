@@ -5,10 +5,10 @@ add_library(Application INTERFACE)
 target_sources(
 	Application
 	INTERFACE
-	Commands.cpp
+	commands.cpp
 )
 
-add_subdirectory(RESP)
+add_subdirectory(resp)
 
 target_link_libraries(Application INTERFACE nbio::nbio fmt::fmt)
 
@@ -17,5 +17,5 @@ if(USE_JEMALLOC)
 		"-Wl,--whole-archive" "${JEMALLOC_LIBRARY}" "-Wl,--no-whole-archive")
 endif()
 
-add_subdirectory(Server)
-add_subdirectory(Client)
+add_subdirectory(server)
+add_subdirectory(client)
