@@ -12,7 +12,7 @@ NBIO::RDMA::run(serve(address));
 
 `NBIO` and `RDMA` are **two independent systems**. They deliberately share the
 generic coroutine machinery in `NBIO::Async` and the resources in
-`NBIO::Core`, mirroring each other's *shape* where that shape is genuinely
+`nbio::core`, mirroring each other's *shape* where that shape is genuinely
 the same. They do **not** share channels, sessions, or a common backend base
 class: nothing in `NBIO` knows that `RDMA` exists, and nothing in `RDMA` includes
 `NBIO`. Duplication of a few small, stable types is accepted in exchange for two
@@ -44,7 +44,7 @@ as decisions land.
 - One-sided operations (`RDMA READ` / `RDMA WRITE`) and atomic verbs.
 - Zero-copy receive into application-owned memory.
 - Native InfiniBand addressing (LID/GID routing); the first version targets
-  RoCEv2 so that the existing `NBIO::Core::Address` (IPv4) can be reused.
+  RoCEv2 so that the existing `nbio::core::Address` (IPv4) can be reused.
 - Automatic reconnection / failover.
 - Multi-threaded engines. Like `NBIO`, one engine per thread, installed as a
   `thread_local`.
@@ -80,12 +80,12 @@ boundaries are an implementation detail the `TcpSessionService` hides.
 4. **Graceful close.** A disconnect surfaces to every outstanding operation as a
    conclusive status, never as a hang.
 5. **Error surfacing.** Completion errors are mapped into the same
-   `NBIO::Core::ReceiveResult` / `SendResult` shapes `NBIO` uses, so the
+   `nbio::core::ReceiveResult` / `SendResult` shapes `NBIO` uses, so the
    RESP layer is unchanged.
 
 ### No sockets; three layers of identity
 
-**The RDMA backend never creates a socket.** `NBIO::Core::TcpSocket` is not
+**The RDMA backend never creates a socket.** `nbio::core::TcpSocket` is not
 used at all — there is no `socket()`/`bind()`/`accept()` anywhere under
 `NBIO/RDMA`. Two things take its place:
 
@@ -152,7 +152,7 @@ flowchart TD
         SESS["TcpSessionService (byte stream)"]
     end
 
-    subgraph Core["NBIO::Core"]
+    subgraph Core["nbio::core"]
         ADDR["Address / Buffer / SystemTimer / EventNotifier / SystemSignal"]
     end
 
@@ -602,14 +602,14 @@ Jobs are the payload the multiplexer fills in, exactly as in `NBIO`:
 ```cpp
 struct ReceiveJob
 {
-    NBIO::Core::Buffer *buffer{nullptr};
-    NBIO::Core::ReceiveResult result{};
+    nbio::core::Buffer *buffer{nullptr};
+    nbio::core::ReceiveResult result{};
 };
 
 struct SendJob
 {
-    NBIO::Core::Buffer *buffer{nullptr};
-    NBIO::Core::SendResult result{};
+    nbio::core::Buffer *buffer{nullptr};
+    nbio::core::SendResult result{};
 };
 ```
 
@@ -618,7 +618,7 @@ struct SendJob
 A `Connection` is a thin owner around one `rdma_cm_id *`, which already holds
 the queue pair (`id->qp`), the protection domain and the CQs. It is the
 "underlying object" that a send channel and a receive channel are pinned to,
-playing the role `NBIO::Core::TcpSocket` plays in `NBIO` — but with no
+playing the role `nbio::core::TcpSocket` plays in `NBIO` — but with no
 socket: there is no fd for the connection, and the object is reached through
 `rdma_cm` and the verbs API rather than through the kernel's socket interface.
 
@@ -659,7 +659,7 @@ class Device
 
 ### `MemoryRegion` — registered memory
 
-The RDMA NIC can only DMA from registered memory, and `NBIO::Core::Buffer`
+The RDMA NIC can only DMA from registered memory, and `nbio::core::Buffer`
 owns a plain `std::unique_ptr<char[]>`. Registration is therefore a first-class
 concept.
 
@@ -696,8 +696,8 @@ deliberate first-version trade-off; see Open Decisions.
 class TcpSessionService : protected std::enable_shared_from_this<TcpSessionService>
 {
   public:
-    Task<NBIO::Core::ReceiveResult> receive(NBIO::Core::Buffer &buffer);
-    Task<NBIO::Core::SendResult> send(NBIO::Core::Buffer &buffer);
+    Task<nbio::core::ReceiveResult> receive(nbio::core::Buffer &buffer);
+    Task<nbio::core::SendResult> send(nbio::core::Buffer &buffer);
 
     void close() noexcept;
     unsigned int id() const noexcept;
@@ -725,11 +725,11 @@ Task<void> sleep_for(std::chrono::steady_clock::duration duration);
 Task<void> wait_for_signal();
 
 // ---- server ----
-std::unique_ptr<Listener> listen_on(const NBIO::Core::Address &address,
+std::unique_ptr<Listener> listen_on(const nbio::core::Address &address,
                                     int backlog = 128);
 
 // ---- connection ----
-Task<std::shared_ptr<TcpSessionService>> connect_to(const NBIO::Core::Address &address);
+Task<std::shared_ptr<TcpSessionService>> connect_to(const nbio::core::Address &address);
 std::shared_ptr<TcpSessionService> establish_with(Connection connection);
 } // namespace NBIO::RDMA
 ```
@@ -807,27 +807,27 @@ from the channel before its frame is reclaimed.
 ```
 NBIO/RDMA/
   CMakeLists.txt
-  Runtime.hpp              // using Runtime = Engine; Task<T> alias
+  runtime.hpp              // using Runtime = Engine; Task<T> alias
   RDMA.hpp / RDMA.cpp      // umbrella + public API (run, Spawn, listen_on, ...)
   Engine.hpp / Engine.cpp  // runtime tag, idle hook, standing resources
-  Multiplexer.hpp / .cpp    // concrete composite CQ/fd poller
-  Channel.hpp / .cpp        // channel base (owns its handle)
-  TcpSendChannel.hpp / .cpp
-  TcpReceiveChannel.hpp / .cpp
-  AcceptChannel.hpp / .cpp  // rdma_cm listener / connector
+  multiplexer.hpp / .cpp    // concrete composite CQ/fd poller
+  channel.hpp / .cpp        // channel base (owns its handle)
+  TcpSendchannel.hpp / .cpp
+  TcpReceivechannel.hpp / .cpp
+  Acceptchannel.hpp / .cpp  // rdma_cm listener / connector
   Connection.hpp / .cpp     // rdma_cm_id + QP (the object a channel pins to)
   Device.hpp / .cpp         // ibv_context + PD
   MemoryRegion.hpp / .cpp   // registered arena + slot pool
-  TcpSessionService.hpp / .cpp
-  Types.hpp                 // ChannelType, status mapping
+  tcp_session_service.hpp / .cpp
+  types.hpp                 // ChannelType, status mapping
 ```
 
 ### Where the raw primitives live
 
 The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`,
 `Connection`, `EventChannel`) sit *below* the channel layer, playing the role
-`NBIO::Core::TcpSocket` plays for `NBIO`. They do **not** belong in
-`NBIO::Core`, for two reasons:
+`nbio::core::TcpSocket` plays for `NBIO`. They do **not** belong in
+`nbio::core`, for two reasons:
 
 1. **Dependencies.** `NBIO/Core/CMakeLists.txt` has no `find_package` at
    all — Core is dependency-free. Backend dependencies live with their backend,
@@ -879,7 +879,7 @@ so that non-Linux configuration is unaffected.
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| M0 | Skeleton: `CMakeLists.txt`, `Runtime.hpp`, `Engine`, `RDMA::Run()`, idle hook, standing timer/notify/signal channels, `sleep_for`. | A no-op coroutine plus a timer runs on the RDMA engine, with no verbs linked yet. |
+| M0 | Skeleton: `CMakeLists.txt`, `runtime.hpp`, `Engine`, `RDMA::Run()`, idle hook, standing timer/notify/signal channels, `sleep_for`. | A no-op coroutine plus a timer runs on the RDMA engine, with no verbs linked yet. |
 | M1 | `Device`, `Connection`, `MemoryRegion`, `Channel`, `Multiplexer` with CQ polling; two-sided `SEND`/`RECV` over a loopback QP pair. | A handshake-free loopback exchange delivers bytes reliably. |
 | M2 | `rdma_cm` listener + connector; `TcpSessionService` byte stream; `Listener::accept()`; `establish_with`. | A client can `connect_to` a server, exchange an ordered byte stream, and disconnect cleanly. |
 | M3 | Reliability: flush/disconnect handling, receive-slot backpressure, cancellation safety, RESP integration. | The RESP server runs on the RDMA backend under the existing test suite. |
@@ -898,7 +898,7 @@ so that non-Linux configuration is unaffected.
    | Layer | Contents |
    |---|---|
    | `NBIO::Async` | `Task`, `Coroutine`, `Scheduler` |
-   | `NBIO::Core` | `Address`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
+   | `nbio::core` | `Address`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
    | `NBIO::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
    | `NBIO::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
    | `NBIO::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |
