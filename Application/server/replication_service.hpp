@@ -2,16 +2,9 @@
 #if defined(__linux__)
 
 #include <Application/commands.hpp>
-#include <nbio/net/rdma_acceptor.hpp>
-#include <nbio/net/rdma_connector.hpp>
-#include <nbio/net/rdma_resource_manager.hpp>
-#include <nbio/net/address.hpp>
+#include <nbio/async.hpp>
+#include <nbio/net.hpp>
 #include <nbio/notification/condition_variable.hpp>
-#include <nbio/net/rdma_accept_channel.hpp>
-#include <nbio/net/rdma_connect_channel.hpp>
-#include <nbio/net/rdma_deliver_service.hpp>
-#include <nbio/net/rdma_session_service.hpp>
-#include <nbio/async/runtime.hpp>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -201,7 +194,7 @@ class ReplicationService {
     // regions and its chunks, so they all have to be gone before it is. Shared,
     // because a connection keeps it alive for as long as it runs.
     std::shared_ptr<nbio::net::RdmaResourceManager> resources_;
-    std::optional<nbio::net::RdmaAcceptor> acceptor_;
+    std::optional<nbio::net::RdmaAcceptService> acceptor_;
 
     // The replicas being served. This vector is the record() path's list, so a
     // replica is held here for as long as its buffer has to be filled.
@@ -218,10 +211,9 @@ class ReplicationService {
             : resources(std::move(manager)), connector(*resources) {}
 
         // Held first, and held at all: the connection borrows this device. The
-        // link is declared last so that it -- and the session inside it, which
-        // borrows the connector -- is destroyed before what it borrows.
+        // link is declared last so that it is destroyed before what it borrows.
         std::shared_ptr<nbio::net::RdmaResourceManager> resources;
-        nbio::net::RdmaConnector connector;
+        nbio::net::RdmaConnectService connector;
         std::shared_ptr<nbio::net::RdmaDeliverService> link;
     };
     std::unique_ptr<ReplicaLink> link_;

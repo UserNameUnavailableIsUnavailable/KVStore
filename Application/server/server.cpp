@@ -8,12 +8,9 @@
 #include <Application/resp/receiver.hpp>
 #include <Application/resp/sender.hpp>
 #include <nbio/async.hpp>
-#include <nbio/utility/buffer.hpp>
-#include <nbio/core/epoll_multiplexer.hpp>
-#include <nbio/core/multiplexer.hpp>
-#include <nbio/async/runtime.hpp>
-#include <nbio/core/types.hpp>
-#include <nbio/core/uring_multiplexer.hpp>
+#include <nbio/core.hpp>
+#include <nbio/time.hpp>
+#include <nbio/utility.hpp>
 #include <cstdlib>
 #include <memory>
 #include <optional>
