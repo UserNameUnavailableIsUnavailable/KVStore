@@ -70,9 +70,34 @@ sudo rdma link add siw0 type siw netdev {net_device}
 
 ## 构建
 
+可在 `vcpkg.json` 中调整 NBIO 的 io_uring 和 RDMA 特性支持：
+
+```json
+    {
+      "name": "nbio",
+      "features": [
+        "io-uring",
+        "rdma"
+      ],
+      "platform": "linux"
+    }
+```
+
+CMake 支持的 flags：
+
+- `-DUSE_JEMALLOC`：使用 jemalloc 作为内存分配器。
+- `-DCUSTOM_MEMORY_POOLING`：使用自定义内存池作为内存分配器。
+- `-DUSE_ARRAY_MAP_INDEX`：使用数组映射作为存储索引。
+- `-DUSE_RED_BLACK_TREE_INDEX`：使用红黑树作为存储索引。
+- `-DUSE_SKIP_LIST_INDEX`：使用跳表作为存储索引。
+- `-DUSE_HASH_MAP_INDEX`：使用哈希表作为存储索引。
+
 ```bash
 export VCPKG_ROOT=/path/to/vcpkg
 cmake -S . -B build -G "Ninja Multi-Config"
+```
+
+```bash
 cmake --build build --config Release
 ```
 
