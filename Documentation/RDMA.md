@@ -153,7 +153,7 @@ flowchart TD
     end
 
     subgraph Core["nbio::core"]
-        ADDR["Address / Buffer / SystemTimer / EventNotifier / SystemSignal"]
+        ADDR["Address / Buffer / Timer / Notifier / SystemSignal"]
     end
 
     App --> RUN
@@ -193,8 +193,8 @@ class Engine
     static NBIO::Async::Scheduler &scheduler();
     static Multiplexer &multiplexer();
 
-    static EventNotifyChannel &notify_channel();
-    static SystemTimerChannel &timer_channel();
+    static NotifierChannel &notifier_channel();
+    static TimerChannel &timer_channel();
     static SystemSignalChannel &signal_channel();
 
   private:
@@ -393,7 +393,7 @@ enum class ChannelType
     kReceive, // completion
     kSend,    // completion
     kListen,  // cm
-    kSystemTimer,   // fd
+    kTimer,   // fd
     kNotify,  // fd
     kSystemSignal,  // fd
 };
@@ -442,7 +442,7 @@ all eight kinds. `RDMA` channels do not share one dispatch mechanism:
 |---|---|---|---|---|
 | **Completion** | `kReceive`, `kSend` | the channel's completion-channel fd (one per RDMA channel) | `ibv_poll_cq` | `wr_id` (`Channel::Handle`) |
 | **Cm** | `kListen`, and each accepted `Connection` | the **CM event channel** fd (one per engine) | `rdma_get_cm_event` | `event->id`, an `rdma_cm_id *` |
-| **Fd** | `kSystemTimer`, `kNotify`, `kSystemSignal` | their own fd (timerfd / eventfd / signalfd) | `epoll_wait` readiness | the fd |
+| **Fd** | `kTimer`, `kNotify`, `kSystemSignal` | their own fd (timerfd / eventfd / signalfd) | `epoll_wait` readiness | the fd |
 
 The `NBIO` analogy holds — channels *are* grouped by the fd the poller waits on,
 and the poller dispatches internally — but with two caveats.
@@ -836,7 +836,7 @@ The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`
    belongs to `RDMA`. Putting the primitives in Core would force `libibverbs` /
    `librdmacm` on every consumer of `NBIO`, including a TCP-only build.
 2. **Reach.** Core holds primitives that are dependency-free *and* useful to more
-   than one backend (`TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal`). No other
+   than one backend (`TcpSocket`, `File`, `Timer`, `Notifier`, `SystemSignal`). No other
    backend can use an `ibv_qp`. What RDMA genuinely shares with Core is the value
    types it does not own — `Address` (`rdma_cm` takes a `sockaddr`) and `Buffer`.
 
@@ -850,7 +850,7 @@ shape of the layer: **the two pollable fds are engine-wide, not per-connection.*
 | `Connection` (`rdma_cm_id`) | no | one per connection |
 | `QueuePair`, `MemoryRegion` | no | per connection / per arena |
 
-The CM event channel is engine-owned like `Core::EventNotifier`; the completion
+The CM event channel is engine-owned like `Core::Notifier`; the completion
 channel is connection-owned. A QP has no fd of its own; a completion is pollable
 only because the channel's CQ was created against its completion channel.
 
@@ -888,7 +888,7 @@ so that non-Linux configuration is unaffected.
 ## Open Decisions
 
 1. **Standing channels: duplicate or extract? — settled in favour of extraction.**
-   An earlier draft had `RDMA` duplicate `SystemTimerChannel`, `EventNotifyChannel`,
+   An earlier draft had `RDMA` duplicate `TimerChannel`, `NotifierChannel`,
    `SystemSignalChannel` and `ConditionVariable`. That is not small: those four are a
    few hundred lines of subtle Park/wake coroutine code whose *only* backend
    requirement is "poll this fd". They are backend-neutral, so the right boundary
@@ -898,8 +898,8 @@ so that non-Linux configuration is unaffected.
    | Layer | Contents |
    |---|---|
    | `NBIO::Async` | `Task`, `Coroutine`, `Scheduler` |
-   | `nbio::core` | `Address`, `Buffer`, `TcpSocket`, `File`, `SystemTimer`, `EventNotifier`, `SystemSignal` |
-   | `NBIO::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `SystemTimerChannel`, `EventNotifyChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
+   | `nbio::core` | `Address`, `Buffer`, `TcpSocket`, `File`, `Timer`, `Notifier`, `SystemSignal` |
+   | `NBIO::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `TimerChannel`, `NotifierChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
    | `NBIO::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
    | `NBIO::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |
 

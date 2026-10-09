@@ -665,7 +665,7 @@ void Server::maybe_start_staged_save() {
 nbio::async::Task<void> Server::staged_save_periodic() {
     while (staged_save_rule_) {
         const auto rule = *staged_save_rule_;
-        auto timeout = nbio::time::SystemTimeService{}.sleep(rule.seconds);
+        auto timeout = nbio::time::SystemTimeService{}.Sleep(rule.seconds);
         auto ready = staged_save_ready_->wait(
             [this, expected = rule.changed] { return !staged_save_rule_ || staged_save_dirty_ >= expected; });
         co_await nbio::async::WhenAll(std::move(timeout), std::move(ready));
