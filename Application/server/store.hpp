@@ -10,14 +10,22 @@
 #include <utility>
 
 #include "array_map.hpp"
+#include "skip_list_map.hpp"
 #include "hash_map.hpp"
 #include "record.hpp"
 #include "red_black_tree_map.hpp"
-#include "skip_list.hpp"
 
 namespace KV {
 // The index containers live in namespace Common; bring them in so the default
 // template arguments (and users below) can name them unqualified.
+
+// SkipListMap takes a level count and a probability after its key and value.
+// Both are defaulted, but a compiler matching it against Store's two-parameter
+// `Container` still sees a longer parameter list and refuses it. This alias
+// fixes the shape Store asks for, leaving the two trailing parameters to their
+// defaults.
+template <typename K, typename V>
+using SkipListIndex = SkipListMap<K, V>;
 
 template <typename KeyType, typename ValueType, template <typename, typename> class Container = HashMap>
 class Store {

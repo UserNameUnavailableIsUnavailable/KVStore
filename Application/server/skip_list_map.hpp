@@ -11,28 +11,25 @@
 #include <utility>
 
 namespace KV {
-namespace {
-template <std::size_t LevelCount, typename K, typename V>
-struct SkipListNode {
-    using NodeType = SkipListNode<LevelCount, K, V>;
-
-    SkipListNode() : key(), value(), forward{} {}
-
-    SkipListNode(K&& key, V&& value) : key(std::forward<K>(key)), value(std::forward<V>(value)), forward{} {}
-
-    K key;
-    V value;
-    std::array<NodeType*, LevelCount> forward;
-};
-}  // namespace
-
 template <float Probability>
 concept IsValidProbability = Probability > 0.0f && Probability < 1.0f;
 
 template <typename K, typename V, std::size_t LevelCount = 64, float Probability = 0.5f>
     requires(IsValidProbability<Probability> && LevelCount > 0)
 class SkipListMap {
-    using NodeType = SkipListNode<LevelCount, K, V>;
+    // The node is a nested type rather than an anonymous-namespace one: a class
+    // with external linkage may not have a member whose type has internal
+    // linkage, because then each translation unit would see a different node
+    // type and the instantiations would disagree.
+    struct NodeType {
+        NodeType() : key(), value(), forward{} {}
+
+        NodeType(K&& key, V&& value) : key(std::forward<K>(key)), value(std::forward<V>(value)), forward{} {}
+
+        K key;
+        V value;
+        std::array<NodeType*, LevelCount> forward;
+    };
 
    public:
     class Iterator {
