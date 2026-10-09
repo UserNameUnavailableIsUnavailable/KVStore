@@ -6,6 +6,7 @@ target_sources(
 	Application
 	INTERFACE
 	commands.cpp
+	memory_pool.cpp
 )
 
 add_subdirectory(resp)
