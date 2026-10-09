@@ -20,28 +20,9 @@
 
 - 主从复制：master 与 replica 通过 RDMA 通道通信，先经 RDMA 全量同步 RDB 文件，随后基于 backlog 策略进行实时增量同步。
 
-## 构建依赖
+## 构建
 
-### 系统与工具链
-
-- **操作系统**：Linux（内核版本 >= 5.2，建议使用 6.0 及以上的版本以获得完整的 io_uring 特性支持）。服务器、复制与 io_uring 后端都在 `#if defined(__linux__)`
-  保护之下，其它平台上只有 NBIO 的一部分能编译。
-- **CMake ≥ 3.20**（顶层 `CMakeLists.txt` 声明；开发机实测 4.2.3）。
-- **支持 C++20 的编译器**：代码用到协程、ranges、指定初始化与 concepts（实测 Clang 21.1.8；
-  GCC 11+ / Clang 14+ 具备所需特性）。
-- **Ninja**（可选，任意 CMake 生成器均可；实测 1.13.2）。
-
-### Linux 开发包
-
-RDMA、io_uring 与 BPF 相关库通过系统 `pkg-config` 解析（不走 vcpkg），
-请先安装开发包：
-
-```bash
-sudo apt-get update
-sudo apt-get install -y rdma-core libibverbs-dev librdmacm-dev liburing-dev libbpf-dev pkg-config
-```
-
-### vcpkg 与第三方库
+### 第三方库
 
 项目使用 vcpkg 进行包管理。若没有安装 vcpkg，可通过如下命令快速安装：
 
@@ -50,6 +31,19 @@ git clone https://github.com/microsoft/vcpkg.git /path/to/vcpkg --depth 1
 cd /path/to/vcpkg
 ./bootstrap-vcpkg.sh
 export VCPKG_ROOT=/path/to/vcpkg # 设置 vcpkg 根目录环境变量
+```
+
+可在 `vcpkg.json` 中调整 NBIO 的 io_uring 和 RDMA 特性支持：
+
+```json
+    {
+      "name": "nbio",
+      "features": [
+        "io-uring",
+        "rdma"
+      ],
+      "platform": "linux"
+    }
 ```
 
 <!-- 以下为通过系统 `pkg-config` 解析的 Linux 依赖（构建前需安装）：
@@ -68,20 +62,7 @@ export VCPKG_ROOT=/path/to/vcpkg # 设置 vcpkg 根目录环境变量
 sudo rdma link add siw0 type siw netdev {net_device}
 ```
 
-## 构建
-
-可在 `vcpkg.json` 中调整 NBIO 的 io_uring 和 RDMA 特性支持：
-
-```json
-    {
-      "name": "nbio",
-      "features": [
-        "io-uring",
-        "rdma"
-      ],
-      "platform": "linux"
-    }
-```
+### 构建流程
 
 CMake 支持的 flags：
 
