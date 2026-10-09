@@ -535,7 +535,7 @@ nbio::async::Task<void> ReplicationService::follow_forever(nbio::net::Address ma
         // successful connect hands its communication id to the session, which is
         // why one cannot be reused.
         link_.reset();
-        co_await nbio::time::SystemTimeService{}.sleep(std::chrono::seconds(1));
+        co_await nbio::time::SystemTimeService{}.Sleep(std::chrono::seconds(1));
     }
     co_return;
 }

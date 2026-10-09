@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
                 spdlog::info("Multiplexer: io_uring");
                 break;
         }
-        nbio::async::Runtime::Initialize(std::move(mux));
+        nbio::runtime::Daemon::Initialize(std::move(mux));
 
         KV::Server server;
         server.run(options);

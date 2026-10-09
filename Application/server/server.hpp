@@ -5,7 +5,7 @@
 #include <nbio/async/task.hpp>
 #include <nbio/net/address.hpp>
 #include <nbio/notification/condition_variable.hpp>
-#include <nbio/async/runtime.hpp>
+#include <nbio/runtime/daemon.hpp>
 #include <nbio/net/tcp_accept_service.hpp>
 #include <nbio/net/tcp_session_service.hpp>
 #include <chrono>
@@ -30,7 +30,7 @@ namespace KV {
 // the file, then the default, so a flag overrides the file only when it was
 // actually given. The defaults describe a plain stand-alone instance: no
 // replication listener, and no master to follow -- which one it follows is what
-// SLAVEOF says, and it says it at runtime.
+// SLAVEOF says, and it says it at Daemon.
 struct ServerOptions {
     static constexpr std::uint16_t kDefaultPort = 8080;
     static constexpr std::uint16_t kDefaultReplicationPort = 0;
@@ -81,7 +81,7 @@ class Server {
     void run(const ServerOptions& options);
 
     // Runs the commands a startup file holds, and then serves. Applying them
-    // belongs inside the runtime: they are this server's own commands, and
+    // belongs inside the Daemon: they are this server's own commands, and
     // executing one can await.
     nbio::async::Task<void> serve(std::uint16_t port, std::vector<CommandLine> commands);
     nbio::async::Task<void> apply_commands(std::vector<CommandLine> commands);

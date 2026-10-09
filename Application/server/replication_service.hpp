@@ -43,22 +43,13 @@ namespace KV {
 // under it for RNR, and only the delivery layer knows how far the peer has got.
 class ReplicationService {
    public:
-    // What the service asks of the server it plugs into.
     struct Host {
-        // The file a snapshot is written to, which is also the file a replica is
-        // given: the master streams it and the replica receives into it.
         std::function<std::filesystem::path()> snapshot_file;
-        // Starts a background save. It must copy the store before it returns --
-        // the buffer that follows the snapshot is attached as soon as it does --
-        // and the task it hands back does the forking and the writing.
+        // Starts a background save.
         std::function<nbio::async::Task<bool>()> snapshot;
-        // Replaces the store with the RDB file it is given. False when the file
-        // does not exist or does not validate against its own CRC-64.
+        // Replaces the store with the RDB file it is given.
         std::function<bool(const std::filesystem::path&)> restore;
         // Applies one command the master has applied, in the order it applied
-        // them. Answers whether it could: a replica applies the writes its own
-        // clients are refused, so this is the write path without the read-only
-        // check, and it is the server's because the store is.
         std::function<bool(const Command&)> apply;
         // The link to the master came up, or went down.
         std::function<void(bool)> link_changed;
@@ -68,9 +59,6 @@ class ReplicationService {
         // 0 leaves the master side of the service off.
         std::uint16_t listen_port{0};
         std::string listen_address{"0.0.0.0"};
-        // The rdma device, by name, that the link runs on. One name, one device,
-        // one resource manager: replication does not fall back to TCP, so a
-        // service that serves or follows needs it.
         std::string rdma_device{};
     };
 

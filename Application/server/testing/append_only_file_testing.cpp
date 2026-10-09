@@ -3,7 +3,7 @@
 #include <Application/server/append_only_file.hpp>
 #include <Application/server/store.hpp>
 #include <nbio/async.hpp>
-#include <nbio/async/runtime.hpp>
+#include <nbio/runtime/daemon.hpp>
 #include <nbio/core/uring_multiplexer.hpp>
 #include <algorithm>
 #include <filesystem>
@@ -223,7 +223,7 @@ TEST(AppendOnlyFileTesting, ConcurrentAppendsKeepTheLogWhole) { many_appends_one
 // load: several entries are submitted together, and one completion can finish
 // more than one of them.
 TEST(AppendOnlyFileTesting, ConcurrentAppendsKeepTheLogWholeOnURing) {
-    nbio::async::Runtime::Initialize(std::make_unique<nbio::core::URingMultiplexer>());
+    nbio::runtime::Daemon::Initialize(std::make_unique<nbio::core::URingMultiplexer>());
     many_appends_one_log("kvstore-aof-concurrent-uring-");
 }
 
