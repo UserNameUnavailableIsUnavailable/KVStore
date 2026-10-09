@@ -22,6 +22,7 @@
 #include "backup.hpp"
 #include "conf_file.hpp"
 #include "replication_service.hpp"
+#include "skip_list_map.hpp"
 #include "store.hpp"
 
 namespace KV {
@@ -133,7 +134,6 @@ class Server {
     // own clients, so this is the write path without that check: it is the master
     // that said this write happened, in this order.
     bool apply_replicated_command(const KV::Command& command);
-
     LRUStore<std::string, std::string, HashMap> store_;
     AppendOnlyFile aof_;
     Backup backup_;

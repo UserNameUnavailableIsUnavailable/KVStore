@@ -2,38 +2,23 @@
 
 [English](README_en.md) | **中文**
 
-## C++20 协程异步框架（NBIO）
+基于 [NBIO](https://github.com/UserNameUnavailableIsUnavailable/NBIO) 构建的 KV 缓存引擎。兼容 Redis 的常用命令。
 
-I/O 多路复用同时支持 epoll（reactor）与 io_uring（proactor）两种后端，启动时二选一。多路复用器通过单工通道（TcpSendChannel / TcpReceiveChannel 等）完成事件派发：I/O 请求在通道内排队，复用器收到内核事件后回调将挂起的协程置为就绪。
+## 特性
 
-reactor 路径（epoll）将通道内排队的 I/O 汇聚为一次 readv / writev / pwritev 提交；proactor 路径（io_uring）则在准备阶段直接批量下发全部排队请求，并按完成事件推进读写偏移。
+- yieldable RESP 协议解析器：数据不完整时挂起（co_yield），补齐后继续解析，有效处理 TCP 粘包/拆包。
 
-C++20 协程任务调度器：支持对称转移（final_suspend 返回 continuation，以尾调用方式衔接）与任务取消；并提供 WhenAll / WhenAny 结构化并发组合子，作用域退出时自动取消剩余子任务。
+- 索引和淘汰策略：跳表、红黑树、哈希表可选作存储索引；支持 LRU / LFU 淘汰策略。
 
-定时任务通道：timerfd + 优先队列，配合任务取消机制实现超时取消。
+- 内存池：jemalloc 或定制的内存分配器，缓存频繁分配与释放的内存块，避免频繁内存分配。
 
-信号通道：signalfd 信号通道、eventfd 通知通道，结合定时任务实现优雅退出。
+- Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
 
-条件变量：基于 eventfd 的 ConditionVariable 提供跨线程协程条件等待/唤醒原语。
+- 全量备份（即 Redis RDB）：在辅助线程中 fork，子进程完成序列化写盘，主线程协程通过条件等待/唤醒原语获知结果；启动时用 mmap 加载 RDB 并解析。加载备份文件时采用 mmap 策略。
 
-网络、文件 I/O 通道：异步的 TcpSocket 收发、文件读写。
+- 增量备份（即 Redis AOF）：每条写命令编码为一条完整日志条目，命令协程等待该条 pwrite 完成后再应答，保证条目完整、有序、可回放；通道排队策略下吞吐良好。
 
-RDMA 通道：基于 iWARP 协议的 RDMA 收发通道。每个监听/连接端点持有独立的发送、接收内存池（由该端点接纳的连接共享这一对池），内存池基于 bitmap 管理块的分配与回收。
-
-协程帧池化策略：采用类似于指数平均的池化策略，回收时缓存协程帧供后续使用，根据协程帧使用情况动态回收。
-
-## 上层应用：KV 存储引擎
-
-yieldable RESP 协议解析器：数据不完整时挂起（co_yield），补齐后继续解析，有效处理 TCP 粘包/拆包。
-索引和淘汰策略：跳表、红黑树、哈希表可选作存储索引；支持 LRU / LFU 淘汰策略。
-
-Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
-
-全量备份（即 Redis RDB）：在辅助线程中 fork，子进程完成序列化写盘，主线程协程通过条件等待/唤醒原语获知结果；启动时用 mmap 加载 RDB 并解析。加载备份文件时采用 mmap 策略。
-
-增量备份（即 Redis AOF）：每条写命令编码为一条完整日志条目，命令协程等待该条 pwrite 完成后再应答，保证条目完整、有序、可回放；通道排队策略下吞吐良好。
-
-主从复制：master 与 replica 通过 RDMA 通道通信，先经 RDMA 全量同步 RDB 文件，随后基于 backlog 策略进行实时增量同步。
+- 主从复制：master 与 replica 通过 RDMA 通道通信，先经 RDMA 全量同步 RDB 文件，随后基于 backlog 策略进行实时增量同步。
 
 ## 构建依赖
 
@@ -46,7 +31,7 @@ Slab 对象池：池化高频对象，避免频繁分配与释放的开销。
   GCC 11+ / Clang 14+ 具备所需特性）。
 - **Ninja**（可选，任意 CMake 生成器均可；实测 1.13.2）。
 
-### Linux 开发包（配置前必须安装）
+### Linux 开发包
 
 RDMA、io_uring 与 BPF 相关库通过系统 `pkg-config` 解析（不走 vcpkg），
 请先安装开发包：
@@ -58,62 +43,45 @@ sudo apt-get install -y rdma-core libibverbs-dev librdmacm-dev liburing-dev libb
 
 ### vcpkg 与第三方库
 
-项目使用 vcpkg 的**清单模式**：依赖写在 `vcpkg.json`，安装目录固定在仓库内的
-`vcpkg_installed/`，三元组为 `x64-linux`。构建前只需让 `VCPKG_ROOT` 指向本机的 vcpkg——
-顶层 CMakeLists 会用它设置 `CMAKE_TOOLCHAIN_FILE`，之后的安装与编译由 CMake 自动完成。
+项目使用 vcpkg 进行包管理。若没有安装 vcpkg，可通过如下命令快速安装：
 
-| 依赖 | 用途 |
-| --- | --- |
-| `cli11` | 命令行解析（`Server`、`Client`） |
-| `spdlog` | 日志 |
-| `gtest` | 单元测试（`BUILD_TESTING`） |
-| `benchmark` | 基准测试（Google Benchmark） |
-| `crcpp` | 快照文件 CRC-64 校验 |
-| `nlohmann-json` | JSON |
-| `jemalloc` | 可选的进程级分配器（`LD_PRELOAD`） |
+```bash
+git clone https://github.com/microsoft/vcpkg.git /path/to/vcpkg --depth 1
+cd /path/to/vcpkg
+./bootstrap-vcpkg.sh
+export VCPKG_ROOT=/path/to/vcpkg # 设置 vcpkg 根目录环境变量
+```
 
-以下为通过系统 `pkg-config` 解析的 Linux 依赖（构建前需安装）：
+<!-- 以下为通过系统 `pkg-config` 解析的 Linux 依赖（构建前需安装）：
 
 | 系统包 | 用途 |
 | --- | --- |
 | `librdmacm` + `libibverbs`（`librdmacm-dev`、`libibverbs-dev`） | RDMA 复制与 wire 测试 |
 | `liburing`（`liburing-dev`） | io_uring 多路复用器（`URingMultiplexer`） |
-| `libbpf`（`libbpf-dev`） | BPF 相关实验 |
+| `libbpf`（`libbpf-dev`） | BPF 相关实验 | -->
 
 ### RDMA 硬件
 
-复制与 `RDMA*` 测试需要一块 RDMA 设备或软件模拟：
+复制与 `RDMA*` 测试需要 RDMA 设备，可通过软件模拟：
 
 ```bash
-sudo rdma link add siw0 type siw netdev <dev>
+sudo rdma link add siw0 type siw netdev {net_device}
 ```
 
 ## 构建
 
 ```bash
 export VCPKG_ROOT=/path/to/vcpkg
-cmake -S . -B build -G Ninja
-cmake --build build
+cmake -S . -B build -G "Ninja Multi-Config"
+cmake --build build --config Release
 ```
-
-常用目标：
-
-| 目标 | 说明 |
-| --- | --- |
-| `Server` | 服务器：`build/Application/server/Server` |
-| `Client` | 命令行客户端：`build/Application/Client/Client` |
-| `NBIOTesting`、`ServerTesting` | 单元测试可执行文件 |
-| `Echo`、`Sleep`、`Grace`、`SystemSignalSvc`、`ScopedSystemSignalService`、`Condition` | NBIO 示例 |
-| `RdmaEcho`、`RdmaAsyncEcho` | RDMA 示例 |
-| `Tutorial_RdmaServer`、`Tutorial_RdmaClient` | `Tutorial/RDMA` 的原生 verbs 例子 |
-| `RdmaFileBenchmark` | RDMA 链路吞吐基准（NBIO 层），需 `-DKVSTORE_BUILD_BENCHMARKS=ON` |
 
 ## 测试
 
 ```bash
-ctest --test-dir build --output-on-failure     # 全部用例；RDMA 的 4 个会跳过
+ctest --test-dir build --output-on-failure
 
-export KVSTORE_RDMA_ADDRESS=192.168.0.201      # 有 RDMA 设备时，让它们真正跑起来
+export KVSTORE_RDMA_ADDRESS=192.168.0.201
 ctest --test-dir build --output-on-failure
 ```
 
@@ -122,41 +90,21 @@ ctest --test-dir build --output-on-failure
 ## 运行
 
 ```bash
-# 单机
-./build/Application/server/Server --port 8080
-
-# 主从（同一台机器上的两个实例）
-./build/Application/server/Server \
-    --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
-./build/Application/server/Server --port 8082 --rdma-device siw0
-
-# 副本跟随哪个主节点，是运行时由客户端告诉它的
-./build/Application/Client/Client 127.0.0.1 8082 SLAVEOF 192.168.0.201 8081
-
-# 客户端：Client [host] [port]，默认 127.0.0.1:6379
-./build/Application/Client/Client 127.0.0.1 8080
+# 启动 master，使用 epoll 多路复用器
+./build/Application/server/Release/server --config ./configs/master.conf --multiplexer epoll
+# 启动 slave，使用 io_uring 多路复用器
+./build/Application/server/Release/server --config ./configs/slave.conf --multiplexer io_uring
 ```
 
-服务器也可以完全由启动命令文件驱动——每一行都是一条命令，管道里的命令同样能在文件里写：
+配置文件在 `configs/` 下，参考样例：
 
-```bash
-./build/Application/server/Server -c Application/master.conf
-```
-
-`Application/master.conf`（对外提供服务，并在 RDMA 设备上服务副本）：
-
-```
-config port 8080
-config replication_address 192.168.0.201 8081
-config rdma_device siw0
-config appendonly yes
-```
-
-`Application/replica.conf`（一个已经对外服务、但还没被告知跟随谁的副本）：
-
-```
-config port 8082
-config rdma_device siw0
+```conf
+CONFIG SET PORT 6666 # Master 服务端口
+CONFIG SET RDMA_DEVICE siw0 # RDMA 设备
+CONFIG SET REPLICATION_ADDRESS 192.168.4.146 6667 # replica 服务 IP 地址和端口
+CONFIG SET APPENDONLY NO # 是否开启 AOF
+CONFIG SET AOF_CHECKSUM NO # 是否开启 AOF 校验
+CONFIG SAVE 100 1000 # 每隔 100 秒保存至少 1000 次修改，与 Redis 行为类似
 ```
 
 ## 基准测试
@@ -167,12 +115,3 @@ config rdma_device siw0
 | --- | --- | --- |
 | 吞吐：`redis-benchmark`，含多路复用器对比、流水线深度（对照 Redis）、AOF、周期备份 | `benchmark/pipeline.sh` 等 | [`benchmark/RSP.md`](benchmark/RSP.md) |
 | 内存：多轮插入/删除下的 RSS 与复用情况，对比无池化、自定义池化与 jemalloc | `benchmark/memory.py` | [`benchmark/memory.md`](benchmark/memory.md) |
-
-## 文档
-
-- `Documentation/REPLICATION.md` — RDMA 全量与增量同步
-- `Documentation/CONFIG.md` — 启动命令文件与启动期设置
-- `Documentation/RDMA.md`、`NBIO/Core/RDMA.md` — RDMA 后端与运行时
-- `Documentation/PSYNC.md` — 两个服务器之间的协议；`Documentation/SLAVEOF.md` — 客户端
-  用来发起复制的命令
-- `DESIGN.md`、`PITFALLS.md` — 设计取舍与踩过的坑
