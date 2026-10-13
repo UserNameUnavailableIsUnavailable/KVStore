@@ -182,7 +182,7 @@ class ReplicationService {
     // regions and its chunks, so they all have to be gone before it is. Shared,
     // because a connection keeps it alive for as long as it runs.
     std::shared_ptr<nbio::net::RdmaResourceManager> resources_;
-    std::optional<nbio::net::RdmaAcceptService> acceptor_;
+    std::optional<nbio::net::RdmaListenService> listener_;
 
     // The replicas being served. This vector is the record() path's list, so a
     // replica is held here for as long as its buffer has to be filled.

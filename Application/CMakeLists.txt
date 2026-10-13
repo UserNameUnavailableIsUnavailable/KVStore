@@ -19,4 +19,6 @@ if(USE_JEMALLOC)
 endif()
 
 add_subdirectory(server)
-add_subdirectory(client)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/client/CMakeLists.txt")
+	add_subdirectory(client)
+endif()

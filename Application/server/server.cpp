@@ -11,12 +11,14 @@
 #include <nbio/core.hpp>
 #include <nbio/time.hpp>
 #include <nbio/utility.hpp>
+#include <coroutine>
 #include <cstdlib>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -149,12 +151,15 @@ nbio::async::Task<void> Server::apply_commands(std::vector<CommandLine> commands
 
 nbio::async::Task<void> Server::serve(const nbio::net::Address& address) {
     // The listener lives here, in the frame of the loop that uses it, because the
-    // accept channel keeps a reference to the acceptor it waits on.
-    nbio::net::TcpAcceptService listener{address};
+    // accept channel keeps a reference to the listener it waits on.
+    nbio::net::TcpListenService listener{address};
+    if (auto result = listener.listener().ToggleNoDelay(false); !result) {
+        throw std::system_error(result.error(), "setsockopt(TCP_NODELAY) failed");
+    }
     co_await accept_clients(listener);
 }
 
-nbio::async::Task<void> Server::accept_clients(nbio::net::TcpAcceptService& listener) {
+nbio::async::Task<void> Server::accept_clients(nbio::net::TcpListenService& listener) {
     while (true) {
         auto accepted = co_await listener.Accept();
         if (!accepted) {
@@ -174,6 +179,18 @@ namespace {
 // server buffer without limit, and a batch past this size is not going to leave
 // in one write anyway.
 constexpr std::size_t kReplyBatchBytes = 64U * 1024U;
+constexpr std::size_t kCommandsPerTurn = 1024;
+
+struct PipelineYield {
+    bool await_ready() const noexcept { return false; }
+
+    template <typename Promise>
+    void await_suspend(std::coroutine_handle<Promise> handle) const {
+        nbio::runtime::Daemon::scheduler().Submit(nbio::async::Coroutine::FromHandle(handle));
+    }
+
+    void await_resume() const noexcept {}
+};
 }  // namespace
 
 nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> session) {
@@ -213,11 +230,11 @@ nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> 
         // Replies are appended rather than written, so a pipeline leaves in one
         // write instead of one write per command.
         RESP::Sender sender(session->transport(), *send_buffer);
+        std::size_t commands_this_turn = 0;
         while (true) {
             // A single-key read is answered out of the words it was read with,
             // before any of this: see answer_read.
-            std::optional<RESP::Object> answered =
-                command->object ? std::nullopt : answer_read(command->words, *session);
+            std::optional<RESP::Object> answered;
             if (!answered) {
                 // A command the client wrote as an array of bulk strings is
                 // answered out of the words read where they lie; anything else --
@@ -237,6 +254,10 @@ nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> 
                     co_return;
                 }
             }
+            if (++commands_this_turn == kCommandsPerTurn) {
+                commands_this_turn = 0;
+                co_await PipelineYield{};
+            }
 
             auto next = receiver.TryReceiveCommand();
             if (next) {
@@ -253,29 +274,6 @@ nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> 
             co_return;
         }
     }
-}
-
-std::optional<RESP::Object> Server::answer_read(std::span<const std::string_view> words, TcpSessionService& session) {
-    // A read of one key is most of what a server is asked, and it is worth
-    // answering without building a command for it. The answer needs the key the
-    // client wrote -- which is already here, in the words the request was read
-    // as -- and what the store holds under it. Built as a command, that key
-    // becomes a string of its own, which is an allocation for every key longer
-    // than the small-string case (a benchmark key is), and the answer then
-    // travels out through a validation, a dispatch, a coroutine at every step and
-    // a variant, none of which is what looking a key up takes.
-    //
-    // A transaction is the one case where the command has to be built anyway: a
-    // command inside a MULTI is not run when it arrives but when EXEC does, so it
-    // has to be kept, with a key that outlives the request it was read from.
-    if (session.is_multi || words.size() != 2 || !KV::IsCommandName(words.front(), KV::CommandType::kGet)) {
-        return std::nullopt;
-    }
-
-    // The key is copied into the connection's own buffer, which grows to the
-    // longest key once and is reused for every lookup after that.
-    session.lookup_key.assign(words[1].data(), words[1].size());
-    return RESP::Object(RESP::BulkString{.value = store_.get(session.lookup_key)});
 }
 
 nbio::async::Task<RESP::Object> Server::dispatch(TcpSessionService& session, KV::Command command) {

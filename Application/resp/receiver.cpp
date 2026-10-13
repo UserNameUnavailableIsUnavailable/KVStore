@@ -2,7 +2,7 @@
 
 #include <Application/resp/resp.hpp>
 #include <nbio/utility/buffer.hpp>
-#include <nbio/net/tcp_socket.hpp>
+#include <nbio/net/socket.hpp>
 #include <nbio/runtime/daemon.hpp>
 #include <nbio/net/tcp_session_service.hpp>
 
@@ -164,10 +164,15 @@ nbio::async::Task<std::optional<Receiver::Command>> Receiver::ReceiveCommand() {
 }
 
 std::optional<Receiver::Command> Receiver::TryReceiveCommand() {
-    no_command_ = false;
     decode_error_.clear();
-    Release();
-    return Take();
+    do {
+        no_command_ = false;
+        Release();
+        if (auto command = Take()) {
+            return command;
+        }
+    } while (no_command_);
+    return std::nullopt;
 }
 
 std::optional<Object> Receiver::Finish(DecodeResult& decoded) {

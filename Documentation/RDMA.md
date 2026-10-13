@@ -85,7 +85,7 @@ boundaries are an implementation detail the `TcpSessionService` hides.
 
 ### No sockets; three layers of identity
 
-**The RDMA backend never creates a socket.** `nbio::core::TcpSocket` is not
+**The RDMA backend never creates a socket.** `nbio::core::Socket` is not
 used at all — there is no `socket()`/`bind()`/`accept()` anywhere under
 `NBIO/RDMA`. Two things take its place:
 
@@ -377,7 +377,7 @@ deployments.
 
 A channel is **pinned to exactly one underlying object** — for the transport
 channels that object is a `Connection` (a queue pair) — and it can never migrate
-off it. That part matches `NBIO`, where a channel is pinned to a `TcpSocket`.
+off it. That part matches `NBIO`, where a channel is pinned to a `Socket`.
 
 What differs is the handle. A channel mirrors the `NBIO` protocol (`arm` /
 `disarm` / `Park` / `handle_event`), but it carries **its own identity**, not the
@@ -618,7 +618,7 @@ struct SendJob
 A `Connection` is a thin owner around one `rdma_cm_id *`, which already holds
 the queue pair (`id->qp`), the protection domain and the CQs. It is the
 "underlying object" that a send channel and a receive channel are pinned to,
-playing the role `nbio::core::TcpSocket` plays in `NBIO` — but with no
+playing the role `nbio::core::Socket` plays in `NBIO` — but with no
 socket: there is no fd for the connection, and the object is reached through
 `rdma_cm` and the verbs API rather than through the kernel's socket interface.
 
@@ -826,7 +826,7 @@ NBIO/RDMA/
 
 The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`,
 `Connection`, `EventChannel`) sit *below* the channel layer, playing the role
-`nbio::core::TcpSocket` plays for `NBIO`. They do **not** belong in
+`nbio::core::Socket` plays for `NBIO`. They do **not** belong in
 `nbio::core`, for two reasons:
 
 1. **Dependencies.** `NBIO/Core/CMakeLists.txt` has no `find_package` at
@@ -836,7 +836,7 @@ The low-level wrappers (`Device`, `CompletionQueue`, `QueuePair`, `MemoryRegion`
    belongs to `RDMA`. Putting the primitives in Core would force `libibverbs` /
    `librdmacm` on every consumer of `NBIO`, including a TCP-only build.
 2. **Reach.** Core holds primitives that are dependency-free *and* useful to more
-   than one backend (`TcpSocket`, `File`, `Timer`, `Notifier`, `SystemSignal`). No other
+   than one backend (`Socket`, `File`, `Timer`, `Notifier`, `SystemSignal`). No other
    backend can use an `ibv_qp`. What RDMA genuinely shares with Core is the value
    types it does not own — `Address` (`rdma_cm` takes a `sockaddr`) and `Buffer`.
 
@@ -898,7 +898,7 @@ so that non-Linux configuration is unaffected.
    | Layer | Contents |
    |---|---|
    | `NBIO::Async` | `Task`, `Coroutine`, `Scheduler` |
-   | `nbio::core` | `Address`, `Buffer`, `TcpSocket`, `File`, `Timer`, `Notifier`, `SystemSignal` |
+   | `nbio::core` | `Address`, `Buffer`, `Socket`, `File`, `Timer`, `Notifier`, `SystemSignal` |
    | `NBIO::IO` | `Channel` base, `Multiplexer` interface, `ChannelType`, `TimerChannel`, `NotifierChannel`, `SystemSignalChannel`, `ConditionVariable`, `Engine` skeleton, `Runtime` tag |
    | `NBIO::NBIO` | epoll / io_uring multiplexers, socket channels, `TcpSessionService`, file channels |
    | `NBIO::RDMA` | RDMA multiplexer, RDMA channels, `TcpSessionService`, `MemoryRegion` |

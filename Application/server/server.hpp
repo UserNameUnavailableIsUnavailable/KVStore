@@ -6,7 +6,7 @@
 #include <nbio/net/address.hpp>
 #include <nbio/notification/condition_variable.hpp>
 #include <nbio/runtime/daemon.hpp>
-#include <nbio/net/tcp_accept_service.hpp>
+#include <nbio/net/tcp_listen_service.hpp>
 #include <nbio/net/tcp_session_service.hpp>
 #include <chrono>
 #include <cstdint>
@@ -88,9 +88,9 @@ class Server {
     nbio::async::Task<void> apply_commands(std::vector<CommandLine> commands);
 
     nbio::async::Task<void> serve(const nbio::net::Address& address);
-    // The listener is the caller's: it owns the acceptor the channel waits on, so it
+    // The listener is the caller's: it owns the listener the channel waits on, so it
     // has to outlive the loop that accepts through it.
-    nbio::async::Task<void> accept_clients(nbio::net::TcpAcceptService& listener);
+    nbio::async::Task<void> accept_clients(nbio::net::TcpListenService& listener);
     nbio::async::Task<void> serve_client(std::shared_ptr<TcpSessionService> session);
 
    private:
@@ -98,12 +98,6 @@ class Server {
         std::chrono::seconds seconds{0};
         std::size_t changed{0};
     };
-
-    // The answer to a command that reads one key, or nothing when the request is
-    // not one: see the definition for why it is worth answering before a command
-    // is built for it.
-    [[nodiscard]] std::optional<RESP::Object> answer_read(std::span<const std::string_view> words,
-                                                          TcpSessionService& session);
 
     nbio::async::Task<RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
     nbio::async::Task<RESP::Object> execute(const KV::Command& command);

@@ -6,6 +6,7 @@
 // 'unknown RESP type marker' for PING is a benchmark that cannot run at all.
 #include <gtest/gtest.h>
 
+#include <Application/resp/receiver.hpp>
 #include <Application/resp/resp.hpp>
 #include <nbio/utility/buffer.hpp>
 #include <optional>
@@ -114,6 +115,38 @@ TEST(RESPInline, ALineWithNoWordsCarriesNoCommand) {
 
     EXPECT_EQ(result.status, RESP::DecodeStatus::kComplete);
     EXPECT_FALSE(result.object.has_value());
+}
+
+TEST(RESPReceiving, DrainsBufferedCommandsPastBlankLinesAndPreservesIncompleteTail) {
+    nbio::net::TcpSessionService session(nbio::net::TcpConnector{});
+    nbio::utility::Buffer buffer(256, 256);
+    RESP::Receiver receiver(session, buffer);
+    const std::string bytes = "*1\r\n$4\r\nPING\r\n\r\n \t\r\n"
+                              "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n*1\r\n$4\r\nPI";
+    ASSERT_TRUE(buffer.write(bytes.data(), bytes.size()));
+
+    auto command = receiver.TryReceiveCommand();
+    ASSERT_TRUE(command);
+    ASSERT_EQ(command->words.size(), 1U);
+    EXPECT_EQ(command->words[0], "PING");
+
+    command = receiver.TryReceiveCommand();
+    ASSERT_TRUE(command);
+    ASSERT_EQ(command->words.size(), 2U);
+    EXPECT_EQ(command->words[0], "GET");
+    EXPECT_EQ(command->words[1], "key");
+
+    EXPECT_FALSE(receiver.TryReceiveCommand());
+    EXPECT_FALSE(receiver.no_command());
+    EXPECT_TRUE(receiver.decode_error().empty());
+    ASSERT_TRUE(buffer.write("NG\r\n", 4));
+
+    command = receiver.TryReceiveCommand();
+    ASSERT_TRUE(command);
+    ASSERT_EQ(command->words.size(), 1U);
+    EXPECT_EQ(command->words[0], "PING");
+    EXPECT_FALSE(receiver.TryReceiveCommand());
+    EXPECT_TRUE(receiver.decode_error().empty());
 }
 
 TEST(RESPInline, TheMultibulkDialectStillDecodes) {

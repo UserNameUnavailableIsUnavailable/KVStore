@@ -79,7 +79,10 @@ std::uint64_t FileBytes(const std::filesystem::path& file) noexcept {
     return error ? 0 : static_cast<std::uint64_t>(size);
 }
 
-std::string Endpoint(const nbio::net::Address& address) { return address.ip() + ":" + std::to_string(address.port()); }
+std::string Endpoint(const nbio::net::Address& address)
+{
+    return *address.ip() + ":" + std::to_string(*address.port());
+}
 
 // A RESP byte stream over a delivery link.
 //
@@ -306,13 +309,13 @@ nbio::async::Task<void> ReplicationService::serve() {
         // The device, its regions and its pools belong to the service, not to
         // this frame: every connection is built from them and every link outlives
         // the accept loop. They were opened when the service was constructed.
-        acceptor_.emplace(*resources_,
+        listener_.emplace(*resources_,
                           nbio::net::Address::FromV4(options_.listen_address, options_.listen_port));
         spdlog::info("replication: serving replicas on rdma://{}:{} as replid {}", options_.listen_address,
                      options_.listen_port, replid_);
 
         while (true) {
-            auto session = co_await acceptor_->Accept();
+            auto session = co_await listener_->Accept();
             if (!session) [[unlikely]] {
                 spdlog::error("replication: the listener stopped: {}", session.error().message());
                 co_return;
