@@ -48,12 +48,14 @@ option(KVSTORE_BUILD_BENCHMARKS "Build the throughput benchmarks" ON)
 
 include_directories(
 	SYSTEM
-	${CMAKE_SOURCE_DIR}
+	${CMAKE_SOURCE_DIR} # TODO: remove this line after migrating Application to source
+	${CMAKE_SOURCE_DIR}/include
 	${CMAKE_SOURCE_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include
 )
 
 add_subdirectory(Tutorial)
-add_subdirectory(Application)
+add_subdirectory(source/resp)
+add_subdirectory(Application) # TODO: migrate to source
 
 set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")
 if(FIND_TARGET)
