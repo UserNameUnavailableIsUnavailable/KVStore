@@ -1,0 +1,3 @@
+add_library(kvstore_memory INTERFACE)
+target_sources(kvstore_memory INTERFACE memory_pool.cpp)
+target_compile_features(kvstore_memory INTERFACE cxx_std_20)

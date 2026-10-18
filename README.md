@@ -97,9 +97,9 @@ ctest --test-dir build --output-on-failure
 
 ```bash
 # 启动 master，使用 epoll 多路复用器
-./build/Application/server/Release/server --config ./configs/master.conf --multiplexer epoll
+./build/source/server/Release/server --config ./configs/master.conf --multiplexer epoll
 # 启动 slave，使用 io_uring 多路复用器
-./build/Application/server/Release/server --config ./configs/slave.conf --multiplexer io_uring
+./build/source/server/Release/server --config ./configs/slave.conf --multiplexer io_uring
 ```
 
 配置文件在 `configs/` 下，参考样例：
