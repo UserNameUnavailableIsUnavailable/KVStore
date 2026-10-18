@@ -1,0 +1,4 @@
+add_library(kvstore_replication replication_service.cpp)
+target_compile_features(kvstore_replication PUBLIC cxx_std_20)
+target_include_directories(kvstore_replication PUBLIC "${CMAKE_SOURCE_DIR}/include")
+target_link_libraries(kvstore_replication PUBLIC kvstore_backup kvstore_commands kvstore_resp nbio::nbio)

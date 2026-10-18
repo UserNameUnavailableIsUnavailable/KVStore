@@ -6,6 +6,20 @@ A RESP-compatible key/value server written in C++20: clients speak TCP and RESP,
 speak RDMA to each other, data lives in a snapshot (RDB) and an append-only log (AOF), and
 writes reach the replicas as they happen.
 
+## Storage API
+
+`Store::set(key, value)` inserts or updates an owned value and returns whether
+the write was accepted. `Store::erase(key)` deletes a live key and returns
+whether one was removed; deletion is no longer expressed by passing `nullopt`
+to `set`. Empty values remain valid stored values.
+
+`LRUStore` with `HashMap` accepts borrowed string views for SET and lookup.
+`get_ref(key)` returns a pointer to the stored value, or `nullptr` for a missing
+or expired key. Do not retain it across store mutations or coroutine suspension;
+use `get(key)` when an owned copy is needed. The TCP fast path encodes borrowed
+GET values into its output buffer before suspending, and keeps owning commands
+for transactions, AOF writes, and writes with attached replicas.
+
 ## Build requirements
 
 ### System and toolchain
@@ -78,8 +92,7 @@ Targets worth knowing:
 
 | Target | What it is |
 | --- | --- |
-| `Server` | The server: `build/Application/server/Server` |
-| `Client` | The command line client: `build/Application/Client/Client` |
+| `Server` | The server: `build/source/server/Release/server` |
 | `NBIOTesting`, `ServerTesting` | The test executables |
 | `Echo`, `Sleep`, `Grace`, `SystemSignalSvc`, `ScopedSystemSignalService`, `Condition` | NBIO examples |
 | `RdmaEcho`, `RdmaAsyncEcho` | RDMA examples |
@@ -102,28 +115,25 @@ packet and every credit.
 
 ```bash
 # stand-alone
-./build/Application/server/Server --port 8080
+./build/source/server/Release/server --port 8080
 
 # a master and a replica on one machine
-./build/Application/server/Server \
+./build/source/server/Release/server \
     --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
-./build/Application/server/Server --port 8082 --rdma-device siw0
+./build/source/server/Release/server --port 8082 --rdma-device siw0
 
-# and the replica is pointed at the master at runtime, by a client
-./build/Application/Client/Client 127.0.0.1 8082 SLAVEOF 192.168.0.201 8081
-
-# the client: Client [host] [port], 127.0.0.1:6379 by default
-./build/Application/Client/Client 127.0.0.1 8080
+# point the replica at the master with a RESP-compatible client
+redis-cli -p 8082 SLAVEOF 192.168.0.201 8081
 ```
 
 A server can also be driven entirely by a startup command file, in which every line is a
 command — anything a connection may send, a file may say:
 
 ```bash
-./build/Application/server/Server -c Application/master.conf
+./build/source/server/Release/server -c configs/master.conf
 ```
 
-`Application/master.conf` (serves clients, and replicas on the RDMA device):
+`configs/master.conf` (serves clients, and replicas on the RDMA device):
 
 ```
 config port 8080

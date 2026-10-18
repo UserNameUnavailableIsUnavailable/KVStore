@@ -1,0 +1,11 @@
+add_library(kvstore_checksum checksum.cpp)
+target_compile_features(kvstore_checksum PUBLIC cxx_std_20)
+target_include_directories(kvstore_checksum PUBLIC "${CMAKE_SOURCE_DIR}/include")
+
+if(BUILD_TESTING)
+    find_package(GTest CONFIG REQUIRED)
+    add_executable(checksum_testing testing.cpp)
+    target_link_libraries(checksum_testing PRIVATE kvstore_checksum GTest::gtest_main)
+    include(GoogleTest)
+    gtest_discover_tests(checksum_testing)
+endif()

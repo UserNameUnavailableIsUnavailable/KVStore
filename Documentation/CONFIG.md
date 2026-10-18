@@ -74,6 +74,19 @@ they are:
   on. A file has to name it because the choice is made before the server accepts
   anything, not because the choice cannot be changed.
 
+  `eviction_policy` is also writable at runtime:
+
+  ```
+  CONFIG SET eviction_policy lru
+  CONFIG SET eviction_policy noeviction
+  ```
+
+  `noeviction` is the default: it does not track recency and refuses new keys if
+  the store reaches its capacity. `lru` tracks key recency for least-recently-used
+  eviction. The server currently has no maximum-capacity setting, so the default
+  store is unbounded unless a capacity is set by an embedding application.
+  `CONFIG GET eviction_policy` reports the active policy.
+
   `save` is also writable at runtime, and it is **not** the `SAVE` command.
   `CONFIG SET save <seconds> <changed>` enables staged background snapshots: once
   the server has seen at least `<changed>` mutating commands, it runs `BGSAVE` as
