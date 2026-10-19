@@ -9,8 +9,21 @@
 #include <iostream>
 #include <span>
 #include <system_error>
+#include <limits>
+#include <random>
+#include <storage/write_log.hpp>
 
 namespace KV {
+AppendOnlyFile::AppendOnlyFile(std::filesystem::path path) : path_(std::move(path)) {
+    std::random_device random;
+    epoch_ = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
+    if (!epoch_) epoch_ = 1;
+}
+
+void AppendOnlyFile::observe() const noexcept {
+    kvstore_write_log_v1(epoch_, offset_, nullptr, 0);
+}
+
 bool AppendOnlyFile::enable() {
     if (enabled_) {
         return true;
@@ -80,6 +93,31 @@ bool AppendOnlyFile::verify_checksum(nbio::utility::Buffer& buffer, std::span<co
 }
 
 nbio::async::Task<void> AppendOnlyFile::append(const Command& command) {
+    auto payload = log(command);
+    co_await append_encoded(payload);
+}
+
+std::string_view AppendOnlyFile::log(const Command& command) {
+    if (!logging()) return {};
+    if (!log_buffer_) {
+        log_buffer_ = std::make_unique<nbio::utility::Buffer>(kMaximumEntryBytes, kMaximumEntryBytes);
+    }
+    log_buffer_->clear();
+    const auto object = CommandToRESP(command);
+    auto encoder = RESP::Encode(object, *log_buffer_);
+    if (encoder.poll() != RESP::EncodeStatus::kComplete) {
+        throw std::runtime_error("logical write-log record exceeds fixed buffer capacity");
+    }
+    const auto payload = log_buffer_->string_view();
+    if (payload.size() > std::numeric_limits<std::uint64_t>::max() - offset_) {
+        throw std::overflow_error("logical write-log offset exhausted");
+    }
+    offset_ += payload.size();
+    kvstore_write_log_v1(epoch_, offset_, payload.data(), payload.size());
+    return payload;
+}
+
+nbio::async::Task<void> AppendOnlyFile::append_encoded(std::string_view payload) {
     if (!enabled_) {
         co_return;
     }
@@ -91,14 +129,8 @@ nbio::async::Task<void> AppendOnlyFile::append(const Command& command) {
 
     try {
         nbio::utility::Buffer buffer{kInitialEntryBytes, kMaximumEntryBytes};
-        const auto object = CommandToRESP(command);
-        auto encoder = RESP::Encode(object, buffer);
-        while (encoder.poll() == RESP::EncodeStatus::kNeedFlush) {
-            // The encoder wants room, not a flush: growing the buffer keeps the
-            // entry in one piece and the write that follows to one call.
-            if (!buffer.reserve(buffer.capacity())) {
-                throw std::runtime_error("AOF entry is larger than the log can hold");
-            }
+        if (!buffer.reserve(payload.size()) || !buffer.write(payload.data(), payload.size())) {
+            throw std::runtime_error("AOF entry is larger than the log can hold");
         }
 
         // A checksum is an entry of its own after the command: a bulk string of the

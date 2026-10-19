@@ -9,6 +9,7 @@
 #include <nbio/fs/file_stream_service.hpp>
 #include <nbio/runtime/daemon.hpp>
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -16,11 +17,12 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <replication/replication_info.hpp>
 
 namespace KV {
 class AppendOnlyFile {
    public:
-    explicit AppendOnlyFile(std::filesystem::path path = "appendonly.aof") : path_(std::move(path)) {}
+    explicit AppendOnlyFile(std::filesystem::path path = "appendonly.aof");
 
     bool enable();
     void disable() noexcept;
@@ -45,6 +47,19 @@ class AppendOnlyFile {
     bool checksum() const noexcept { return checksum_; }
 
     nbio::async::Task<void> append(const Command& command);
+    // Synchronous post-mutation boundary, independent of optional disk persistence.
+    // Returned bytes are borrowed until the next log() call; never retain across await.
+    std::string_view log(const Command& command);
+    nbio::async::Task<void> append_encoded(std::string_view payload);
+    void activate_replication() noexcept { replication_active_ = true; }
+    void replication_info(const replication::ReplicationInfo* info) noexcept { replication_info_ = info; }
+    bool logging() const noexcept {
+        return enabled_ || (replication_info_
+            ? replication_info_->replica_count.load(std::memory_order_acquire) != 0 : replication_active_);
+    }
+    void observe() const noexcept;
+    std::uint64_t epoch() const noexcept { return epoch_; }
+    std::uint64_t offset() const noexcept { return offset_; }
 
     template <typename Apply>
     bool replay(Apply&& apply) const {
@@ -112,5 +127,10 @@ class AppendOnlyFile {
     std::shared_ptr<nbio::fs::FileStreamService> file_;
     bool enabled_{false};
     bool checksum_{false};
+    std::uint64_t epoch_;
+    std::uint64_t offset_ = 0;
+    bool replication_active_ = false;
+    const replication::ReplicationInfo* replication_info_ = nullptr;
+    std::unique_ptr<nbio::utility::Buffer> log_buffer_;
 };
 }  // namespace KV

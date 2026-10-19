@@ -1,0 +1,11 @@
+execute_process(COMMAND "${OBJDUMP}" -d "${SERVER}"
+    RESULT_VARIABLE result OUTPUT_VARIABLE assembly ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Cannot inspect server hook: ${error}")
+endif()
+if(NOT assembly MATCHES "<kvstore_write_log_v1>:")
+    message(FATAL_ERROR "Release server lost the versioned write-log hook symbol")
+endif()
+if(NOT assembly MATCHES "[ \t](call[q]?|bl)[ \t]+[^\n]*<kvstore_write_log_v1>")
+    message(FATAL_ERROR "Server has no actual call to the write-log hook")
+endif()

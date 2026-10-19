@@ -1,2 +1,1 @@
-./build/source/server/Release/server --config ./configs/slave.conf --multiplexer epoll
-
+./build/applications/Release/server --config ./configs/slave.conf --multiplexer io_uring

@@ -93,14 +93,25 @@ void Server::run(const ServerOptions& options) {
         .listen_port = replication_port,
         .listen_address = replication_address,
         .rdma_device = rdma_device,
+        .daemon_endpoint = options.replication_daemon,
+        .repld_path = options.repld_path,
+        .multiplexer = options.multiplexer,
+        .epoch = aof_.epoch(),
     };
     ReplicationService::Host host{
-        .snapshot_file = [this] { return backup_.path(); },
-        .snapshot = [this] { return backup_.save(Backup::capture(store_)); },
-        .restore = [this](const std::filesystem::path& file) { return backup_.load_from(file, store_); },
+        .snapshot_file = [this] { return replication_backup_.path(); },
+        .snapshot = [this] {
+            if (!replication_->daemon_enabled()) aof_.activate_replication();
+            return replication_backup_.save(Backup::capture(store_));
+        },
+        .restore = [this](const std::filesystem::path& file) {
+            store_.set_eviction_policy(KV::EvictionPolicy::kNoEviction);
+            return backup_.load_from(file, store_);
+        },
         .apply = [this](const KV::Command& command) { return apply_replicated_command(command); },
         .link_changed =
             [](bool up) { spdlog::info("replication: {}", up ? "the master is up" : "the master went away"); },
+        .observe_log = [this] { aof_.observe(); },
     };
     staged_save_ready_ = std::make_unique<nbio::notification::ConditionVariable>();
 
@@ -109,6 +120,7 @@ void Server::run(const ServerOptions& options) {
     }
 
     replication_ = std::make_unique<ReplicationService>(std::move(replication_options), std::move(host));
+    aof_.replication_info(replication_->replication_info());
 
     if (replication_->is_master()) {
         nbio::async::Spawn(replication_->serve());
@@ -276,9 +288,7 @@ bool Server::answer_borrowed(std::span<const std::string_view> words, nbio::util
         if (replica_read_only_) {
             appended = RESP::AppendObject(detail::Error("READONLY You can't write against a read only replica."), buffer);
         } else {
-            if (aof_.enabled() || (replication_ && replication_->has_replicas())) {
-                return false;
-            }
+            if (aof_.logging()) return false;
             if (store_.set(words[1], words[2])) {
                 note_write();
                 appended = RESP::AppendObject(RESP::Object(RESP::SimpleString{.value = "OK"}), buffer);
@@ -337,8 +347,9 @@ std::optional<RESP::Object> Server::execute_fast(const KV::Command& command) {
                 return std::nullopt;
             }
             RESP::Object response = execute_set(command);
-            if (!std::holds_alternative<RESP::SimpleError>(response.value) && replication_ != nullptr) {
-                replication_->record(command);
+            if (!std::holds_alternative<RESP::SimpleError>(response.value)) {
+                auto payload = aof_.log(command);
+                if (replication_) replication_->record(payload);
             }
             return response;
         }
@@ -363,15 +374,11 @@ nbio::async::Task<RESP::Object> Server::execute(const KV::Command& command) {
         case KV::CommandType::kGet:
             response.emplace(execute_get(command));
             break;
-            {
-                (void)command;
-                co_return RESP::Object(RESP::SimpleString{.value = "KVStore"});
-            }
         case KV::CommandType::kSet:
             response.emplace(execute_set(command));
             break;
         case KV::CommandType::kDel:
-            response.emplace(co_await execute_del(command));
+            response.emplace(execute_del(command));
             break;
         case KV::CommandType::kExists:
             response.emplace(co_await execute_exists(command));
@@ -409,11 +416,10 @@ nbio::async::Task<RESP::Object> Server::execute(const KV::Command& command) {
     // snapshot across that await would otherwise be given the write in its image
     // and then read it again from the log. Recording never waits itself.
     if (KV::IsWriteCommand(command.type) && !std::holds_alternative<RESP::SimpleError>(response->value)) {
-        if (replication_ != nullptr) {
-            replication_->record(command);
-        }
+        auto payload = aof_.log(command);
+        if (replication_) replication_->record(payload);
         if (aof_.enabled()) {
-            co_await aof_.append(command);
+            co_await aof_.append_encoded(payload);
         }
     }
     co_return std::move(*response);
@@ -438,11 +444,11 @@ RESP::Object Server::execute_set(const KV::Command& command) {
     return RESP::Object(RESP::SimpleString{.value = "OK"});
 }
 
-nbio::async::Task<RESP::Object> Server::execute_del(const KV::Command& command) {
+RESP::Object Server::execute_del(const KV::Command& command) {
     const auto& del = std::get<KV::DelParams>(command.parameters);
     const bool exists = store_.erase(del.key);
     note_write();
-    co_return RESP::Object(RESP::Integer{.value = exists ? 1 : 0});
+    return RESP::Object(RESP::Integer{.value = exists ? 1 : 0});
 }
 
 nbio::async::Task<RESP::Object> Server::execute_exists(const KV::Command& command) {
@@ -530,12 +536,11 @@ bool Server::apply_replicated_command(const KV::Command& command) {
             break;
         }
         default:
-            break;
+            return false;
     }
 
-    if (replication_ != nullptr) {
-        replication_->record(command);
-    }
+    auto payload = aof_.log(command);
+    if (replication_) replication_->record(payload);
     return true;
 }
 
@@ -643,6 +648,10 @@ nbio::async::Task<RESP::Object> Server::execute_config(const KV::Command& comman
         // unreadable.
         aof_.checksum(config.values.front() == "yes");
     } else if (config.parameter == "eviction_policy") {
+        if (config.values.front() == "lru" && replication_ &&
+            (replication_->daemon_enabled() || replication_->is_replica())) {
+            co_return detail::Error("ERR LRU eviction is not supported while daemon replication is active");
+        }
         store_.set_eviction_policy(config.values.front() == "lru" ? KV::EvictionPolicy::kLRU
                                                                   : KV::EvictionPolicy::kNoEviction);
     } else if (config.parameter == "save") {
@@ -719,7 +728,7 @@ nbio::async::Task<void> Server::staged_save_periodic() {
     while (staged_save_rule_) {
         const auto rule = *staged_save_rule_;
         auto timeout = nbio::time::SystemTimeService{}.Sleep(rule.seconds);
-        auto ready = staged_save_ready_->wait(
+        auto ready = staged_save_ready_->Wait(
             [this, expected = rule.changed] { return !staged_save_rule_ || staged_save_dirty_ >= expected; });
         co_await nbio::async::WhenAll(std::move(timeout), std::move(ready));
 

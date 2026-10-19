@@ -14,7 +14,6 @@
         "rdma"
       ],
       "platform": "linux"
-    },
-    "libbpf"
+    }
   ]
 }

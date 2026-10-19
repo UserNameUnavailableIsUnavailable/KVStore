@@ -20,9 +20,6 @@ if(USE_JEMALLOC)
         "-Wl,--whole-archive" "${JEMALLOC_LIBRARY}" "-Wl,--no-whole-archive")
 endif()
 
-add_executable(server ../main.cpp)
-target_link_libraries(server PRIVATE server_impl CLI11::CLI11)
-
 if(BUILD_TESTING)
     add_subdirectory(testing)
 endif()

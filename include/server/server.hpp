@@ -45,6 +45,8 @@ struct ServerOptions {
     // The rdma device replication runs on. Serving replicas needs it, and so
     // does following a master, which SLAVEOF asks for after this is settled.
     std::optional<std::string> rdma_device{};
+    std::string replication_daemon{};
+    std::string repld_path{};
     // The event multiplexer that drives this server instance.
     std::string multiplexer{"epoll"};
     // The startup command file, if one was given: each line is a command, applied
@@ -107,7 +109,7 @@ class Server {
     RESP::Object execute_get(const KV::Command& command);
     RESP::Object execute_set(const KV::Command& command);
     nbio::async::Task<RESP::Object> execute_info(const KV::Command& command);
-    nbio::async::Task<RESP::Object> execute_del(const KV::Command& command);
+    RESP::Object execute_del(const KV::Command& command);
     nbio::async::Task<RESP::Object> execute_exists(const KV::Command& command);
     nbio::async::Task<RESP::Object> execute_dbsize(const KV::Command& command);
     nbio::async::Task<RESP::Object> execute_command_info(const KV::Command& command);
@@ -133,6 +135,7 @@ class Server {
     NoEvictionStore<std::string, std::string, HashMap> store_;
     AppendOnlyFile aof_;
     Backup backup_;
+    Backup replication_backup_{"replication.rdb"};
     // The replication service this server plugs in. It is built in Run(), once
     // the store exists and the command line is known.
     std::unique_ptr<ReplicationService> replication_;

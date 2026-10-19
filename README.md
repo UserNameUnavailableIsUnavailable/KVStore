@@ -20,6 +20,15 @@
 
 - 主从复制：master 与 replica 通过 RDMA 通道通信，先经 RDMA 全量同步 RDB 文件，随后基于 backlog 策略进行实时增量同步。
 
+历史架构提案见 [eBPF 辅助的有序变更复制设计](docs/replication-design.md)。
+不代表当前实现已具备其中的保证。
+
+实验性 C++ `repld` 通过 uprobe 观察显式逻辑日志函数，实现 TCP 增量复制；RDMA 仍负责全量同步。
+通过 `--replication-daemon IPv4:port` 启用，省略该参数保留旧 RDMA 增量路径。
+AOF 关闭且共享副本计数为零时跳过日志编码；独立 daemon 捕获并转发。构建需要支持 BPF 的 clang 和 libbpf，
+运行需要 BPF 权限。目前受限环境尚未完成内核加载验证。
+使用方法与限制见 [逻辑日志 uprobe 复制指南](docs/replication-uprobe.md)。
+
 ## 构建
 
 ### 第三方库
@@ -51,8 +60,7 @@ export VCPKG_ROOT=/path/to/vcpkg # 设置 vcpkg 根目录环境变量
 | 系统包 | 用途 |
 | --- | --- |
 | `librdmacm` + `libibverbs`（`librdmacm-dev`、`libibverbs-dev`） | RDMA 复制与 wire 测试 |
-| `liburing`（`liburing-dev`） | io_uring 多路复用器（`URingMultiplexer`） |
-| `libbpf`（`libbpf-dev`） | BPF 相关实验 | -->
+-->
 
 ### RDMA 硬件
 
@@ -95,11 +103,39 @@ ctest --test-dir build --output-on-failure
 
 ## 运行
 
+项目目录：
+
+- `include/`：应用依赖模块的头文件。
+- `source/`：依赖模块实现、模块构建配置和测试。
+- `applications/`：各应用的入口和 facade。`server.cpp` 负责配置并启动
+  `source/server/` 中的服务实现；`replication_daemon.cpp` 调用 `source/replication/`
+  中由 `replication_daemon_impl` INTERFACE 库提供的实现。
+
+多配置构建的可执行文件位于 `build/applications/<config>/server`；
+单配置构建位于 `build/applications/server`。启动脚本使用 Release 多配置路径。
+
+Linux 下的 `repld` 目标使用 libbpf 和 NBIO。
+仅构建 RDMA 路径时可设置 `-DKVSTORE_BUILD_PROBE_DAEMON=OFF`，不需要 BPF 依赖。
+
+```bash
+cmake --build build --config Release --target repld
+./build/applications/Release/repld --help
+```
+
+master 启动时自动运行同目录的 `repld`（可用 `--repld PATH` 覆盖），
+传递共享内存描述符并挂载 `kvstore_write_log_v1`；不解析 C++ Command 对象内存布局。
+双方通过 mmap 共享 `ReplicationInfo`：master 在快照同步前增加副本计数，
+交接失败时由 master 减少；`repld` 只继承计数，不增加，副本断开时由它减少。
+daemon 意外退出会使 master 显式停止，避免继续提供未经捕获的写入。
+网络服务使用 NBIO 协程，继承 master 的 `--multiplexer epoll|io_uring` 后端。
+捕获丢失或 backlog 不足会显式触发重新全量同步。
+配置与限制见 [逻辑日志 uprobe 复制指南](docs/replication-uprobe.md)。
+
 ```bash
 # 启动 master，使用 epoll 多路复用器
-./build/source/server/Release/server --config ./configs/master.conf --multiplexer epoll
+./build/applications/Release/server --config ./configs/master.conf --multiplexer epoll
 # 启动 slave，使用 io_uring 多路复用器
-./build/source/server/Release/server --config ./configs/slave.conf --multiplexer io_uring
+./build/applications/Release/server --config ./configs/slave.conf --multiplexer io_uring
 ```
 
 配置文件在 `configs/` 下，参考样例：

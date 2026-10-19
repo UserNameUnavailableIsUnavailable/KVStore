@@ -1,5 +1,22 @@
 CompileFlags:
   Add:
-  - -std=c++23
+  - Wall
+  - Wextra
   - -Ivcpkg_installed/arm64-linux/include
   - -Ivcpkg_installed/x64-linux/include
+---
+If:
+  PathMatch: ".*\\.c"
+CompileFlags:
+  Add:
+  - -xc
+  - -std=c11
+---
+If:
+  PathMatch:
+    - ".*\\.(hh|cc|hpp|cpp|cxx)"
+    - ".*/[^.]+$"
+CompileFlags:
+  Add:
+  - -xc++
+  - -std=c++23

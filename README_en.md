@@ -36,12 +36,12 @@ for transactions, AOF writes, and writes with attached replicas.
 
 ### Linux development packages (required before configure)
 
-RDMA, io_uring and BPF libraries are resolved from the system via `pkg-config`
+RDMA libraries are resolved from the system via `pkg-config`
 (not from vcpkg). Install the development packages first:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y rdma-core libibverbs-dev librdmacm-dev liburing-dev libbpf-dev pkg-config
+sudo apt-get install -y rdma-core libibverbs-dev librdmacm-dev pkg-config
 ```
 
 ### vcpkg and third-party libraries
@@ -67,8 +67,10 @@ Linux system libraries resolved via `pkg-config` (must be installed before build
 | System package family | Used for |
 | --- | --- |
 | `librdmacm` + `libibverbs` (`librdmacm-dev`, `libibverbs-dev`) | RDMA replication and the wire tests |
-| `liburing` (`liburing-dev`) | The io_uring multiplexer (`URingMultiplexer`) |
-| `libbpf` (`libbpf-dev`) | BPF experiments |
+
+The NBIO vcpkg port supplies its io_uring dependency. The optional `repld`
+draft additionally needs BPF-capable clang, libbpf development files, and runtime
+BPF attachment privileges. Set `KVSTORE_BUILD_PROBE_DAEMON=OFF` for RDMA-only builds.
 
 ### RDMA hardware (only replication needs it)
 
@@ -79,10 +81,49 @@ address from `KVSTORE_RDMA_ADDRESS`, because that address cannot be derived port
 
 ## Building
 
+### Project layout
+
+- `include/`: headers for the reusable application dependencies.
+- `source/`: dependency implementations, module build definitions, and tests.
+- `applications/`: application entry points/facades and executable targets.
+  `server.cpp` configures and launches the server implementation in `source/server/`.
+  `replication_daemon.cpp` calls the implementation provided by the
+  `replication_daemon_impl` INTERFACE library in `source/replication/`.
+
+The `server` executable is written to `build/applications/<config>/server` for
+multi-configuration generators, or `build/applications/server` for single-configuration
+generators. The launch scripts use the multi-configuration Release path.
+
+On Linux, build the C++ write-log uprobe daemon with:
+
+```bash
+cmake --build build --config Release --target repld
+./build/applications/Release/repld --help
+```
+
+`repld` probes the master's deliberate logical write-log function
+and serves byte-offset-indexed SET/DEL records over TCP. This is a draft and
+opt-in through the server's `--replication-daemon IPv4:port`; RDMA still supplies
+full snapshots, and omitting that option retains legacy RDMA incremental sync.
+Its listener and follower streams use NBIO coroutines, with
+the master's `--multiplexer epoll|io_uring` selecting the daemon backend.
+The master starts its sibling `repld` automatically (`--repld PATH` overrides it)
+and shares a mmap-backed `ReplicationInfo`. The master increments the replica
+count before snapshots and cancels failed handoffs; `repld` inherits each count
+without incrementing and decrements on follower detach. With AOF off, a zero
+count skips write-log encoding. Unexpected daemon death stops the master explicitly.
+Live BPF loading is not verified in the restricted development environment.
+See the [write-log uprobe guide](docs/replication-uprobe.md)
+for setup, recovery behavior, supported operations, and validation limits.
+
+The historical broader journal proposal is retained in
+[Ordered-effect replication with eBPF-assisted delivery](docs/replication-design.md).
+It does not describe current replication guarantees.
+
 ```bash
 export VCPKG_ROOT=/path/to/vcpkg     # required: the top-level CMakeLists reads it
 cmake -S . -B build -G Ninja         # the first configure installs and builds the deps
-cmake --build build                  # or one target: --target Server
+cmake --build build                  # or one target: --target server
 ```
 
 The `build/` in the repository is a Debug tree; add `-DCMAKE_BUILD_TYPE=Release` before
@@ -92,7 +133,7 @@ Targets worth knowing:
 
 | Target | What it is |
 | --- | --- |
-| `Server` | The server: `build/source/server/Release/server` |
+| `server` | The server facade in `applications/server.cpp` |
 | `NBIOTesting`, `ServerTesting` | The test executables |
 | `Echo`, `Sleep`, `Grace`, `SystemSignalSvc`, `ScopedSystemSignalService`, `Condition` | NBIO examples |
 | `RdmaEcho`, `RdmaAsyncEcho` | RDMA examples |
@@ -115,12 +156,12 @@ packet and every credit.
 
 ```bash
 # stand-alone
-./build/source/server/Release/server --port 8080
+./build/applications/Release/server --port 8080
 
 # a master and a replica on one machine
-./build/source/server/Release/server \
+./build/applications/Release/server \
     --port 8080 --replication-port 8081 --replication-ip 192.168.0.201 --rdma-device siw0
-./build/source/server/Release/server --port 8082 --rdma-device siw0
+./build/applications/Release/server --port 8082 --rdma-device siw0
 
 # point the replica at the master with a RESP-compatible client
 redis-cli -p 8082 SLAVEOF 192.168.0.201 8081
@@ -130,7 +171,7 @@ A server can also be driven entirely by a startup command file, in which every l
 command — anything a connection may send, a file may say:
 
 ```bash
-./build/source/server/Release/server -c configs/master.conf
+./build/applications/Release/server -c configs/master.conf
 ```
 
 `configs/master.conf` (serves clients, and replicas on the RDMA device):

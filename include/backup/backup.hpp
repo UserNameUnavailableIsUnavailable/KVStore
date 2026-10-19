@@ -150,7 +150,7 @@ class Backup {
             done.store(true, std::memory_order_release);
             condition.NotifyOne();
         });
-        co_await condition.wait([&start, &done] {
+        co_await condition.Wait([&start, &done] {
             start.store(true, std::memory_order_release);
             return done.load(std::memory_order_acquire);
         });

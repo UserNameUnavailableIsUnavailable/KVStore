@@ -13,10 +13,15 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <replication/repld_process.hpp>
 
 namespace KV {
 // Replication, as a service the server plugs in: the service owns the wire and
 // the replication port, the server owns the store and the clients.
+//
+// RDMA supplies snapshots and, unless daemon_endpoint is configured, the legacy
+// incremental stream. With a daemon, the final snapshot acknowledgment advertises
+// its TCP endpoint, epoch, byte offset and handoff ticket; the write-log uprobe supplies writes.
 //
 // A replica and a master talk RESP over an rdma delivery link -- the protocol a
 // client speaks, with two commands of its own on top:
@@ -53,6 +58,7 @@ class ReplicationService {
         std::function<bool(const Command&)> apply;
         // The link to the master came up, or went down.
         std::function<void(bool)> link_changed;
+        std::function<void()> observe_log;
     };
 
     struct Options {
@@ -60,6 +66,11 @@ class ReplicationService {
         std::uint16_t listen_port{0};
         std::string listen_address{"0.0.0.0"};
         std::string rdma_device{};
+        // Empty keeps the legacy RDMA incremental transport.
+        std::string daemon_endpoint{};
+        std::string repld_path{};
+        std::string multiplexer{"epoll"};
+        std::uint64_t epoch = 0;
     };
 
     ReplicationService(Options options, Host host);
@@ -72,7 +83,11 @@ class ReplicationService {
 
     bool is_master() const noexcept { return options_.listen_port != 0; }
 
-    bool has_replicas() const noexcept { return !replicas_.empty(); }
+    bool has_replicas() const noexcept { return !replicas_.empty() || !options_.daemon_endpoint.empty(); }
+    bool daemon_enabled() const noexcept { return !options_.daemon_endpoint.empty(); }
+    const replication::ReplicationInfo* replication_info() const noexcept {
+        return shared_info_ ? &shared_info_->get() : nullptr;
+    }
 
     // True from the moment SLAVEOF is accepted rather than from the moment the
     // link comes up: an instance told to follow a master is a replica while it
@@ -94,10 +109,10 @@ class ReplicationService {
     // already follows a master, which is the one thing SLAVEOF cannot do twice.
     bool slave_of(const nbio::net::Address& master);
 
-    // Records a write for the replicas being served. The server calls this for
-    // every write it applies, and it never waits: the bytes are appended to each
-    // replica's buffer, and whoever is draining that buffer finds them there.
-    void record(const Command& command);
+    // Accepts canonical logical-log bytes after each successful write, without
+    // suspension. Probe mode only accounts the global offset; RDMA mode also
+    // appends to transient/streaming replica queues.
+    void record(std::string_view payload);
 
    private:
     // One replica being served: its link, and what is waiting to go out on it.
@@ -105,6 +120,7 @@ class ReplicationService {
         Replica(std::shared_ptr<nbio::net::RdmaSessionService> session,
                 std::shared_ptr<nbio::net::RdmaDeliverService> link)
             : session(std::move(session)), link(std::move(link)) {}
+        ~Replica() { link->Stop(); }
 
         std::shared_ptr<nbio::net::RdmaSessionService> session;
         std::shared_ptr<nbio::net::RdmaDeliverService> link;
@@ -161,6 +177,17 @@ class ReplicationService {
     // One connection's worth: connect, synchronise, and keep up until the link
     // ends. False when that ended before the stream did.
     nbio::async::Task<bool> sync_once(nbio::net::Address master);
+    struct DaemonHandoff {
+        std::string endpoint;
+        std::uint64_t epoch;
+        std::uint64_t offset;
+        std::uint64_t ticket;
+    };
+    nbio::async::Task<bool> sync_rdma(nbio::net::Address master,
+                                    std::optional<DaemonHandoff>& handoff);
+    nbio::async::Task<void> observe_log();
+    nbio::async::Task<bool> follow_daemon(std::string endpoint, std::uint64_t epoch,
+                                         std::uint64_t offset, std::uint64_t ticket);
 
     void detach(const std::shared_ptr<Replica>& replica) noexcept;
     // Drops the replicas whose coroutine has finished, so their chunks go back
@@ -175,10 +202,12 @@ class ReplicationService {
     Options options_;
     Host host_;
     std::uint64_t replid_{0};
-    // The offset of the byte after the last write this master applied: the
-    // position a snapshot is taken at and the position a replica is caught up
-    // from, going on across links coming and going.
+    // This node's logical log offset, independent of upstream replica progress.
     std::uint64_t offset_{0};
+    bool snapshot_busy_ = false;
+    nbio::notification::ConditionVariable snapshot_ready_;
+    std::optional<replication::SharedReplicationInfo> shared_info_;
+    std::unique_ptr<replication::RepldProcess> repld_;
 
     // Declared before the sessions: every connection borrows the device, its
     // regions and its chunks, so they all have to be gone before it is. Shared,
@@ -199,6 +228,9 @@ class ReplicationService {
     struct ReplicaLink {
         explicit ReplicaLink(std::shared_ptr<nbio::net::RdmaResourceManager> manager)
             : resources(std::move(manager)), connector(*resources) {}
+        ~ReplicaLink() {
+            if (link) link->Stop();
+        }
 
         // Held first, and held at all: the connection borrows this device. The
         // link is declared last so that it is destroyed before what it borrows.

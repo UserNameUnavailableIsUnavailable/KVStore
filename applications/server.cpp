@@ -46,6 +46,10 @@ int main(int argc, char* argv[]) {
                    "rdma device the replication link runs on, by name (--rdma-device siw0)");
     app.add_option("--multiplexer", options.multiplexer, "I/O multiplexer: epoll or io_uring")
         ->check(CLI::IsMember({"epoll", "io_uring"}));
+    app.add_option("--replication-daemon", options.replication_daemon,
+                   "Local repld IPv4:port to launch and advertise; empty retains RDMA incremental sync");
+    app.add_option("--repld", options.repld_path,
+                   "repld executable (default: beside server)");
     app.add_option("-c,--config", options.config_file, "command file to run at startup, one command per line")
         ->check(CLI::ExistingFile);
 

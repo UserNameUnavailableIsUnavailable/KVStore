@@ -52,8 +52,9 @@ include_directories(
 	${CMAKE_SOURCE_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include
 )
 
-add_subdirectory(Tutorial)
+add_subdirectory(tutorial)
 add_subdirectory(source)
+add_subdirectory(applications)
 
 set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")
 if(FIND_TARGET)
