@@ -144,7 +144,6 @@ StartupSettings TakeStartupSettings(std::vector<CommandLine>& lines) {
             settings.appendonly = config.values.front() == "yes";
         } else {
             settings.replication_address = config.values.front();
-            settings.replication_port = ToPort(config.values.back());
         }
 
         // A later line overrides an earlier one, the way the rest of a file reads,

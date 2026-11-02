@@ -7,7 +7,7 @@ add_library(kvstore_resp
 )
 target_compile_features(kvstore_resp PUBLIC cxx_std_20)
 target_include_directories(kvstore_resp PUBLIC "${CMAKE_SOURCE_DIR}/include")
-target_link_libraries(kvstore_resp PUBLIC nbio::nbio)
+target_link_libraries(kvstore_resp PUBLIC kvstore_memory nbio::nbio)
 
 if(BUILD_TESTING)
     find_package(GTest CONFIG REQUIRED)

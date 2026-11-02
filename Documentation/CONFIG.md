@@ -19,7 +19,7 @@ AOF and out to the replicas exactly as it would from a client.
 ```
 # the shape the settings take: a CONFIG command, one per line
 config port 8080
-config replication_address 192.168.0.201 8081
+config replication_address 192.168.0.201
 config rdma_device siw0
 config appendonly yes
 ```
@@ -42,8 +42,8 @@ they are:
 
   ```
   config port 8080                              # clients connect here
-  config replication_address 192.168.0.201 8081 # replicas connect here, over RDMA
-  config rdma_device siw0                       # the device that link runs on
+  config replication_address 192.168.0.201     # this instance serves replicas
+  config rdma_device siw0                       # the device the dump travels on
   config appendonly yes                         # keep a log of every write
   ```
 
@@ -51,7 +51,9 @@ they are:
   is bound or a channel is opened, and a running server refuses them: there is
   nothing left to rebind. The address has to name the RDMA device — a wildcard such
   as `0.0.0.0` is accepted by `rdma_bind_addr` and names no device at all, so it is
-  refused at validation, and again when the service that listens is built.
+  refused at validation, and again when the service that listens is built. The port
+  the dump is served on is chosen by the provider at bind time and announced to the
+  replica in the `FULLSYNC` answer, so none is configured here.
 
   `appendonly` is here for a different reason: it decides **which of the two files
   the store is read from**. The log and the image are alternatives, not a sequence —

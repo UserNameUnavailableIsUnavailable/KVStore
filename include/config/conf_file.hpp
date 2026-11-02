@@ -49,7 +49,7 @@ RESP::Object CommandRequest(const CommandLine& line);
 //
 //   config port <port>
 //   config rdma_device <name>
-//   config replication_address <ip> <port>
+//   config replication_address <ip>
 //   config appendonly <yes|no>
 //
 // Which master this instance follows is not among them: SLAVEOF names one, and a
@@ -58,7 +58,6 @@ RESP::Object CommandRequest(const CommandLine& line);
 // falls back to the server's own default.
 struct StartupSettings {
     std::optional<std::uint16_t> port;
-    std::optional<std::uint16_t> replication_port;
     std::optional<std::string> replication_address;
     std::optional<std::string> rdma_device;
     // Whether this instance keeps an append-only log. It is read before the store

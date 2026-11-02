@@ -5,7 +5,7 @@
 #include <commands.hpp>
 #include <resp/resp.hpp>
 #include <nbio/async/task.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <nbio/fs/file_stream_service.hpp>
 #include <nbio/runtime/daemon.hpp>
 #include <algorithm>
@@ -17,7 +17,6 @@
 #include <span>
 #include <string>
 #include <system_error>
-#include <replication/replication_info.hpp>
 
 namespace KV {
 class AppendOnlyFile {
@@ -52,11 +51,8 @@ class AppendOnlyFile {
     std::string_view log(const Command& command);
     nbio::async::Task<void> append_encoded(std::string_view payload);
     void activate_replication() noexcept { replication_active_ = true; }
-    void replication_info(const replication::ReplicationInfo* info) noexcept { replication_info_ = info; }
-    bool logging() const noexcept {
-        return enabled_ || (replication_info_
-            ? replication_info_->replica_count.load(std::memory_order_acquire) != 0 : replication_active_);
-    }
+    void count_write();
+    bool logging() const noexcept { return enabled_ || replication_active_; }
     void observe() const noexcept;
     std::uint64_t epoch() const noexcept { return epoch_; }
     std::uint64_t offset() const noexcept { return offset_; }
@@ -73,9 +69,9 @@ class AppendOnlyFile {
         }
 
         const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        nbio::utility::Buffer buffer(std::max<std::size_t>(512, bytes.size()),
+        memory::Buffer buffer(std::max<std::size_t>(512, bytes.size()),
                                         std::max<std::size_t>(512, bytes.size()));
-        if (!bytes.empty() && !buffer.write(bytes.data(), bytes.size())) {
+        if (!bytes.empty() && !buffer.Write(bytes.data(), bytes.size())) {
             return false;
         }
 
@@ -118,7 +114,7 @@ class AppendOnlyFile {
     // checksum after only some of them, so this reads what is there rather than what
     // the setting would have written: a log checksummed for part of its life, and one
     // written before there were checksums at all, both replay.
-    static bool verify_checksum(nbio::utility::Buffer& buffer, std::span<const char> command);
+    static bool verify_checksum(memory::Buffer& buffer, std::span<const char> command);
 
     std::filesystem::path path_;
     // The file and the channels that write it, made against this thread's engine. Held
@@ -130,7 +126,6 @@ class AppendOnlyFile {
     std::uint64_t epoch_;
     std::uint64_t offset_ = 0;
     bool replication_active_ = false;
-    const replication::ReplicationInfo* replication_info_ = nullptr;
-    std::unique_ptr<nbio::utility::Buffer> log_buffer_;
+    std::unique_ptr<memory::Buffer> log_buffer_;
 };
 }  // namespace KV

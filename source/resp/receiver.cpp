@@ -1,7 +1,7 @@
 #include <resp/receiver.hpp>
 
 #include <resp/resp.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <nbio/net/socket.hpp>
 #include <nbio/runtime/daemon.hpp>
 #include <nbio/net/tcp_session_service.hpp>
@@ -15,7 +15,7 @@ namespace {
 constexpr std::size_t kReadHeadroom = 16U * 1024U;
 }  // namespace
 
-Receiver::Receiver(nbio::net::TcpSessionService& session, ::nbio::utility::Buffer& buffer)
+Receiver::Receiver(nbio::net::TcpSessionService& session, ::memory::Buffer& buffer)
     : session_(session), buffer_(buffer) {}
 
 Receiver::~Receiver() noexcept = default;
@@ -41,7 +41,7 @@ nbio::async::Task<std::optional<Object>> Receiver::Receive() {
         // A command cannot be decoded until all of it is here, so it has to be
         // able to make the buffer grow: reading into no space at all would stall
         // the connection until the client gave up.
-        if (buffer_.writable_size() == 0 && !buffer_.reserve(kReadHeadroom)) {
+        if (buffer_.writable_size() == 0 && !buffer_.Reserve(kReadHeadroom)) {
             interal_error_ = "request larger than the receive buffer";
             co_return {};
         }
@@ -55,10 +55,10 @@ nbio::async::Task<std::optional<Object>> Receiver::Receive() {
             // End of stream. A command that is still incomplete will never be
             // completed, so the connection is finished rather than waited on.
             interal_error_ = "stream closed";
-            buffer_.clear();
+            buffer_.Clear();
             co_return {};
         }
-        buffer_.commit(*result);
+        buffer_.Commit(*result);
     }
 
     auto object = Finish(decoder().result());
@@ -82,7 +82,7 @@ std::optional<Object> Receiver::TryReceive() {
 }
 
 void Receiver::Release() {
-    buffer_.consume(borrowed_);
+    buffer_.Consume(borrowed_);
     borrowed_ = 0;
 }
 
@@ -142,7 +142,7 @@ nbio::async::Task<std::optional<Receiver::Command>> Receiver::ReceiveCommand() {
         // A command cannot be read until all of it is here, so it has to be able
         // to make the buffer grow: reading into no space at all would stall the
         // connection until the client gave up.
-        if (buffer_.writable_size() == 0 && !buffer_.reserve(kReadHeadroom)) {
+        if (buffer_.writable_size() == 0 && !buffer_.Reserve(kReadHeadroom)) {
             interal_error_ = "request larger than the receive buffer";
             co_return std::nullopt;
         }
@@ -156,10 +156,10 @@ nbio::async::Task<std::optional<Receiver::Command>> Receiver::ReceiveCommand() {
             // End of stream. A command that is still incomplete will never be
             // completed, so the connection is finished rather than waited on.
             interal_error_ = "stream closed";
-            buffer_.clear();
+            buffer_.Clear();
             co_return std::nullopt;
         }
-        buffer_.commit(*result);
+        buffer_.Commit(*result);
     }
 }
 
@@ -180,7 +180,7 @@ std::optional<Object> Receiver::Finish(DecodeResult& decoded) {
         // The bytes that did not parse are dropped: they cannot be retried, and
         // keeping them would make every later command fail on them too.
         decode_error_ = std::move(decoded.error);
-        buffer_.clear();
+        buffer_.Clear();
         return std::nullopt;
     }
 

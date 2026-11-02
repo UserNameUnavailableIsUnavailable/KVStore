@@ -68,9 +68,9 @@ Linux system libraries resolved via `pkg-config` (must be installed before build
 | --- | --- |
 | `librdmacm` + `libibverbs` (`librdmacm-dev`, `libibverbs-dev`) | RDMA replication and the wire tests |
 
-The NBIO vcpkg port supplies its io_uring dependency. The optional `repld`
-draft additionally needs BPF-capable clang, libbpf development files, and runtime
-BPF attachment privileges. Set `KVSTORE_BUILD_PROBE_DAEMON=OFF` for RDMA-only builds.
+The NBIO vcpkg port supplies its io_uring dependency. The `repld` write-log daemon
+(its own `repld/` directory) additionally needs BPF-capable clang, libbpf
+development files, and runtime BPF attachment privileges.
 
 ### RDMA hardware (only replication needs it)
 
@@ -87,8 +87,8 @@ address from `KVSTORE_RDMA_ADDRESS`, because that address cannot be derived port
 - `source/`: dependency implementations, module build definitions, and tests.
 - `applications/`: application entry points/facades and executable targets.
   `server.cpp` configures and launches the server implementation in `source/server/`.
-  `replication_daemon.cpp` calls the implementation provided by the
-  `replication_daemon_impl` INTERFACE library in `source/replication/`.
+- `repld/`: the standalone write-log capture daemon (uprobe program, capture,
+  backlog, follower transport) built as its own `repld` executable.
 
 The `server` executable is written to `build/applications/<config>/server` for
 multi-configuration generators, or `build/applications/server` for single-configuration
@@ -102,16 +102,22 @@ cmake --build build --config Release --target repld
 ```
 
 `repld` probes the master's deliberate logical write-log function
-and serves byte-offset-indexed SET/DEL records over TCP. This is a draft and
+and serves command-sequence-indexed SET/DEL records over TCP. This is a draft and
 opt-in through the server's `--replication-daemon IPv4:port`; RDMA still supplies
 full snapshots, and omitting that option retains legacy RDMA incremental sync.
 Its listener and follower streams use NBIO coroutines, with
 the master's `--multiplexer epoll|io_uring` selecting the daemon backend.
-The master starts its sibling `repld` automatically (`--repld PATH` overrides it)
+The master starts its sibling `repld` automatically (`--repld PATH` overrides it);
+`--repld-manual` instead prints the `sudo repld ...` command and waits for it to be
+started by hand, for hosts where only the daemon has BPF privileges.
 and shares a mmap-backed `ReplicationInfo`. The master increments the replica
 count before snapshots and cancels failed handoffs; `repld` inherits each count
 without incrementing and decrements on follower detach. With AOF off, a zero
 count skips write-log encoding. Unexpected daemon death stops the master explicitly.
+The tuple hook and live-store fork share a non-suspending boundary. Replicas
+buffer TCP commands while receiving the RDMA dump, acknowledge `FULLSYNCED`,
+then replay that backlog. Failed repld admission rejects synchronization;
+there is no implicit `INCREMENTAL` fallback.
 Live BPF loading is not verified in the restricted development environment.
 See the [write-log uprobe guide](docs/replication-uprobe.md)
 for setup, recovery behavior, supported operations, and validation limits.
@@ -134,6 +140,7 @@ Targets worth knowing:
 | Target | What it is |
 | --- | --- |
 | `server` | The server facade in `applications/server.cpp` |
+| `kvstore_memory` | Static library containing the memory pool and buffer implementations; linked transitively by the server and RESP targets |
 | `NBIOTesting`, `ServerTesting` | The test executables |
 | `Echo`, `Sleep`, `Grace`, `SystemSignalSvc`, `ScopedSystemSignalService`, `Condition` | NBIO examples |
 | `RdmaEcho`, `RdmaAsyncEcho` | RDMA examples |

@@ -12,6 +12,7 @@
 #include <nbio/time.hpp>
 #include <nbio/utility.hpp>
 #include <coroutine>
+#include <cctype>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -65,18 +66,13 @@ void Server::run(const ServerOptions& options) {
     const StartupSettings declared = TakeStartupSettings(commands);
 
     const std::uint16_t port = detail::Resolve("port", options.port, declared.port, ServerOptions::kDefaultPort);
-    const std::uint16_t replication_port =
-        detail::Resolve("replication-port", options.replication_port, declared.replication_port,
-                        ServerOptions::kDefaultReplicationPort);
     const std::string replication_address =
-        detail::Resolve("replication-ip", options.replication_address, declared.replication_address,
-                        std::string{ServerOptions::kDefaultReplicationAddress});
+        detail::Resolve("replication-ip", options.replication_address, declared.replication_address, std::string{});
     const std::string rdma_device =
         detail::Resolve("rdma-device", options.rdma_device, declared.rdma_device, std::string{});
 
     // What CONFIG GET answers with, and what the client port is bound on.
     port_ = port;
-    replication_port_ = replication_port;
     replication_address_ = replication_address;
 
     const bool keep_log = declared.appendonly.value_or(false);
@@ -90,20 +86,18 @@ void Server::run(const ServerOptions& options) {
     }
 
     ReplicationService::Options replication_options{
-        .listen_port = replication_port,
         .listen_address = replication_address,
         .rdma_device = rdma_device,
-        .daemon_endpoint = options.replication_daemon,
-        .repld_path = options.repld_path,
-        .multiplexer = options.multiplexer,
+        .broker_endpoint = options.broker_endpoint,
         .epoch = aof_.epoch(),
     };
     ReplicationService::Host host{
         .snapshot_file = [this] { return replication_backup_.path(); },
         .snapshot = [this] {
-            if (!replication_->daemon_enabled()) aof_.activate_replication();
-            return replication_backup_.save(Backup::capture(store_));
+            aof_.activate_replication();
+            return replication_backup_.fork_snapshot(store_);
         },
+        .offset = [this] { return aof_.offset(); },
         .restore = [this](const std::filesystem::path& file) {
             store_.set_eviction_policy(KV::EvictionPolicy::kNoEviction);
             return backup_.load_from(file, store_);
@@ -111,7 +105,6 @@ void Server::run(const ServerOptions& options) {
         .apply = [this](const KV::Command& command) { return apply_replicated_command(command); },
         .link_changed =
             [](bool up) { spdlog::info("replication: {}", up ? "the master is up" : "the master went away"); },
-        .observe_log = [this] { aof_.observe(); },
     };
     staged_save_ready_ = std::make_unique<nbio::notification::ConditionVariable>();
 
@@ -120,10 +113,14 @@ void Server::run(const ServerOptions& options) {
     }
 
     replication_ = std::make_unique<ReplicationService>(std::move(replication_options), std::move(host));
-    aof_.replication_info(replication_->replication_info());
 
     if (replication_->is_master()) {
-        nbio::async::Spawn(replication_->serve());
+        // A master logs every write from the start, so its backlog is one
+        // contiguous run of offsets that a follower (or a broker) can join from
+        // any retained point -- including across snapshots, which no longer reset
+        // the window.
+        aof_.activate_replication();
+        replication_->Start();
     }
 
     nbio::async::Run(serve(port, std::move(commands)));
@@ -210,8 +207,8 @@ nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> 
     // larger than a socket read, so the receive buffer starts roomy and is
     // allowed to grow: the decoder needs the whole command before it can hand
     // one over.
-    auto recv_buffer = std::make_unique<::nbio::utility::Buffer>(256U * 1024U, 16U * 1024U * 1024U);
-    auto send_buffer = std::make_unique<::nbio::utility::Buffer>(16U * 1024U, 16U * 1024U * 1024U);
+    auto recv_buffer = std::make_unique<::memory::Buffer>(256U * 1024U, 16U * 1024U * 1024U);
+    auto send_buffer = std::make_unique<::memory::Buffer>(16U * 1024U, 16U * 1024U * 1024U);
 
     RESP::Receiver receiver(session->transport(), *recv_buffer);
     while (true) {
@@ -237,11 +234,40 @@ nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> 
         RESP::Sender sender(session->transport(), *send_buffer);
         std::size_t commands_this_turn = 0;
         while (true) {
+            // REPLICA registers this connection for pushed commands: the master
+            // copies every command it executes to it, from the head it has now
+            // onward. The follower never names an offset. Terminal for the socket.
+            if (!command->object && !session->is_multi && command->words.size() == 1) {
+                const auto equals = [](std::string_view a, std::string_view b) {
+                    if (a.size() != b.size()) return false;
+                    for (std::size_t i = 0; i < a.size(); ++i) {
+                        const auto ca = static_cast<unsigned char>(a[i]);
+                        const auto cb = static_cast<unsigned char>(b[i]);
+                        if (std::tolower(ca) != std::tolower(cb)) return false;
+                    }
+                    return true;
+                };
+                if (equals(command->words.front(), "REPLICA")) {
+                    if (replication_ == nullptr || !replication_->is_master()) {
+                        sender.Append(detail::Error("ERR replication is not available on this server"));
+                        (void)co_await sender.Flush();
+                        co_return;
+                    }
+                    co_await replication_->follow(session->transport());
+                    co_return;
+                }
+            }
             if (session->is_multi || command->object || !answer_borrowed(command->words, *send_buffer)) {
                 std::optional<RESP::Object> answered;
                 KV::CommandValidation validation =
                     command->object ? KV::ValidateCommand(*command->object) : KV::ValidateCommand(command->words);
                 if (validation) {
+                    if (validation.command->type == KV::CommandType::kSync) {
+                        // SYNC is terminal and carries the dump on a separate RDMA
+                        // link, so it is handled here rather than through dispatch.
+                        co_await serve_sync(*session, sender);
+                        co_return;
+                    }
                     if (!session->is_multi) {
                         answered = execute_fast(*validation.command);
                     }
@@ -279,10 +305,10 @@ nbio::async::Task<void> Server::serve_client(std::shared_ptr<TcpSessionService> 
     }
 }
 
-bool Server::answer_borrowed(std::span<const std::string_view> words, nbio::utility::Buffer& buffer) {
+bool Server::answer_borrowed(std::span<const std::string_view> words, memory::Buffer& buffer) {
     bool appended = false;
     if (words.size() == 2 && KV::IsCommandName(words.front(), KV::CommandType::kGet)) {
-        const std::string* value = store_.get_ref(words[1]);
+        const std::string* value = store_.get_ptr(words[1]);
         appended = RESP::AppendBulkString(value ? std::optional<std::string_view>(*value) : std::nullopt, buffer);
     } else if (words.size() == 3 && KV::IsCommandName(words.front(), KV::CommandType::kSet)) {
         if (replica_read_only_) {
@@ -290,6 +316,7 @@ bool Server::answer_borrowed(std::span<const std::string_view> words, nbio::util
         } else {
             if (aof_.logging()) return false;
             if (store_.set(words[1], words[2])) {
+                aof_.count_write();
                 note_write();
                 appended = RESP::AppendObject(RESP::Object(RESP::SimpleString{.value = "OK"}), buffer);
             } else {
@@ -467,7 +494,7 @@ nbio::async::Task<RESP::Object> Server::execute_dbsize(const KV::Command& comman
 
 // `SLAVEOF <ip> <port>`, the one command that changes what this instance is:
 // from here it is a replica, and a replica refuses its own clients' writes. The
-// address is the master's rdma address, not the TCP one it answers clients on.
+// address is the master's TCP client address -- where the replica sends SYNC.
 nbio::async::Task<RESP::Object> Server::execute_slaveof(const KV::Command& command) {
     const auto& slaveof = std::get<KV::SlaveOfParams>(command.parameters);
 
@@ -494,6 +521,34 @@ nbio::async::Task<RESP::Object> Server::execute_slaveof(const KV::Command& comma
     // the store it is about to replace does not belong to them any more.
     replica_read_only_ = true;
     co_return RESP::Object(RESP::SimpleString{.value = "OK"});
+}
+
+nbio::async::Task<void> Server::serve_sync(TcpSessionService& session, RESP::Sender& sender) {
+    (void)session;
+    if (replication_ == nullptr || !replication_->is_master()) {
+        (void)co_await sender.Send(detail::Error("ERR replication is not available on this server"));
+        co_return;
+    }
+
+    auto offer = co_await replication_->OfferDump();
+    if (!offer) {
+        (void)co_await sender.Send(detail::Error("ERR failed to prepare the dump: " + offer.error().message()));
+        co_return;
+    }
+
+    // <offset> is the write counter at the moment the snapshot was taken: a
+    // follower buffering the stream from earlier discards records up to it and
+    // continues at <offset>+1.
+    sender.Append(RESP::Object(RESP::SimpleString{
+        .value = "FULLSYNC " + std::to_string(offer->bytes) + " " + offer->rdma_ip + ":" +
+                 std::to_string(offer->rdma_port) + " " + std::to_string(offer->offset) + " " +
+                 std::to_string(offer->epoch)}));
+    if (!co_await sender.Flush()) {
+        replication_->AbortDump();
+        co_return;
+    }
+
+    co_await replication_->ServeDump();
 }
 
 bool Server::replay_aof_command(const KV::Command& command) {
@@ -572,9 +627,9 @@ std::optional<std::string> Server::config_value(const std::string& parameter) co
         return rdma_device_;
     }
     if (parameter == "replication_address") {
-        // The address and port a replica connects to, or nothing when this server
-        // serves no replicas.
-        return replication_port_ == 0 ? std::string{} : replication_address_ + " " + std::to_string(replication_port_);
+        // The rdma address a replica is told to receive dumps on, or nothing
+        // when this server serves no replicas.
+        return replication_address_.empty() ? std::string{} : replication_address_;
     }
     return std::nullopt;
 }
@@ -648,9 +703,8 @@ nbio::async::Task<RESP::Object> Server::execute_config(const KV::Command& comman
         // unreadable.
         aof_.checksum(config.values.front() == "yes");
     } else if (config.parameter == "eviction_policy") {
-        if (config.values.front() == "lru" && replication_ &&
-            (replication_->daemon_enabled() || replication_->is_replica())) {
-            co_return detail::Error("ERR LRU eviction is not supported while daemon replication is active");
+        if (config.values.front() == "lru" && replication_ && replication_->is_replica()) {
+            co_return detail::Error("ERR LRU eviction is not supported on a replica");
         }
         store_.set_eviction_policy(config.values.front() == "lru" ? KV::EvictionPolicy::kLRU
                                                                   : KV::EvictionPolicy::kNoEviction);
@@ -728,7 +782,7 @@ nbio::async::Task<void> Server::staged_save_periodic() {
     while (staged_save_rule_) {
         const auto rule = *staged_save_rule_;
         auto timeout = nbio::time::SystemTimeService{}.Sleep(rule.seconds);
-        auto ready = staged_save_ready_->Wait(
+        auto ready = staged_save_ready_->wait(
             [this, expected = rule.changed] { return !staged_save_rule_ || staged_save_dirty_ >= expected; });
         co_await nbio::async::WhenAll(std::move(timeout), std::move(ready));
 

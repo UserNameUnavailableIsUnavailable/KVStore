@@ -8,7 +8,7 @@
 
 #include <resp/receiver.hpp>
 #include <resp/resp.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,8 +17,8 @@
 
 namespace {
 RESP::DecodeResult DecodeBytes(std::string_view bytes, RESP::Dialect dialect = RESP::Dialect::kMultibulkAndInline) {
-    nbio::utility::Buffer buffer(bytes.size() + 16, bytes.size() + 16);
-    EXPECT_TRUE(buffer.write(bytes.data(), bytes.size()));
+    memory::Buffer buffer(bytes.size() + 16, bytes.size() + 16);
+    EXPECT_TRUE(buffer.Write(bytes.data(), bytes.size()));
 
     auto decoder = RESP::Decode(buffer, dialect);
     while (!decoder.done()) {
@@ -119,11 +119,11 @@ TEST(RESPInline, ALineWithNoWordsCarriesNoCommand) {
 
 TEST(RESPReceiving, DrainsBufferedCommandsPastBlankLinesAndPreservesIncompleteTail) {
     nbio::net::TcpSessionService session(nbio::net::TcpConnector{});
-    nbio::utility::Buffer buffer(256, 256);
+    memory::Buffer buffer(256, 256);
     RESP::Receiver receiver(session, buffer);
     const std::string bytes = "*1\r\n$4\r\nPING\r\n\r\n \t\r\n"
                               "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n*1\r\n$4\r\nPI";
-    ASSERT_TRUE(buffer.write(bytes.data(), bytes.size()));
+    ASSERT_TRUE(buffer.Write(bytes.data(), bytes.size()));
 
     auto command = receiver.TryReceiveCommand();
     ASSERT_TRUE(command);
@@ -139,7 +139,7 @@ TEST(RESPReceiving, DrainsBufferedCommandsPastBlankLinesAndPreservesIncompleteTa
     EXPECT_FALSE(receiver.TryReceiveCommand());
     EXPECT_FALSE(receiver.no_command());
     EXPECT_TRUE(receiver.decode_error().empty());
-    ASSERT_TRUE(buffer.write("NG\r\n", 4));
+    ASSERT_TRUE(buffer.Write("NG\r\n", 4));
 
     command = receiver.TryReceiveCommand();
     ASSERT_TRUE(command);
@@ -169,9 +169,9 @@ TEST(RESPInline, AStreamThatOnlySpeaksMultibulkRejectsALineOfWords) {
 TEST(RESPInline, BothDialectsShareOneStream) {
     // A pipeline may mix them, and each message has to leave the buffer exactly
     // where the next one starts.
-    nbio::utility::Buffer buffer(128, 128);
+    memory::Buffer buffer(128, 128);
     const std::string stream = "PING\r\n*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\nSET k v\r\n";
-    ASSERT_TRUE(buffer.write(stream.data(), stream.size()));
+    ASSERT_TRUE(buffer.Write(stream.data(), stream.size()));
 
     std::vector<std::vector<std::string>> commands;
     while (!buffer.is_empty()) {

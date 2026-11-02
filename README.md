@@ -108,25 +108,30 @@ ctest --test-dir build --output-on-failure
 - `include/`：应用依赖模块的头文件。
 - `source/`：依赖模块实现、模块构建配置和测试。
 - `applications/`：各应用的入口和 facade。`server.cpp` 负责配置并启动
-  `source/server/` 中的服务实现；`replication_daemon.cpp` 调用 `source/replication/`
-  中由 `replication_daemon_impl` INTERFACE 库提供的实现。
+  `source/server/` 中的服务实现。
+- `repld/`：独立的写日志捕获守护进程（uprobe 程序、捕获、backlog、跟随传输），
+  单独构建为 `repld` 可执行文件。
 
 多配置构建的可执行文件位于 `build/applications/<config>/server`；
 单配置构建位于 `build/applications/server`。启动脚本使用 Release 多配置路径。
 
-Linux 下的 `repld` 目标使用 libbpf 和 NBIO。
-仅构建 RDMA 路径时可设置 `-DKVSTORE_BUILD_PROBE_DAEMON=OFF`，不需要 BPF 依赖。
+Linux 下的 `repld` 目标使用 libbpf 和 NBIO，构建于 `repld/` 目录。
 
 ```bash
 cmake --build build --config Release --target repld
 ./build/applications/Release/repld --help
 ```
 
-master 启动时自动运行同目录的 `repld`（可用 `--repld PATH` 覆盖），
+master 启动时自动运行同目录的 `repld`（可用 `--repld PATH` 覆盖）；
+使用 `--repld-manual` 则不自动启动，而是打印需要手动执行的 `sudo repld ...` 命令，
+适用于只有守护进程具备 BPF 权限的环境。
 传递共享内存描述符并挂载 `kvstore_write_log_v1`；不解析 C++ Command 对象内存布局。
 双方通过 mmap 共享 `ReplicationInfo`：master 在快照同步前增加副本计数，
 交接失败时由 master 减少；`repld` 只继承计数，不增加，副本断开时由它减少。
 daemon 意外退出会使 master 显式停止，避免继续提供未经捕获的写入。
+复制偏移改为命令计数；tuple hook 后立即 fork，期间不挂起。
+副本接收 RDMA 快照时并行缓存 TCP 增量，确认 FULLSYNCED 后才按序执行。
+连接 repld 失败则拒绝本次同步，不隐式回退到 INCREMENTAL。
 网络服务使用 NBIO 协程，继承 master 的 `--multiplexer epoll|io_uring` 后端。
 捕获丢失或 backlog 不足会显式触发重新全量同步。
 配置与限制见 [逻辑日志 uprobe 复制指南](docs/replication-uprobe.md)。

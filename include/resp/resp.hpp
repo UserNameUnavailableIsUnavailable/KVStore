@@ -1,7 +1,7 @@
 #pragma once
 
 #include <nbio/async.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <coroutine>
 #include <cstdint>
 #include <optional>
@@ -196,12 +196,12 @@ enum class ScanStatus {
 //
 // `words` is the caller's, so a connection can scan a million commands through
 // one vector and allocate for none of them.
-ScanStatus ScanCommand(const ::nbio::utility::Buffer& buffer, std::vector<std::string_view>& words,
+ScanStatus ScanCommand(const ::memory::Buffer& buffer, std::vector<std::string_view>& words,
                        std::size_t& size);
 
-Decoder Decode(::nbio::utility::Buffer& buffer, Dialect dialect = Dialect::kMultibulkOnly);
-Encoder Encode(const Object& object, ::nbio::utility::Buffer& buffer);
-Encoder Encode(Object&& object, ::nbio::utility::Buffer& buffer) = delete;
+Decoder Decode(::memory::Buffer& buffer, Dialect dialect = Dialect::kMultibulkOnly);
+Encoder Encode(const Object& object, ::memory::Buffer& buffer);
+Encoder Encode(Object&& object, ::memory::Buffer& buffer) = delete;
 // The bytes of `object`, written into `buffer` without building anything on the
 // way: no string to spell out a number, no list of pieces for the reply to be
 // copied out of, no frame for a coroutine to suspend in. A reply is not a
@@ -215,6 +215,6 @@ Encoder Encode(Object&& object, ::nbio::utility::Buffer& buffer) = delete;
 // flush in the middle of a reply -- the AOF spilling to the file -- uses. This is
 // for the writer that does not: the reply batch, which is answered to a client
 // and has no other way out.
-bool AppendObject(const Object& object, ::nbio::utility::Buffer& buffer);
-bool AppendBulkString(std::optional<std::string_view> value, ::nbio::utility::Buffer& buffer);
+bool AppendObject(const Object& object, ::memory::Buffer& buffer);
+bool AppendBulkString(std::optional<std::string_view> value, ::memory::Buffer& buffer);
 }  // namespace RESP

@@ -203,7 +203,6 @@ TEST(ConfFileTesting, TheMasterIsNotAFileSetting) {
 
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
     EXPECT_FALSE(settings.port.has_value());
-    EXPECT_FALSE(settings.replication_port.has_value());
     EXPECT_FALSE(settings.replication_address.has_value());
     EXPECT_FALSE(settings.rdma_device.has_value());
     ASSERT_EQ(lines.size(), 1u) << "it is a command, and it stays where it is";
@@ -227,16 +226,14 @@ TEST(ConfFileTesting, SlaveOfNamesTheMasterToFollow) {
 
 TEST(ConfFileTesting, ThePortsCanComeFromTheFile) {
     // The spelling the file wants: the same `CONFIG` command a client could send,
-    // with the port and the address of the rdma device to serve replicas from.
+    // with the address of the rdma device to serve replicas from.
     std::vector<CommandLine> lines = ReadLines(
         "config port 8082\n"
-        "config replication_address 192.168.0.201 8081\n");
+        "config replication_address 192.168.0.201\n");
 
     const KV::StartupSettings settings = KV::TakeStartupSettings(lines);
     ASSERT_TRUE(settings.port.has_value());
     EXPECT_EQ(*settings.port, 8082);
-    ASSERT_TRUE(settings.replication_port.has_value());
-    EXPECT_EQ(*settings.replication_port, 8081);
     ASSERT_TRUE(settings.replication_address.has_value());
     EXPECT_EQ(*settings.replication_address, "192.168.0.201");
     EXPECT_TRUE(lines.empty());
@@ -245,7 +242,7 @@ TEST(ConfFileTesting, ThePortsCanComeFromTheFile) {
 TEST(ConfFileTesting, TheRestOfTheFileIsStillCommands) {
     std::vector<CommandLine> lines = ReadLines(
         "  # this node serves replicas\n"
-        "config replication_address 192.168.0.201 8081\n"
+        "config replication_address 192.168.0.201\n"
         "config port 8082\n"
         "config aof_checksum yes\n");
     ASSERT_EQ(lines.size(), 3u);
@@ -323,10 +320,10 @@ TEST(ConfFileTesting, ASettingWithoutItsValueIsRefused) {
     ASSERT_EQ(alone.size(), 1u) << "nothing was taken from the file";
     EXPECT_FALSE(KV::ValidateCommand(KV::CommandRequest(alone.front())));
 
-    std::vector<CommandLine> no_port = ReadLines("config replication_address 192.168.0.201\n");
-    KV::TakeStartupSettings(no_port);
-    ASSERT_EQ(no_port.size(), 1u);
-    EXPECT_FALSE(KV::ValidateCommand(KV::CommandRequest(no_port.front())));
+    std::vector<CommandLine> no_address = ReadLines("config replication_address\n");
+    KV::TakeStartupSettings(no_address);
+    ASSERT_EQ(no_address.size(), 1u);
+    EXPECT_FALSE(KV::ValidateCommand(KV::CommandRequest(no_address.front())));
 }
 
 TEST(ConfFileTesting, ASettingTheServerCannotHonourIsRefused) {
@@ -338,8 +335,8 @@ TEST(ConfFileTesting, ASettingTheServerCannotHonourIsRefused) {
 
     EXPECT_TRUE(refused("config port 70000\n")) << "a port out of range";
     EXPECT_TRUE(refused("config port 0\n"));
-    EXPECT_TRUE(refused("config replication_address 192.168.0.201 70000\n"));
-    EXPECT_TRUE(refused("config replication_address not-an-address 8081\n"));
-    EXPECT_TRUE(refused("config replication_address 0.0.0.0 8081\n")) << "a wildcard names no rdma device";
-    EXPECT_TRUE(refused("config replication_address 192.168.0.201:8081 1\n"));
+    EXPECT_TRUE(refused("config replication_address 192.168.0.201 70000\n")) << "a port no longer belongs";
+    EXPECT_TRUE(refused("config replication_address not-an-address\n"));
+    EXPECT_TRUE(refused("config replication_address 0.0.0.0\n")) << "a wildcard names no rdma device";
+    EXPECT_TRUE(refused("config replication_address 192.168.0.201:8081\n"));
 }

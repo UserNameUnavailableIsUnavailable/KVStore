@@ -158,12 +158,12 @@ class PolicyStore : public Store<KeyType, ValueType, Container> {
     void set_eviction_policy(EvictionPolicy policy) noexcept { eviction_policy_ = policy; }
 
     std::optional<ValueType> get(const KeyType& key) override {
-        const ValueType* value = get_ref(key);
+        const ValueType* value = get_ptr(key);
         return value ? std::optional<ValueType>(*value) : std::nullopt;
     }
 
     template <typename Key>
-    const ValueType* get_ref(const Key& key) {
+    const ValueType* get_ptr(const Key& key) {
         const RecordHandle handle = resolve(key);
         if (handle == this->end()) {
             return nullptr;

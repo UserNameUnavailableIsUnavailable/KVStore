@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <resp/resp.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -25,10 +25,10 @@ namespace {
 // The bytes the coroutine writer produces, growing the buffer the way the AOF
 // does when it has nowhere to flush yet.
 std::string Streamed(const RESP::Object& object, std::size_t capacity = 16, std::size_t max_capacity = 1U << 20) {
-    nbio::utility::Buffer buffer(capacity, max_capacity);
+    memory::Buffer buffer(capacity, max_capacity);
     auto encoder = RESP::Encode(object, buffer);
     while (encoder.poll() == RESP::EncodeStatus::kNeedFlush) {
-        if (!buffer.reserve(buffer.capacity())) {
+        if (!buffer.Reserve(buffer.capacity())) {
             return "<will not fit>";
         }
     }
@@ -37,7 +37,7 @@ std::string Streamed(const RESP::Object& object, std::size_t capacity = 16, std:
 
 // The bytes the direct writer produces, which has to agree with them.
 std::string Direct(const RESP::Object& object, std::size_t capacity = 16, std::size_t max_capacity = 1U << 20) {
-    nbio::utility::Buffer buffer(capacity, max_capacity);
+    memory::Buffer buffer(capacity, max_capacity);
     if (!RESP::AppendObject(object, buffer)) {
         return "<will not fit>";
     }
@@ -113,22 +113,22 @@ TEST(RESPEncoding, AReplyLargerThanTheBufferIsTheSameBytesEitherWay) {
 // A reply the buffer cannot hold is refused rather than truncated: half a reply
 // is a client waiting for the rest of it forever.
 TEST(RESPEncoding, AReplyTooLargeForTheBufferIsRefused) {
-    nbio::utility::Buffer buffer(16, 64);
+    memory::Buffer buffer(16, 64);
     EXPECT_FALSE(RESP::AppendObject(RESP::Object(RESP::BulkString{.value = std::string(1024, 'x')}), buffer));
 }
 
 TEST(RESPEncoding, BorrowedBulkMatchesOwnedEncodingAndCopiesBeforeReturning) {
     for (std::string value : {std::string{}, std::string("a\0b\r\nc", 6), std::string(70000, 'x')}) {
-        nbio::utility::Buffer buffer(16, 1U << 20);
+        memory::Buffer buffer(16, 1U << 20);
         const std::string expected = Direct(RESP::Object(RESP::BulkString{.value = value}));
         ASSERT_TRUE(RESP::AppendBulkString(std::string_view(value), buffer));
         value.assign("changed");
         EXPECT_EQ(buffer.string_view(), expected);
     }
-    nbio::utility::Buffer buffer(16, 64);
+    memory::Buffer buffer(16, 64);
     ASSERT_TRUE(RESP::AppendBulkString(std::nullopt, buffer));
     EXPECT_EQ(buffer.string_view(), "$-1\r\n");
-    buffer.clear();
+    buffer.Clear();
     EXPECT_FALSE(RESP::AppendBulkString(std::string(1024, 'x'), buffer));
 }
 
@@ -143,10 +143,10 @@ TEST(RESPEncoding, AReplyNestedPastTheLimitIsRefused) {
         return object;
     };
 
-    nbio::utility::Buffer roomy(16, 1U << 20);
+    memory::Buffer roomy(16, 1U << 20);
     EXPECT_TRUE(RESP::AppendObject(nested(100), roomy));
     EXPECT_EQ(Direct(nested(100)), Streamed(nested(100)));
 
-    nbio::utility::Buffer buffer(16, 1U << 20);
+    memory::Buffer buffer(16, 1U << 20);
     EXPECT_FALSE(RESP::AppendObject(nested(200), buffer));
 }

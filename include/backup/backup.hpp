@@ -2,15 +2,12 @@
 
 #include <nbio/async.hpp>
 #include <nbio/async/task.hpp>
-#include <nbio/notification/condition_variable.hpp>
 #include <nbio/runtime/daemon.hpp>
-#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <thread>
-#include <type_traits>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -21,6 +18,23 @@
 #endif
 
 namespace KV {
+class ForkSnapshot {
+public:
+    explicit ForkSnapshot(int pid, std::filesystem::path temporary = {}) noexcept
+        : pid_(pid), temporary_(std::move(temporary)) {}
+    ~ForkSnapshot();
+    ForkSnapshot(ForkSnapshot&& other) noexcept
+        : pid_(std::exchange(other.pid_, -1)), temporary_(std::move(other.temporary_)) {
+        other.temporary_.clear();
+    }
+    ForkSnapshot(const ForkSnapshot&) = delete;
+    ForkSnapshot& operator=(const ForkSnapshot&) = delete;
+    nbio::async::Task<bool> Wait();
+private:
+    int pid_;
+    std::filesystem::path temporary_;
+};
+
 namespace detail {
 struct SnapshotEntry {
     std::string key;
@@ -59,9 +73,13 @@ class Backup {
         return entries;
     }
 
+    template <template <typename, typename> typename Map>
+    ForkSnapshot fork_snapshot(Store<std::string, std::string, Map>& store) const {
+        return start([this, &store] { return save_now(capture(store)); });
+    }
+
     // Writes a snapshot of `entries` to the RDB path. The write happens in
-    // a child process, so the event loop waits for it but is never the
-    // process that forks.
+    // a child process; the parent observes completion without a helper thread.
     nbio::async::Task<bool> save(std::vector<detail::SnapshotEntry> entries) const;
 
     template <template <typename, typename> typename Map>
@@ -131,32 +149,7 @@ class Backup {
         return true;
     }
 
-    // Runs `work` on a helper thread. Forking is the reason: a child of the
-    // event loop thread would inherit the running backend.
-    template <typename Work, typename Result = std::invoke_result_t<Work>>
-    static nbio::async::Task<Result> offload(Work work) {
-        nbio::notification::ConditionVariable condition;
-        std::optional<Result> result;
-        std::atomic_bool done{false};
-        std::atomic_bool start{false};
-        std::thread worker([&work, &result, &condition, &done, &start] {
-            while (!start.load(std::memory_order_acquire)) {
-            }
-            try {
-                result.emplace(work());
-            } catch (...) {
-                result.emplace();  // a default value is what a failure looks like here
-            }
-            done.store(true, std::memory_order_release);
-            condition.NotifyOne();
-        });
-        co_await condition.Wait([&start, &done] {
-            start.store(true, std::memory_order_release);
-            return done.load(std::memory_order_acquire);
-        });
-        worker.join();
-        co_return std::move(*result);
-    }
+    ForkSnapshot start(std::function<bool()> write) const;
 
     std::filesystem::path path_;
 };

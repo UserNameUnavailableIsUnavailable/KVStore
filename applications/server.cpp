@@ -35,21 +35,16 @@ int main(int argc, char* argv[]) {
 
     // Nothing is given a default here: an option that was not named stays empty,
     // which is what lets a startup file set it. The defaults are applied last.
-    app.add_option("-p,--port", options.port, "TCP port clients connect to (default 8080)")
+    app.add_option("-p,--port", options.port, "TCP port clients connect to (default 6666)")
         ->check(CLI::Range(1, 65535));
-    app.add_option("--replication-port", options.replication_port,
-                   "rdma port this server serves snapshots on (default 0, which serves none)")
-        ->check(CLI::Range(0, 65535));
     app.add_option("--replication-ip", options.replication_address,
-                   "local address the replication listener binds (default 0.0.0.0)");
+                   "local address the replication listener binds; naming it makes this server a master");
     app.add_option("--rdma-device", options.rdma_device,
                    "rdma device the replication link runs on, by name (--rdma-device siw0)");
     app.add_option("--multiplexer", options.multiplexer, "I/O multiplexer: epoll or io_uring")
         ->check(CLI::IsMember({"epoll", "io_uring"}));
-    app.add_option("--replication-daemon", options.replication_daemon,
-                   "Local repld IPv4:port to launch and advertise; empty retains RDMA incremental sync");
-    app.add_option("--repld", options.repld_path,
-                   "repld executable (default: beside server)");
+    app.add_option("--broker", options.broker_endpoint,
+                   "broker IPv4:port to take the incremental stream from (replica side; empty follows the master)");
     app.add_option("-c,--config", options.config_file, "command file to run at startup, one command per line")
         ->check(CLI::ExistingFile);
 

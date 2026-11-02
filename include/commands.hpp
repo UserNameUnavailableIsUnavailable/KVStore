@@ -28,6 +28,7 @@ enum class CommandType {
     kBgSave,
     kSave,
     kSlaveOf,
+    kSync,
 };
 
 // A command that mutates the store. The AOF records these, the replication log
@@ -99,7 +100,7 @@ struct CommandParams {};
 // `CONFIG GET <parameter>` / `CONFIG SET <parameter> <value>...`, spelled the
 // way Redis spells them. No values is what tells the read form from the write
 // form, and a parameter that takes more than one value gets all of them:
-// `replication_address` wants an address and a port.
+// `replication_address` wants an address.
 struct ConfigParams {
     std::string parameter;
     std::vector<std::string> values;
@@ -123,15 +124,19 @@ struct SaveParams {};
 
 // `SLAVEOF <ip> <port>` makes this instance a replica of the master at that
 // address. It is the interface a client uses; what the two servers then say to
-// each other is PSYNC, which no client sends.
+// each other is SYNC, which the replica sends to the master.
 struct SlaveOfParams {
     std::string address;
     std::uint16_t port{0};
 };
 
+// `SYNC` asks a master for its dump: the answer is a FULLSYNC line, then the
+// dump itself over RDMA. A client sends it to the master; it takes no arguments.
+struct SyncParams {};
+
 using Parameters = std::variant<PingParams, GetParams, SetParams, DelParams, ExistsParams, DbSizeParams, ExpireParams,
                                 TTLParams, MultiParams, ExecParams, CommandParams, ClientParams, ConfigParams,
-                                BgSaveParams, SaveParams, InfoParams, SlaveOfParams>;
+                                BgSaveParams, SaveParams, InfoParams, SlaveOfParams, SyncParams>;
 
 struct Command {
     CommandType type;

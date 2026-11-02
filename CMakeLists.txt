@@ -55,6 +55,9 @@ include_directories(
 add_subdirectory(tutorial)
 add_subdirectory(source)
 add_subdirectory(applications)
+# The replication broker: a /dev/null follower of a master that fans the stream
+# out to replicas. Standalone; it links none of the storage code.
+add_subdirectory(broker)
 
 set(FIND_TARGET "" CACHE STRING "Build target whose file path FindTarge prints")
 if(FIND_TARGET)

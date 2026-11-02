@@ -6,11 +6,10 @@ CompileFlags:
   - -Ivcpkg_installed/x64-linux/include
 ---
 If:
-  PathMatch: ".*\\.c"
+  PathMatch: ".*\\.(c|h)"
 CompileFlags:
   Add:
   - -xc
-  - -std=c11
 ---
 If:
   PathMatch:

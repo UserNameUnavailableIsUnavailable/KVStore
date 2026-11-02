@@ -197,11 +197,11 @@ CommandValidation ValidateConfigWrite(const Arguments& arguments, std::size_t pa
             return Error("ERR CONFIG SET failed - 'rdma_device' wants the name of the rdma device replication runs on");
         }
     } else if (parameters.parameter == "replication_address") {
-        if (parameters.values.size() != 2 || !IsDeviceAddress(parameters.values.front()) ||
-            !IsPort(parameters.values.back(), 0)) {
-            return Error(
-                "ERR CONFIG SET failed - 'replication_address' wants <ip> <port>, the address of the rdma device to "
-                "serve replicas from");
+        // The rdma device's address; the port is chosen by the provider at bind
+        // time, so only the IP is named.
+        if (parameters.values.size() != 1 || !IsDeviceAddress(parameters.values.front())) {
+            return Error("ERR CONFIG SET failed - 'replication_address' wants <ip>, the address of the rdma device "
+                         "to serve replicas from");
         }
     } else if (parameters.parameter == "save") {
         if (parameters.values.size() != 2 || !IsUnsigned(parameters.values.front(), 0) ||
@@ -306,16 +306,15 @@ CommandValidation ValidateSave(const Arguments& arguments) {
     return NoArguments<SaveParams>(arguments, CommandType::kSave, "SAVE");
 }
 
-// `SLAVEOF <ip> <port>`: where to follow from. The address has to be one the
-// replication link can reach -- it is an rdma address, not a wildcard -- and
-// the port has to name something, which is why 0 is refused here where a
-// listener would accept it as "anything free".
+// `SLAVEOF <ip> <port>`: where to follow from. The address is the master's TCP
+// client address -- where the replica sends SYNC -- and the port has to name
+// something, which is why 0 is refused here.
 CommandValidation ValidateSlaveOf(const Arguments& arguments) {
     if (arguments.size() != 3) {
         return WrongArity("SLAVEOF");
     }
     if (!IsDeviceAddress(arguments[1]) || !IsPort(arguments[2], 1)) {
-        return Error("ERR SLAVEOF wants <ip> <port>, the rdma address of the master to follow");
+        return Error("ERR SLAVEOF wants <ip> <port>, the tcp address of the master to follow");
     }
     return {.command = Command{.type = CommandType::kSlaveOf,
                                .parameters = SlaveOfParams{.address = std::string(arguments[1]),
@@ -324,7 +323,12 @@ CommandValidation ValidateSlaveOf(const Arguments& arguments) {
             .error = {}};
 }
 
-constexpr std::array<ValidatorEntry, 15> kValidators = {{{"PING", ValidatePing},
+// `SYNC` takes nothing: it is the replica's side of the exchange, sent over TCP.
+CommandValidation ValidateSync(const Arguments& arguments) {
+    return NoArguments<SyncParams>(arguments, CommandType::kSync, "SYNC");
+}
+
+constexpr std::array<ValidatorEntry, 16> kValidators = {{{"PING", ValidatePing},
                                                          {"GET", ValidateGet},
                                                          {"SET", ValidateSet},
                                                          {"DEL", ValidateDel},
@@ -338,7 +342,8 @@ constexpr std::array<ValidatorEntry, 15> kValidators = {{{"PING", ValidatePing},
                                                          {"CONFIG", ValidateConfig},
                                                          {"BGSAVE", ValidateBgSave},
                                                          {"SAVE", ValidateSave},
-                                                         {"SLAVEOF", ValidateSlaveOf}}};
+                                                         {"SLAVEOF", ValidateSlaveOf},
+                                                         {"SYNC", ValidateSync}}};
 
 // The case of one ASCII letter, without the C library. `std::toupper` is a call
 // through the locale for every character, and this comparison runs for every
@@ -465,6 +470,8 @@ std::string_view CommandName(CommandType type) {
             return "SAVE";
         case CommandType::kSlaveOf:
             return "SLAVEOF";
+        case CommandType::kSync:
+            return "SYNC";
     }
     return "";
 }
@@ -529,6 +536,7 @@ RESP::Object CommandToRESP(const Command& command) {
         case CommandType::kCommand:
         case CommandType::kTTL:
         case CommandType::kDbSize:
+        case CommandType::kSync:
             break;
         case CommandType::kGet:
             push(std::get<GetParams>(command.parameters).key);

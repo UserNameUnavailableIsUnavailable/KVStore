@@ -1,7 +1,7 @@
 #pragma once
 
 #include <resp/resp.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <nbio/net/socket.hpp>
 #include <nbio/runtime/daemon.hpp>
 #include <nbio/net/tcp_session_service.hpp>
@@ -9,7 +9,7 @@
 namespace RESP {
 class Sender {
    public:
-    Sender(nbio::net::TcpSessionService& session, ::nbio::utility::Buffer& buffer);
+    Sender(nbio::net::TcpSessionService& session, ::memory::Buffer& buffer);
     ~Sender() noexcept;
 
     // Encodes one reply into the buffer without writing it, so the replies that
@@ -38,7 +38,7 @@ class Sender {
 
    private:
     nbio::net::TcpSessionService& session_;
-    nbio::utility::Buffer& buffer_;
+    memory::Buffer& buffer_;
     std::size_t bytes_sent_{0};
     std::string encode_error_;
     std::string internal_error_;

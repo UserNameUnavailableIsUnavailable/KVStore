@@ -1,7 +1,7 @@
 #include <resp/sender.hpp>
 
 #include <nbio/async/task.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <nbio/net/socket.hpp>
 #include <nbio/runtime/daemon.hpp>
 #include <stdexcept>
@@ -10,14 +10,14 @@
 #include <resp/resp.hpp>
 
 namespace RESP {
-Sender::Sender(nbio::net::TcpSessionService& session, nbio::utility::Buffer& buffer)
+Sender::Sender(nbio::net::TcpSessionService& session, memory::Buffer& buffer)
     : session_(session), buffer_(buffer) {
     if (!buffer.is_empty()) {
         throw std::logic_error("send buffer must be clean");
     }
 }
 
-Sender::~Sender() noexcept { buffer_.clear(); }
+Sender::~Sender() noexcept { buffer_.Clear(); }
 
 void Sender::Append(const Object& object) {
     // Written straight into the buffer, which grows to hold it. Encoding is the
@@ -44,7 +44,7 @@ nbio::async::Task<bool> Sender::Flush() {
             internal_error_ = "stream closed";
             co_return false;
         }
-        buffer_.consume(*result);
+        buffer_.Consume(*result);
     }
     co_return true;
 }

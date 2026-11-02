@@ -1,3 +1,6 @@
-add_library(kvstore_memory INTERFACE)
-target_sources(kvstore_memory INTERFACE memory_pool.cpp)
-target_compile_features(kvstore_memory INTERFACE cxx_std_20)
+add_library(kvstore_memory STATIC
+    memory_pool.cpp
+    buffer.cpp
+)
+target_compile_features(kvstore_memory PUBLIC cxx_std_20)
+target_link_libraries(kvstore_memory PRIVATE nbio::nbio)

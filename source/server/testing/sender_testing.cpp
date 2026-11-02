@@ -61,7 +61,7 @@ class RESPSending : public testing::Test {
 };
 
 TEST_F(RESPSending, FlushPreservesBatchedReplyOrderAndReusesTheBuffer) {
-    nbio::utility::Buffer buffer;
+    memory::Buffer buffer;
     RESP::Sender sender(*session_, buffer);
     bool sent = false;
     nbio::async::Run(Flush(sender, sent));
@@ -83,7 +83,7 @@ TEST_F(RESPSending, FlushHandlesPartialSendsAndBackpressureWithoutLosingBytes) {
                            &capacity, sizeof(capacity)), 0);
     const std::string value(4U * 1024U * 1024U, 'v');
     const std::string expected = "$" + std::to_string(value.size()) + "\r\n" + value + "\r\n+OK\r\n";
-    nbio::utility::Buffer buffer(16384, 8U * 1024U * 1024U);
+    memory::Buffer buffer(16384, 8U * 1024U * 1024U);
     RESP::Sender sender(*session_, buffer);
     sender.Append(RESP::Object(RESP::BulkString{.value = value}));
     sender.Append(RESP::Object(RESP::SimpleString{.value = "OK"}));
@@ -100,7 +100,7 @@ TEST_F(RESPSending, FlushHandlesPartialSendsAndBackpressureWithoutLosingBytes) {
 
 TEST_F(RESPSending, FlushReportsAnUnusableSocket) {
     session_->connector().Close();
-    nbio::utility::Buffer buffer;
+    memory::Buffer buffer;
     RESP::Sender sender(*session_, buffer);
     sender.Append(RESP::Object(RESP::SimpleString{.value = "OK"}));
     bool sent = true;

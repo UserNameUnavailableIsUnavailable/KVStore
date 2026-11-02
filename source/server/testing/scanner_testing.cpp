@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <resp/resp.hpp>
-#include <nbio/utility/buffer.hpp>
+#include <memory/buffer.hpp>
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -30,16 +30,16 @@ std::string Command(const std::vector<std::string>& words) {
     return bytes;
 }
 
-nbio::utility::Buffer BufferOf(std::string_view bytes) {
-    nbio::utility::Buffer buffer(bytes.size() + 16, bytes.size() + 16);
-    EXPECT_TRUE(buffer.write(bytes.data(), bytes.size()));
+memory::Buffer BufferOf(std::string_view bytes) {
+    memory::Buffer buffer(bytes.size() + 16, bytes.size() + 16);
+    EXPECT_TRUE(buffer.Write(bytes.data(), bytes.size()));
     return buffer;
 }
 
 // Every command in the buffer, read the way a connection reads them: scan, take
 // the words, consume exactly what the scan said, scan again.
 std::vector<std::vector<std::string>> CommandsIn(std::string_view bytes) {
-    nbio::utility::Buffer buffer = BufferOf(bytes);
+    memory::Buffer buffer = BufferOf(bytes);
     std::vector<std::string_view> words;
     std::size_t size = 0;
     std::vector<std::vector<std::string>> commands;
@@ -60,7 +60,7 @@ std::vector<std::vector<std::string>> CommandsIn(std::string_view bytes) {
             command.emplace_back(word);
         }
         commands.push_back(std::move(command));
-        buffer.consume(size);
+        buffer.Consume(size);
     }
     return commands;
 }
@@ -71,7 +71,7 @@ std::vector<std::vector<std::string>> CommandsIn(std::string_view bytes) {
 // anything after the last element answers nothing at all here.
 TEST(RESPScanning, ACommandWithNothingBehindItIsComplete) {
     const std::string bytes = Command({"SET", "key", "value"});
-    nbio::utility::Buffer buffer = BufferOf(bytes);
+    memory::Buffer buffer = BufferOf(bytes);
     std::vector<std::string_view> words;
     std::size_t size = 0;
 
@@ -87,7 +87,7 @@ TEST(RESPScanning, ACommandWithNothingBehindItIsComplete) {
 // path cost one pass and no allocation, so it is worth a test that says so.
 TEST(RESPScanning, TheWordsAreViewsIntoTheBuffer) {
     const std::string bytes = Command({"GET", "key"});
-    nbio::utility::Buffer buffer = BufferOf(bytes);
+    memory::Buffer buffer = BufferOf(bytes);
     std::vector<std::string_view> words;
     std::size_t size = 0;
 
@@ -120,12 +120,12 @@ TEST(RESPScanning, ACommandInPiecesIsCompleteOnItsLastByte) {
     std::size_t size = 0;
 
     for (std::size_t length = 0; length < bytes.size(); ++length) {
-        nbio::utility::Buffer buffer = BufferOf(std::string_view(bytes).substr(0, length));
+        memory::Buffer buffer = BufferOf(std::string_view(bytes).substr(0, length));
         EXPECT_EQ(RESP::ScanCommand(buffer, words, size), RESP::ScanStatus::kNeedInput)
             << "a command of " << length << " of " << bytes.size() << " bytes";
     }
 
-    nbio::utility::Buffer whole = BufferOf(bytes);
+    memory::Buffer whole = BufferOf(bytes);
     EXPECT_EQ(RESP::ScanCommand(whole, words, size), RESP::ScanStatus::kComplete);
     EXPECT_EQ(size, bytes.size());
 }
@@ -143,7 +143,7 @@ TEST(RESPScanning, AWordIsAsLongAsItsLengthSaysAndNoLonger) {
 // an answer for it, which is what the server says about a command that named
 // nothing.
 TEST(RESPScanning, AnEmptyCommandIsACommand) {
-    nbio::utility::Buffer buffer = BufferOf("*0\r\n");
+    memory::Buffer buffer = BufferOf("*0\r\n");
     std::vector<std::string_view> words;
     std::size_t size = 0;
 
@@ -168,7 +168,7 @@ TEST(RESPScanning, WhatIsNotACommandInPlaceIsLeftForTheDecoder) {
     };
 
     for (const std::string& bytes : others) {
-        nbio::utility::Buffer buffer = BufferOf(bytes);
+        memory::Buffer buffer = BufferOf(bytes);
         std::vector<std::string_view> words;
         std::size_t size = 0;
         const RESP::ScanStatus status = RESP::ScanCommand(buffer, words, size);

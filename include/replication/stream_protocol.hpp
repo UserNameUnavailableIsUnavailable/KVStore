@@ -39,6 +39,6 @@ inline std::optional<Frame> ParseFrame(std::string_view line) {
 inline bool Follows(const Frame& frame, std::uint64_t epoch, std::uint64_t applied) {
     if (frame.epoch != epoch) return false;
     if (frame.length == 0) return frame.end_offset == applied;
-    return frame.length <= UINT64_MAX - applied && frame.end_offset == applied + frame.length;
+    return applied != UINT64_MAX && frame.end_offset == applied + 1;
 }
 }  // namespace KV::Replication

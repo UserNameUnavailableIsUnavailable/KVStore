@@ -135,8 +135,8 @@ TEST(StorePolicyTesting, BorrowedLookupDoesNotCopyValues) {
     KV::LRUStore<std::string, CountedValue> store;
     store.set("key", CountedValue{});
     CountedValue::copies = CountedValue::assignments = 0;
-    EXPECT_NE(store.get_ref(std::string_view("key")), nullptr);
-    EXPECT_EQ(store.get_ref(std::string_view("missing")), nullptr);
+    EXPECT_NE(store.get_ptr(std::string_view("key")), nullptr);
+    EXPECT_EQ(store.get_ptr(std::string_view("missing")), nullptr);
     EXPECT_EQ(CountedValue::copies, 0);
     EXPECT_EQ(CountedValue::assignments, 0);
 }
@@ -147,26 +147,26 @@ TEST(StorePolicyTesting, BorrowedWritesOwnBytesAndReuseStorage) {
     std::string value(4096, 'a');
     const std::string original_key = key;
     ASSERT_TRUE(store.set(std::string_view(key), std::string_view(value)));
-    const char* original_buffer = store.get_ref(std::string_view(key))->data();
+    const char* original_buffer = store.get_ptr(std::string_view(key))->data();
     value[0] = 'b';
-    EXPECT_EQ(*store.get_ref(std::string_view(key)), std::string(4096, 'a'));
+    EXPECT_EQ(*store.get_ptr(std::string_view(key)), std::string(4096, 'a'));
     ASSERT_TRUE(store.set(std::string_view(key), std::string_view(value)));
-    EXPECT_EQ(store.get_ref(std::string_view(key))->data(), original_buffer);
-    EXPECT_EQ(*store.get_ref(std::string_view(key)), value);
+    EXPECT_EQ(store.get_ptr(std::string_view(key))->data(), original_buffer);
+    EXPECT_EQ(*store.get_ptr(std::string_view(key)), value);
     key.assign("changed");
-    EXPECT_NE(store.get_ref(std::string_view(original_key)), nullptr);
+    EXPECT_NE(store.get_ptr(std::string_view(original_key)), nullptr);
     ASSERT_TRUE(store.set_ttl(original_key, std::chrono::hours(1)));
     ASSERT_TRUE(store.set(std::string_view(original_key), std::string_view{}));
     EXPECT_TRUE(store.get_ttl(original_key));
-    EXPECT_TRUE(store.get_ref(std::string_view(original_key))->empty());
+    EXPECT_TRUE(store.get_ptr(std::string_view(original_key))->empty());
     ASSERT_TRUE(store.set(std::string_view("second"), std::string_view("value")));
-    store.get_ref(std::string_view(original_key));
+    store.get_ptr(std::string_view(original_key));
     ASSERT_TRUE(store.set(std::string_view("third"), std::string_view("value")));
-    EXPECT_EQ(store.get_ref(std::string_view("second")), nullptr);
+    EXPECT_EQ(store.get_ptr(std::string_view("second")), nullptr);
     store.set_eviction_policy(KV::EvictionPolicy::kNoEviction);
     EXPECT_FALSE(store.set(std::string_view("fourth"), std::string_view("value")));
     ASSERT_TRUE(store.set_ttl(original_key, std::chrono::steady_clock::duration::zero()));
-    EXPECT_EQ(store.get_ref(std::string_view(original_key)), nullptr);
+    EXPECT_EQ(store.get_ptr(std::string_view(original_key)), nullptr);
     EXPECT_TRUE(store.set(std::string_view("fourth"), std::string_view("value")));
 }
 

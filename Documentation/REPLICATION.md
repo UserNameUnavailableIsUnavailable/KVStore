@@ -16,21 +16,17 @@ The service is described by two things a caller gives it:
 ## Command line
 
 ```
-Server --port 8080 --replication-port 9000 --replication-ip 192.168.0.201 --rdma-device siw0
+Server --port 8080 --replication-ip 192.168.0.201 --rdma-device siw0
 Server --port 8081 --rdma-device siw0
 
-redis-cli -p 8081 SLAVEOF 192.168.0.201 9000
+redis-cli -p 8081 SLAVEOF 192.168.0.201 8080
 ```
 
 - `--port` — the TCP port clients connect to.
-- `--replication-port` — the RDMA port this server serves replicas on. `0`
-  (the default) serves none.
-- `--replication-ip` — the local address the RDMA listener binds. It has to
-  name the RDMA device (`siw0` is `192.168.0.201` on the development machine): a
-  wildcard such as `0.0.0.0` is accepted by `rdma_bind_addr` but binds no device,
-  so a replication port without an address that names one is refused at startup
-  rather than served from nowhere.
-- `--rdma-device <name>` — the device the link runs on. Serving replicas needs
+- `--replication-ip` — the local address of the RDMA device this server serves
+  dumps from; naming it makes the server a master. The port is chosen by the
+  provider at bind time and announced in each `FULLSYNC` answer.
+- `--rdma-device <name>` — the device the dump travels on. Serving replicas needs
   it; so does following a master, which `SLAVEOF` asks for after startup.
 - `--config <file>` — a startup command file, one command per line, run before
   the server accepts a client. The port it serves on, the address it serves
@@ -43,9 +39,9 @@ Which master this instance follows is **not** a startup setting. `SLAVEOF <ip>
 <port>` names one, and a client sends it once the server is answering; from that
 moment the instance is a replica and **read-only** — writes are refused with
 `-READONLY You can't write against a read only replica.` The address is the
-master's *RDMA* address, not the TCP port it answers clients on. A second
-`SLAVEOF` on an instance that already follows a master is refused rather than
-silently moving it.
+master's *TCP* client address, where the replica sends `SYNC`; the RDMA endpoint
+for the dump arrives in the master's `FULLSYNC` answer. A second `SLAVEOF` on an
+instance that already follows a master is refused rather than silently moving it.
 
 ## Full synchronization
 

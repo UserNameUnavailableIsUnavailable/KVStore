@@ -3,6 +3,12 @@
 #include <checksum/checksum.hpp>
 #include <nbio/utility/byte.hpp>
 #include <nbio/fs/file_view.hpp>
+#include <nbio/time.hpp>
+#include <signal.h>
+#include <iostream>
+#include <cerrno>
+#include <cstdio>
+#include <system_error>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -18,10 +24,51 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/prctl.h>
 #include <unistd.h>
 #endif
 
 namespace KV {
+ForkSnapshot::~ForkSnapshot() {
+    if (pid_ >= 0) {
+        if (::kill(pid_, SIGKILL) != 0 && errno != ESRCH) {
+            std::cerr << "replication: cannot terminate snapshot child: " << std::strerror(errno) << '\n';
+        }
+        while (::waitpid(pid_, nullptr, 0) < 0) {
+            if (errno == EINTR) continue;
+            std::cerr << "replication: cannot reap snapshot child: " << std::strerror(errno) << '\n';
+            break;
+        }
+    }
+    if (!temporary_.empty()) {
+        std::error_code error;
+        std::filesystem::remove(temporary_, error);
+        if (error) std::cerr << "replication: cannot remove snapshot temporary: " << error.message() << '\n';
+    }
+}
+
+nbio::async::Task<bool> ForkSnapshot::Wait() {
+    while (pid_ >= 0) {
+        int status = 0;
+        const auto result = ::waitpid(pid_, &status, WNOHANG);
+        if (result == pid_) {
+            pid_ = -1;
+            if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+                std::cerr << "replication: snapshot child failed (wait status " << status << ")\n";
+                co_return false;
+            }
+            co_return true;
+        }
+        if (result < 0 && errno != EINTR) {
+            const auto error = errno;
+            if (error == ECHILD) pid_ = -1;
+            throw std::system_error(error, std::generic_category(), "waiting for replication snapshot");
+        }
+        co_await nbio::time::SystemTimeService{}.Sleep(std::chrono::milliseconds(10));
+    }
+    throw std::logic_error("replication snapshot already reaped");
+}
+
 namespace detail {
 constexpr std::uint8_t kAux = 0xFA;
 constexpr std::uint8_t kResizeDb = 0xFB;
@@ -293,33 +340,34 @@ bool ReadSnapshot(const std::filesystem::path& path, std::vector<LoadedEntry>& e
 }
 }  // namespace detail
 
-namespace {
-// The fork is the whole point of a background save: the child writes the image
-// and the parent only waits, so the event loop never runs the (potentially
-// large) serialisation itself.
-bool WriteSnapshotInChild(const std::filesystem::path& path, const std::vector<detail::SnapshotEntry>& entries) {
+ForkSnapshot Backup::start(std::function<bool()> write) const {
+    std::filesystem::path temporary = path_.string() + ".tmp";
+    const auto parent = ::getpid();
     const pid_t child = ::fork();
     if (child < 0) {
-        return false;
+        throw std::system_error(errno, std::generic_category(), "forking snapshot");
     }
     if (child == 0) {
-        _exit(detail::WriteSnapshot(path, entries) ? EXIT_SUCCESS : EXIT_FAILURE);
+        if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || ::getppid() != parent) ::_exit(EXIT_FAILURE);
+        // Child serialization must never run inherited NBIO services.
+        if (::close_range(3, ~0U, 0) != 0) ::_exit(EXIT_FAILURE);
+        try {
+            ::_exit(write() ? EXIT_SUCCESS : EXIT_FAILURE);
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "snapshot: %s\n", error.what());
+            ::_exit(EXIT_FAILURE);
+        }
     }
-
-    int status = 0;
-    if (::waitpid(child, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-        return false;
-    }
-    return true;
+    return ForkSnapshot(child, std::move(temporary));
 }
-}  // namespace
 
 nbio::async::Task<bool> Backup::save(std::vector<detail::SnapshotEntry> entries) const {
-    co_return co_await offload([this, entries = std::move(entries)] { return WriteSnapshotInChild(path_, entries); });
+    auto snapshot = start([this, &entries] { return detail::WriteSnapshot(path_, entries); });
+    co_return co_await snapshot.Wait();
 }
 
 bool Backup::save_now(std::vector<detail::SnapshotEntry> entries) const {
-    // No child and no offload: the image is serialised on the caller's thread, so
+    // No child: the image is serialised on the caller's thread, so
     // the caller waits for it and nothing of the server runs while it is written.
     return detail::WriteSnapshot(path_, entries);
 }

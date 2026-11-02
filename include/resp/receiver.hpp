@@ -26,7 +26,7 @@ class Receiver {
         std::optional<Object> object;
     };
 
-    Receiver(nbio::net::TcpSessionService& session, ::nbio::utility::Buffer& buffer);
+    Receiver(nbio::net::TcpSessionService& session, ::memory::Buffer& buffer);
     ~Receiver() noexcept;
 
     nbio::async::Task<std::optional<Object>> Receive();
@@ -75,7 +75,7 @@ class Receiver {
     Decoder& decoder();
 
     nbio::net::TcpSessionService& session_;
-    nbio::utility::Buffer& buffer_;
+    memory::Buffer& buffer_;
     std::optional<Decoder> pending_;
     // The words of the last command handed out, and how many bytes of the buffer
     // they are views into. Both belong to the connection rather than to a call,

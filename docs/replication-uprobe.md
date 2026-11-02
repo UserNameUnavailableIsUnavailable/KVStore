@@ -9,7 +9,7 @@ incremental replication. The master launches `repld` during startup and shares
 only replication metadata through mmap; write payloads still travel via uprobe.
 
 The server, daemon, and BPF object build. Tests cover the logical hook arguments,
-binary payloads, byte offsets, chunk assembly, loss recovery, NBIO transport,
+binary payloads, command sequences, fork isolation, chunk assembly, loss recovery, NBIO transport,
 RDMA fallback, and AOF enable/disable. Release disassembly confirms the hook
 symbol and real calls. Live BPF loading in the development environment fails
 with EPERM, so kernel verifier acceptance and real privileged end-to-end capture
@@ -25,25 +25,26 @@ Unrelated worktree changes are retained.
 Successful SET/DEL, without suspension between mutation and logging
     |
     +--> AppendOnlyFile::log(command)
-           encode once; advance epoch-scoped logical byte offset
+           increment global write counter; encode once if logging is needed
            call kvstore_write_log_v1(epoch, end_offset, bytes, length)
                 |
-                +-- uprobe --> BPF ring --> CaptureStream --> replay backlog
-                |                                               |
-                |                                          NBIO TCP followers
+                +-- uprobe --> BPF ring --> ReplicationDaemon
+                |                            capture, backlog, NBIO TCP followers
                 |
                 +-- AOF enabled --> append the same bytes to disk
 
-Master -- RDMA snapshot at offset S --> replica
+Master -- tuple at counter S; fork without suspension --> snapshot child
 Replica -- FOLLOW epoch S ticket --> repld
 Replica <-- +CONTINUE epoch -- daemon
-Replica releases its RDMA connection and follows TCP only
+Replica buffers incremental commands while RDMA transfers the forked dump
+Replica restores dump, sends FULLSYNCED, then releases RDMA and replays backlog
 ```
 
 With AOF disabled in daemon mode, write logging is skipped whenever the shared
 atomic `ReplicationInfo::replica_count` is zero, including after the last replica
-detaches. Skipped writes neither encode nor allocate the encoding buffer, advance
-the offset, nor invoke the payload hook. The next snapshot covers those writes.
+detaches. Skipped writes neither encode nor allocate the encoding buffer nor
+invoke the payload hook. They still increment the global write counter.
+The next snapshot covers those writes.
 Snapshotting replicas are counted before capture, so writes during transfer are
 not skipped. AOF-enabled writes are always logged regardless of replica count.
 Zero-length liveness hooks still run every 100 ms while idle.
@@ -57,7 +58,8 @@ and RDMA queue copies consume it immediately. Disk append copies into its own
 buffer before its first suspension, so another client cannot overwrite an
 in-flight AOF write. The encoding buffer does not grow per command.
 
-The daemon owns follower connections, retention, progress, and fanout. The
+The monolithic `ReplicationDaemon` class owns probe attachment, event assembly,
+the replay backlog, follower connections, progress, and NBIO fanout. The
 daemon-enabled master owns no per-follower incremental queues or ACK state.
 Transient RDMA snapshot sessions and bounded shared handoff slots remain on the master.
 Without a configured
@@ -68,18 +70,20 @@ daemon, the existing RDMA incremental queues and delivery path remain active.
 `ReplicationInfo` is a versioned struct mapped `MAP_SHARED` from a sealed memfd.
 The master creates it and passes the descriptor to its `repld` child at exec.
 Both processes must use the same ABI and lock-free 64-bit atomics. It currently
-holds the count, daemon readiness, and 128 generation-tagged handoff slots;
+holds the replica count, daemon/capture readiness, master write count, captured
+command count, and 128 generation-tagged handoff slots;
 future shared fields belong in this struct, with an appropriate ABI update.
 It is **not** a shared command buffer.
 
 Count ownership is deliberately asymmetric:
 
 1. **The master increments** once when an RDMA replica begins snapshot
-   synchronization, before waiting for/capturing its snapshot.
+   synchronization, before forking its snapshot.
 2. **The master decrements** if the snapshot or connection to `repld` fails
-   before handoff, including a five-second FOLLOW handoff timeout.
+   before handoff. Capture-boundary confirmation is bounded at five seconds.
 3. **`repld` never increments.** A valid FOLLOW atomically claims the existing
-   ticket before `+CONTINUE`, inheriting the counted connection from RDMA.
+   ticket before `+CONTINUE`, inheriting the counted connection from RDMA
+   while the full snapshot is still transferring.
 4. **`repld` decrements** once when an inherited follower detaches, times out,
    loses retained history, encounters a transport failure, or is stopped.
 
@@ -100,9 +104,12 @@ extern "C" void kvstore_write_log_v1(
     uint64_t end_offset,
     const char* payload,
     uint64_t length) noexcept;
+
+extern "C" void kvstore_replication_start_v1(
+    uint64_t epoch, uint64_t offset, uint64_t ticket) noexcept;
 ```
 
-This synchronous function has an unmangled versioned symbol, noinline/retention
+These synchronous functions have unmangled versioned symbols, noinline/retention
 attributes, and an observable compiler barrier to preserve its calls under
 optimization. The pointed-to bytes remain valid throughout the call. The BPF
 program copies them synchronously and never stores pointers for later use.
@@ -120,9 +127,20 @@ synchronous for the same mutation-to-log boundary.
 Bulk load/AOF startup replay is not emitted as incremental writes; it belongs in
 the initial snapshot.
 
-Epochs change on process/log construction, not on AOF enable/disable. Logical
-offsets count canonical RESP bytes, excluding AOF checksum trailers. They are
-not physical file offsets or fsync positions.
+Epochs change on process/log construction, not on AOF enable/disable. Offsets
+are now **command counts, not byte offsets**. At boundary S the dump contains
+the first S successful logged write operations. The next command has zero-based
+index S and carries exclusive end counter S+1 on the wire. SET and DEL each
+advance the counter once, regardless of payload length. Borrowed SETs count too,
+even when no encoding is needed. Startup bulk load/AOF replay does not count.
+This changes the replication wire semantics; do not mix old/new binaries.
+
+The AOF's local write counter must equal `ReplicationInfo::write_count` before
+each increment. In `ReplicationDaemon::AppendCommand`, capture assembly checks
+that commands increment by exactly one and never exceed the shared count.
+After consuming a stable BPF status revision, the append-command head must equal
+the producer's committed head. `captured_count` can legitimately lag the master
+while capture is in flight; unequal asynchronous samples alone are not failure.
 
 ## Capture and loss
 
@@ -141,8 +159,11 @@ lost **final** write is detected without waiting for a later ring event.
 Attachment failure, map errors, and stale/unstable status lasting five seconds
 are explicit daemon errors, not successful fallback.
 
-On initial attachment or capture loss, the daemon anchors at the observed
-committed head and discards old/partial history. Existing followers are
+The tuple hook arms BPF capture synchronously at S before fork; it does not wait
+for daemon userspace scheduling. Initial polling uses this saved **baseline**,
+not the later observed head, preserving commands already queued after the tuple.
+Further tuples at a continuous head do not reset existing followers.
+On capture loss, the daemon anchors at a new baseline and discards partial history. Existing followers are
 disconnected and must resnapshot. Queued events at/before that baseline are
 ignored. A new snapshot at a retained boundary can start following again.
 
@@ -153,21 +174,38 @@ for each supported build.
 
 ## Snapshot handoff and offset chasing
 
-Snapshot capture copies live state synchronously on the same executor as writes.
-The master records logical offset S before yielding to background serialization.
+The master prepares the tuple at S, calls the deliberate tuple hook, and
+immediately forks the live store on the same single-threaded executor, with
+**no await between these operations**. The child captures and serializes its
+copy-on-write view; the parent does not first copy the store into a vector.
+It closes inherited master descriptors and never runs the inherited NBIO
+runtime. The parent uses NBIO timers and nonblocking waitpid to observe completion;
+cancellation kills and reaps the owned child. A parent-death signal also kills it.
+This path assumes the master is single-threaded; it is not a general safe
+post-fork C++ serializer for an arbitrarily multithreaded host.
+Existing background saves use the same fork-and-NBIO-wait helper rather than
+creating a helper thread, preserving this single-threaded parent model.
+
+The master confirms that daemon userspace observed the capture boundary before
+publishing the tuple on RDMA. Network send completion is not the snapshot
+boundary: waiting for a send and only then forking would allow intervening writes.
 Snapshot sessions are serialized and use `replication.rdb`, separate from
 SAVE/BGSAVE's `dump.rdb`.
 
-The existing full-sync exchange remains:
+The daemon-mode exchange is:
 
 ```text
 replica -> master  PSYNC ? -1
-master  -> replica +FULLRESYNC epoch S\r\n$length\r\n<RDB bytes>
-replica loads and validates RDB
-replica -> master  PSYNC epoch 0
-master  -> replica +DAEMON IPv4:port epoch S ticket\r\n
+master  -> replica +REPLICATION epoch S IPv4:port ticket\r\n
+                   (tuple hook and fork happen before asynchronous publication)
 replica -> daemon  FOLLOW epoch S ticket\r\n
 daemon  -> replica +CONTINUE epoch\r\n
+master  -> replica +FULLSYNC\r\n$length\r\n<RDB bytes>
+daemon  -> replica commands accumulate in the replica's backlog in parallel
+replica loads and validates RDB
+replica -> master  FULLSYNCED epoch S (RESP array)
+master  -> replica +CONTINUE epoch\r\n
+replica releases RDMA, drains its backlog, then keeps applying new commands
 ```
 
 The daemon accepts only an exact retained command boundary in the same epoch
@@ -179,13 +217,21 @@ It then streams:
 ```
 
 A replica at S accepts a nonempty record only when
-`end_offset == S + payload_length`, with overflow checks. A heartbeat has zero
+`end_offset == S + 1`, with overflow checks. A heartbeat has zero
 length and must quote S exactly. Malformed payloads, failed application, gaps,
 epoch mismatch, disconnection, or heartbeat timeout trigger another full sync.
 
-After daemon acceptance, the replica stops the RDMA reader and releases its
-snapshot connection. TCP connect alone is insufficient. If attachment or FOLLOW
-fails, the replica retries full sync; there is no silent transport switch.
+The replica's receiver and snapshot loader run concurrently using NBIO.
+No buffered command is applied until snapshot restore and FULLSYNCED confirmation.
+Its 64 MiB backlog includes per-record overhead; overflow explicitly aborts the
+attempt rather than growing without bound or skipping commands. A connection,
+FOLLOW, framing, or snapshot failure cancels the sibling tasks and closes both
+paths. There is no fallback to RDMA incremental mode in this handshake.
+`INCREMENTAL` is reserved as a possible future alternative, **not implemented**.
+The outer follow loop may retry a fresh full-sync request after failure.
+
+Without `--replication-daemon`, the existing standalone RDMA incremental mode
+still uses FULLRESYNC/PSYNC. It also reports command counts in snapshot metadata.
 
 This is Redis-like offset chasing, not a durable Redis replication journal:
 only ranges retained by the daemon can be replayed. Capture loss has no
@@ -215,23 +261,29 @@ Linux, a BPF-capable clang, libbpf development headers/library (via pkg-config),
 and the existing RDMA dependencies are required. No SystemTap headers, kernel
 BTF dump, or generated libbpf skeleton is needed.
 
+The daemon lives in its own `repld/` directory and builds as a standalone
+executable (target `repld`); the rest of the tree does not depend on libbpf.
+
 ```bash
-cmake -S . -B build -DKVSTORE_BUILD_PROBE_DAEMON=ON
+cmake -S . -B build
 cmake --build build --config Release --target server repld
 ```
 
-For a server/RDMA-only build, set `KVSTORE_BUILD_PROBE_DAEMON=OFF`; no BPF build
-tools or libbpf are required in that mode.
-
 ```bash
-# Run the master with the BPF/perf attachment privileges required by its child.
+# Run the master. It prints the repld command line and waits for it, because
+# only the daemon needs BPF attachment privileges.
 ./build/applications/Release/server \
   --port 6666 --rdma-device siw0 \
-  --replication-ip 192.168.4.146 --replication-port 6667 \
-  --replication-daemon 192.168.4.146:6668
+  --replication-ip 192.168.4.146 \
+  --replication-daemon 192.168.4.146:6668 --repld-manual
+# In another shell, run the command the master printed, e.g.:
+sudo ./build/applications/Release/repld \
+  --pid <master-pid> --binary ./build/applications/Release/server \
+  --info-file /tmp/kvstore-repld-<master-pid>.info \
+  --listen-address 192.168.4.146 --port 6668 --multiplexer epoll
 
 ./build/applications/Release/server --port 7777 --rdma-device siw0
-redis-cli -p 7777 SLAVEOF 192.168.4.146 6667
+redis-cli -p 7777 SLAVEOF 192.168.4.146 6666
 ```
 
 No separate daemon launch is needed. Its endpoint must be a local numeric IPv4
@@ -248,7 +300,7 @@ Both epoll and io_uring TCP backends are available.
 ```bash
 cmake --build build --config Release --target replication_testing replication_daemon_testing
 ctest --test-dir build -C Release \
-  -R '^(ReplicationInfo|LogicalLog|CaptureStream|ReplayBacklog|ReplicationProtocol|Backends/DaemonTransportTest)' \
+  -R '^(ForkSnapshot|ReplicationInfo|LogicalLog|CaptureStream|ReplayBacklog|ReplicationProtocol|Backends/DaemonTransportTest)' \
   --output-on-failure
 
 KVSTORE_RDMA_ADDRESS=192.168.4.146 \
@@ -264,7 +316,9 @@ cross-process claim/cancel races, count-driven logging, inherited descriptor
 mapping, child readiness/termination, and unexpected child exits. A dedicated
 test fixture checks process supervision without pretending to capture writes.
 Transport tests exercise both NBIO backends and release counts on disconnect,
-history loss, and shutdown.
+history loss, and shutdown. They also verify buffering before snapshot completion,
+ordered catch-up followed by new writes, bounded-backlog failure, and rejected
+FOLLOW admission. Fork tests verify that parent mutations do not alter the dump.
 
 Privileged scenarios run the real master, auto-started daemon, and two replicas,
 checking binary SET/DEL, large records, RDMA descriptor release, and fail-fast

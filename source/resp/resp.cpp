@@ -22,13 +22,13 @@ DecodeResult ErrorDecode(std::string error) {
     return {.status = DecodeStatus::kProtocolError, .object = std::nullopt, .error = std::move(error)};
 }
 
-Decoder ReadLine(::nbio::utility::Buffer& buffer, std::string& line) {
+Decoder ReadLine(::memory::Buffer& buffer, std::string& line) {
     for (;;) {
         while (buffer.is_empty()) {
             co_yield DecodeStatus::kNeedInput;
         }
         const char character = buffer.string_view().front();
-        buffer.consume(1);
+        buffer.Consume(1);
         if (character != '\r') {
             line.push_back(character);
             continue;
@@ -39,19 +39,19 @@ Decoder ReadLine(::nbio::utility::Buffer& buffer, std::string& line) {
         if (buffer.string_view().front() != '\n') {
             co_return ErrorDecode("line is missing LF after CR");
         }
-        buffer.consume(1);
+        buffer.Consume(1);
         co_return CompleteDecode();
     }
 }
 
-Decoder ReadBytes(::nbio::utility::Buffer& buffer, std::size_t size, std::string& bytes) {
+Decoder ReadBytes(::memory::Buffer& buffer, std::size_t size, std::string& bytes) {
     while (size != 0) {
         while (buffer.is_empty()) {
             co_yield DecodeStatus::kNeedInput;
         }
         const std::size_t count = std::min(size, buffer.readable_size());
         bytes.append(buffer.string_view().data(), count);
-        buffer.consume(count);
+        buffer.Consume(count);
         size -= count;
     }
     co_return CompleteDecode();
@@ -200,9 +200,9 @@ std::optional<std::vector<std::string>> SplitInlineCommand(std::string_view line
     return words;
 }
 
-Decoder ParseObject(::nbio::utility::Buffer& buffer, std::optional<Object>& output, std::size_t depth);
+Decoder ParseObject(::memory::Buffer& buffer, std::optional<Object>& output, std::size_t depth);
 
-Decoder ParseAggregate(::nbio::utility::Buffer& buffer, std::optional<Object>& output, std::size_t depth,
+Decoder ParseAggregate(::memory::Buffer& buffer, std::optional<Object>& output, std::size_t depth,
                        char marker, std::size_t count) {
     if (marker == '%' || marker == '|') {
         Map values;
@@ -250,7 +250,7 @@ Decoder ParseAggregate(::nbio::utility::Buffer& buffer, std::optional<Object>& o
     co_return CompleteDecode();
 }
 
-Decoder ParseObject(::nbio::utility::Buffer& buffer, std::optional<Object>& output, std::size_t depth) {
+Decoder ParseObject(::memory::Buffer& buffer, std::optional<Object>& output, std::size_t depth) {
     constexpr std::size_t kMaximumNesting = 128;
     if (depth > kMaximumNesting) {
         co_return ErrorDecode("maximum RESP nesting exceeded");
@@ -259,7 +259,7 @@ Decoder ParseObject(::nbio::utility::Buffer& buffer, std::optional<Object>& outp
         co_yield DecodeStatus::kNeedInput;
     }
     const char marker = buffer.string_view().front();
-    buffer.consume(1);
+    buffer.Consume(1);
 
     std::string line;
     auto line_reader = ReadLine(buffer, line);
@@ -485,21 +485,21 @@ void ExpandObject(std::vector<EncodeFrame>& frames, const Object& object) {
 constexpr std::size_t kMaximumEncodeDepth = 128;
 
 // `marker`, then `text`, then CRLF.
-bool AppendLine(::nbio::utility::Buffer& buffer, char marker, std::string_view text) {
+bool AppendLine(::memory::Buffer& buffer, char marker, std::string_view text) {
     char line[64];
     if (text.size() + 3U <= sizeof(line)) {
         line[0] = marker;
         std::memcpy(line + 1, text.data(), text.size());
         line[text.size() + 1] = '\r';
         line[text.size() + 2] = '\n';
-        return buffer.write(line, text.size() + 3U);
+        return buffer.Write(line, text.size() + 3U);
     }
-    return buffer.write(&marker, 1) && buffer.write(text.data(), text.size()) && buffer.write("\r\n", 2);
+    return buffer.Write(&marker, 1) && buffer.Write(text.data(), text.size()) && buffer.Write("\r\n", 2);
 }
 
 // `marker`, then a number, then CRLF: the header of every typed reply and the
 // length of everything that is sent in bulk.
-bool AppendNumberedLine(::nbio::utility::Buffer& buffer, char marker, std::int64_t number) {
+bool AppendNumberedLine(::memory::Buffer& buffer, char marker, std::int64_t number) {
     char line[32];
     line[0] = marker;
     const auto [end, error] = std::to_chars(line + 1, line + sizeof(line) - 2, number);
@@ -508,19 +508,19 @@ bool AppendNumberedLine(::nbio::utility::Buffer& buffer, char marker, std::int64
     }
     *end = '\r';
     *(end + 1) = '\n';
-    return buffer.write(line, static_cast<std::size_t>(end - line) + 2U);
+    return buffer.Write(line, static_cast<std::size_t>(end - line) + 2U);
 }
 
 // `marker`, the length of the payload as a decimal number, CRLF, the payload,
 // CRLF.
-bool AppendBulk(::nbio::utility::Buffer& buffer, char marker, std::string_view payload) {
+bool AppendBulk(::memory::Buffer& buffer, char marker, std::string_view payload) {
     return AppendNumberedLine(buffer, marker, static_cast<std::int64_t>(payload.size())) &&
-           buffer.write(payload.data(), payload.size()) && buffer.write("\r\n", 2);
+           buffer.Write(payload.data(), payload.size()) && buffer.Write("\r\n", 2);
 }
 
-bool AppendValue(::nbio::utility::Buffer& buffer, const Object& object, std::size_t depth);
+bool AppendValue(::memory::Buffer& buffer, const Object& object, std::size_t depth);
 
-bool AppendValues(::nbio::utility::Buffer& buffer, const std::vector<Object>& values, std::size_t depth) {
+bool AppendValues(::memory::Buffer& buffer, const std::vector<Object>& values, std::size_t depth) {
     for (const Object& value : values) {
         if (!AppendValue(buffer, value, depth)) {
             return false;
@@ -529,7 +529,7 @@ bool AppendValues(::nbio::utility::Buffer& buffer, const std::vector<Object>& va
     return true;
 }
 
-bool AppendPairs(::nbio::utility::Buffer& buffer, const std::vector<std::pair<Object, Object>>& values,
+bool AppendPairs(::memory::Buffer& buffer, const std::vector<std::pair<Object, Object>>& values,
                  std::size_t depth) {
     for (const auto& [key, value] : values) {
         if (!AppendValue(buffer, key, depth) || !AppendValue(buffer, value, depth)) {
@@ -539,7 +539,7 @@ bool AppendPairs(::nbio::utility::Buffer& buffer, const std::vector<std::pair<Ob
     return true;
 }
 
-bool AppendValue(::nbio::utility::Buffer& buffer, const Object& object, std::size_t depth) {
+bool AppendValue(::memory::Buffer& buffer, const Object& object, std::size_t depth) {
     if (depth > kMaximumEncodeDepth) {
         return false;
     }
@@ -571,8 +571,8 @@ bool AppendValue(::nbio::utility::Buffer& buffer, const Object& object, std::siz
                 // length is known before either part is written.
                 const std::size_t length = value.format.size() + 1U + value.value.size();
                 return AppendNumberedLine(buffer, '=', static_cast<std::int64_t>(length)) &&
-                       buffer.write(value.format.data(), value.format.size()) && buffer.write(":", 1) &&
-                       buffer.write(value.value.data(), value.value.size()) && buffer.write("\r\n", 2);
+                       buffer.Write(value.format.data(), value.format.size()) && buffer.Write(":", 1) &&
+                       buffer.Write(value.value.data(), value.value.size()) && buffer.Write("\r\n", 2);
             } else if constexpr (std::same_as<Type, Array> || std::same_as<Type, Set> || std::same_as<Type, Push>) {
                 constexpr char marker = std::same_as<Type, Array> ? '*' : (std::same_as<Type, Set> ? '~' : '>');
                 return AppendNumberedLine(buffer, marker, static_cast<std::int64_t>(value.values.size())) &&
@@ -587,11 +587,11 @@ bool AppendValue(::nbio::utility::Buffer& buffer, const Object& object, std::siz
 }
 }  // namespace
 
-bool AppendBulkString(std::optional<std::string_view> value, ::nbio::utility::Buffer& buffer) {
+bool AppendBulkString(std::optional<std::string_view> value, ::memory::Buffer& buffer) {
     return value ? AppendBulk(buffer, '$', *value) : AppendLine(buffer, '$', "-1");
 }
 
-Decoder Decode(::nbio::utility::Buffer& buffer, Dialect dialect) {
+Decoder Decode(::memory::Buffer& buffer, Dialect dialect) {
     if (dialect == Dialect::kMultibulkAndInline) {
         // Nothing can be said about the message until its first byte is here:
         // that byte is what says which dialect it is written in.
@@ -770,7 +770,7 @@ DecodeResult& Decoder::result() noexcept {
     return handle_.promise().result_;
 }
 
-Encoder Encode(const Object& object, ::nbio::utility::Buffer& buffer) {
+Encoder Encode(const Object& object, ::memory::Buffer& buffer) {
     std::vector<EncodeFrame> frames;
     frames.reserve(16);
     PushObject(frames, object);
@@ -808,19 +808,19 @@ Encoder Encode(const Object& object, ::nbio::utility::Buffer& buffer) {
             frames.pop_back();
             continue;
         }
-        if (buffer.write(bytes.data() + frame.offset, bytes.size() - frame.offset)) {
+        if (buffer.Write(bytes.data() + frame.offset, bytes.size() - frame.offset)) {
             frames.pop_back();
             continue;
         }
 
         std::size_t writable = buffer.writable_size();
         if (writable == 0 && buffer.readable_size() == 0) {
-            buffer.clear();
+            buffer.Clear();
             writable = buffer.writable_size();
         }
         if (writable != 0) {
             const std::size_t count = std::min(writable, bytes.size() - frame.offset);
-            const bool appended = buffer.write(bytes.data() + frame.offset, count);
+            const bool appended = buffer.Write(bytes.data() + frame.offset, count);
             assert(appended);
             frame.offset += count;
             continue;
@@ -829,7 +829,7 @@ Encoder Encode(const Object& object, ::nbio::utility::Buffer& buffer) {
     }
 }
 
-bool AppendObject(const Object& object, ::nbio::utility::Buffer& buffer) { return AppendValue(buffer, object, 0); }
+bool AppendObject(const Object& object, ::memory::Buffer& buffer) { return AppendValue(buffer, object, 0); }
 
 namespace {
 // The number that follows a type marker: how many elements an array has, or how
@@ -867,7 +867,7 @@ ScanStatus ScanNumber(std::string_view bytes, std::size_t& index, std::int64_t& 
 }
 }  // namespace
 
-ScanStatus ScanCommand(const ::nbio::utility::Buffer& buffer, std::vector<std::string_view>& words,
+ScanStatus ScanCommand(const ::memory::Buffer& buffer, std::vector<std::string_view>& words,
                        std::size_t& size) {
     const std::string_view bytes = buffer.string_view();
     words.clear();

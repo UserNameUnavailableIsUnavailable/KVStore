@@ -71,7 +71,7 @@ void AppendOnlyFile::disable() noexcept {
 constexpr std::size_t kInitialEntryBytes = 1024;
 constexpr std::size_t kMaximumEntryBytes = (16U * 1024U * 1024U) + (64U * 1024U);
 
-bool AppendOnlyFile::verify_checksum(nbio::utility::Buffer& buffer, std::span<const char> command) {
+bool AppendOnlyFile::verify_checksum(memory::Buffer& buffer, std::span<const char> command) {
     // A checksum is a bulk string of four bytes and nothing else is: a command is an
     // array, and an array is the only other thing an entry holds.
     const std::span<const char> rest = buffer.readable_span();
@@ -88,7 +88,7 @@ bool AppendOnlyFile::verify_checksum(nbio::utility::Buffer& buffer, std::span<co
         return false;
     }
     // Consumed, so the next command is decoded from where it actually starts.
-    buffer.consume(10);
+    buffer.Consume(10);
     return true;
 }
 
@@ -98,23 +98,25 @@ nbio::async::Task<void> AppendOnlyFile::append(const Command& command) {
 }
 
 std::string_view AppendOnlyFile::log(const Command& command) {
+    count_write();
     if (!logging()) return {};
     if (!log_buffer_) {
-        log_buffer_ = std::make_unique<nbio::utility::Buffer>(kMaximumEntryBytes, kMaximumEntryBytes);
+        log_buffer_ = std::make_unique<memory::Buffer>(kMaximumEntryBytes, kMaximumEntryBytes);
     }
-    log_buffer_->clear();
+    log_buffer_->Clear();
     const auto object = CommandToRESP(command);
     auto encoder = RESP::Encode(object, *log_buffer_);
     if (encoder.poll() != RESP::EncodeStatus::kComplete) {
         throw std::runtime_error("logical write-log record exceeds fixed buffer capacity");
     }
     const auto payload = log_buffer_->string_view();
-    if (payload.size() > std::numeric_limits<std::uint64_t>::max() - offset_) {
-        throw std::overflow_error("logical write-log offset exhausted");
-    }
-    offset_ += payload.size();
     kvstore_write_log_v1(epoch_, offset_, payload.data(), payload.size());
     return payload;
+}
+
+void AppendOnlyFile::count_write() {
+    if (offset_ == UINT64_MAX) [[unlikely]] throw std::overflow_error("write counter exhausted");
+    ++offset_;
 }
 
 nbio::async::Task<void> AppendOnlyFile::append_encoded(std::string_view payload) {
@@ -128,8 +130,8 @@ nbio::async::Task<void> AppendOnlyFile::append_encoded(std::string_view payload)
     const std::shared_ptr<nbio::fs::FileStreamService> file = file_;
 
     try {
-        nbio::utility::Buffer buffer{kInitialEntryBytes, kMaximumEntryBytes};
-        if (!buffer.reserve(payload.size()) || !buffer.write(payload.data(), payload.size())) {
+        memory::Buffer buffer{kInitialEntryBytes, kMaximumEntryBytes};
+        if (!buffer.Reserve(payload.size()) || !buffer.Write(payload.data(), payload.size())) {
             throw std::runtime_error("AOF entry is larger than the log can hold");
         }
 
@@ -149,7 +151,7 @@ nbio::async::Task<void> AppendOnlyFile::append_encoded(std::string_view payload)
             std::memcpy(trailer.data() + 4, &ordered, sizeof(ordered));
             trailer[8] = '\r';
             trailer[9] = '\n';
-            if (!buffer.write(trailer.data(), trailer.size())) {
+            if (!buffer.Write(trailer.data(), trailer.size())) {
                 throw std::runtime_error("AOF entry is larger than the log can hold");
             }
         }

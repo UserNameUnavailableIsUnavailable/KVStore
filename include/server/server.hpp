@@ -2,6 +2,7 @@
 
 #include <commands.hpp>
 #include <resp/resp.hpp>
+#include <resp/sender.hpp>
 #include <nbio/async/task.hpp>
 #include <nbio/net/address.hpp>
 #include <nbio/notification/condition_variable.hpp>
@@ -33,20 +34,20 @@ namespace KV {
 // replication listener, and no master to follow -- which one it follows is what
 // SLAVEOF says, and it says it at Daemon.
 struct ServerOptions {
-    static constexpr std::uint16_t kDefaultPort = 8080;
-    static constexpr std::uint16_t kDefaultReplicationPort = 0;
+    static constexpr std::uint16_t kDefaultPort = 6666;
     static constexpr std::string_view kDefaultReplicationAddress = "0.0.0.0";
 
     // The TCP port clients connect to.
     std::optional<std::uint16_t> port{};
-    // 0 leaves the replication listener off.
-    std::optional<std::uint16_t> replication_port{};
+    // The rdma device's address, which is what makes this instance a master
+    // that serves replicas. The port is chosen by the provider at bind time.
     std::optional<std::string> replication_address{};
     // The rdma device replication runs on. Serving replicas needs it, and so
     // does following a master, which SLAVEOF asks for after this is settled.
     std::optional<std::string> rdma_device{};
-    std::string replication_daemon{};
-    std::string repld_path{};
+    // A replica may take its incremental stream from a broker ("ip:port") that
+    // mirrors the master, instead of following the master directly.
+    std::string broker_endpoint{};
     // The event multiplexer that drives this server instance.
     std::string multiplexer{"epoll"};
     // The startup command file, if one was given: each line is a command, applied
@@ -102,9 +103,12 @@ class Server {
     };
 
     nbio::async::Task<RESP::Object> dispatch(TcpSessionService& session, KV::Command command);
+    // The SYNC exchange: answer the replica with FULLSYNC (size, RDMA endpoint,
+    // snapshot offset, epoch), then carry the dump over RDMA. Ends the connection.
+    nbio::async::Task<void> serve_sync(TcpSessionService& session, RESP::Sender& sender);
     nbio::async::Task<RESP::Object> execute(const KV::Command& command);
     std::optional<RESP::Object> execute_fast(const KV::Command& command);
-    bool answer_borrowed(std::span<const std::string_view> words, nbio::utility::Buffer& buffer);
+    bool answer_borrowed(std::span<const std::string_view> words, memory::Buffer& buffer);
     RESP::Object execute_ping(const KV::Command& command);
     RESP::Object execute_get(const KV::Command& command);
     RESP::Object execute_set(const KV::Command& command);
@@ -144,7 +148,6 @@ class Server {
     // What this server decided to listen on. CONFIG GET answers with it, and it
     // is the one place a setting that was already settled can be read back from.
     std::uint16_t port_{0};
-    std::uint16_t replication_port_{0};
     std::string replication_address_{};
     std::string rdma_device_{};
 
